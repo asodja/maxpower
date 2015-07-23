@@ -212,7 +212,7 @@ public class FloatingPointMultiAdder {
 
 			@Override
 			protected void outputFunction() {
-				r <== a.cast(r.getType()) + ((b ^ mask(c, b.getType())) + c.cast(b.getType())).cast(r.getType());
+				r <== a.cast(r.getType()) + (b.cast(r.getType()) ^ mask(c, r.getType())) + c.cast(r.getType());
 			}
 
 			private DFEsmValue mask(DFEsmValue c, DFEsmValueType type) {
@@ -246,7 +246,7 @@ public class FloatingPointMultiAdder {
 
 			DFEStruct result = getReductionType(sm.getOutput("r").getType()).newInstance(a.getKernel());
 			result["neg"] <== aNeg;
-			result["val"] <== sm.getOutput("r");
+			result["val"] <== a.getKernel().optimization.pipeline(sm.getOutput("r"));
 			return result;
 		}
 	}
