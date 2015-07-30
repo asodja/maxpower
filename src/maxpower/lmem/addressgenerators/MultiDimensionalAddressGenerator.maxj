@@ -1,0 +1,111 @@
+package maxpower.lmem.addressgenerators;
+
+import com.maxeler.maxcompiler.v0.utils.MathUtils;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.LMemCommandStream;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
+
+public class MultiDimensionalAddressGenerator extends Kernel {
+
+	private final int latency = 3;//On multi-block case will output once every 4 cycles (this is as fast as the memory controller can handle, and allows for the latency of reading a ROM).
+
+	MultiDimensionalAddressGenerator(KernelParameters parameters, int numDimensions, int maxBlocks) {
+		super(parameters);
+		if (numDimensions > 2) {
+			throw new RuntimeException("Unsupported");
+		}
+		if (maxBlocks < 1) {
+			throw new RuntimeException("Unsupported");
+		}
+
+		DFEStruct cmd = LMemCommandStream.getLMemCommandDFEStructType().newInstance(this);
+		DFEType addressType = (DFEType)cmd["address"].getType();
+		DFEType sizeType    = (DFEType)cmd["size"].getType();
+
+		DFEVar numRepeats = io.scalarInput("numRepeats", dfeUInt(32));
+
+		DFEVar address;
+		DFEVar finalCmd;
+		DFEVar size;
+		DFEVar enableOutput;
+
+		if (maxBlocks == 1) {
+			DFEVar startAddress = io.scalarInput("startAddress", addressType);
+			DFEVar numBursts    = io.scalarInput("numBursts",    addressType);
+
+			CounterChain chain = control.count.makeCounterChain();
+			DFEVar repeat = chain.addCounter(numRepeats,   1);
+			finalCmd = repeat === numRepeats - 1;
+			if (numDimensions == 2) {
+				DFEVar size2d = io.scalarInput("size2d",    addressType);
+				DFEVar skip2d = io.scalarInput("skip2d",    addressType);
+				DFEVar pos2d  = chain.addCounter(size2d, 1);
+				finalCmd &= pos2d === size2d - 1;
+				startAddress += pos2d * skip2d;//TODO: use accumulator to avoid multiplication
+			}
+			DFEVar offset = chain.addCounter(numBursts,  128);
+			finalCmd &= offset + 128 >= numBursts;
+
+			enableOutput = constant.var(true);
+
+			DFEVar burstsLeft = numBursts - offset;
+			address  = startAddress + offset;
+			size     = burstsLeft < 128 ? burstsLeft.cast(sizeType) : 128;
+		} else {
+			DFEVar numBlocks = io.scalarInput("numBlocks", dfeUInt(MathUtils.bitsToRepresent(maxBlocks)));
+
+			DFEVar prevBlockNum = numBlocks.getType().newInstance(this);
+			DFEVar startAddress = mem.romMapped("startAddress", prevBlockNum, addressType, maxBlocks);
+			DFEVar numBursts    = mem.romMapped("numBursts",    prevBlockNum, addressType, maxBlocks);
+
+			CounterChain chain = control.count.makeCounterChain();
+			DFEVar repeat   = chain.addCounter(numRepeats,    1);
+			finalCmd = repeat === numRepeats - 1;
+			DFEVar blockNum = chain.addCounter(numBlocks,     1);
+			finalCmd &= blockNum === numBlocks - 1;
+			if (numDimensions == 2) {
+				DFEVar size2d = mem.romMapped("size2d", prevBlockNum, addressType, maxBlocks);
+				DFEVar skip2d = mem.romMapped("skip2d", prevBlockNum, addressType, maxBlocks);
+				DFEVar pos2d  = chain.addCounter(size2d, 1);
+				finalCmd &= pos2d === size2d - 1;
+				startAddress += pos2d * skip2d;//TODO: use accumulator to avoid multiplication
+			}
+			DFEVar offset   = chain.addCounter(numBursts,   128);
+			finalCmd &= offset + 128 >= numBursts;
+			DFEVar cycle    = chain.addCounter(latency + 1,   1);
+
+			prevBlockNum <== safeOffset(blockNum, -latency);
+			enableOutput = latency === cycle;
+
+			DFEVar burstsLeft = numBursts - offset;
+			address   = startAddress + offset;
+			size      = burstsLeft < 128 ? burstsLeft.cast(sizeType) : 128;
+			finalCmd &= enableOutput;
+		}
+
+		cmd["address"] = address;
+		cmd["size"]    = size;
+		cmd["inc"]     = constant.var((DFEType)cmd["inc"].getType(),    1);
+		cmd["stream"]  = constant.var((DFEType)cmd["stream"].getType(), 1);
+		cmd["tag"]     = finalCmd;
+
+		LMemCommandStream.makeKernelOutput("cmd", enableOutput, cmd);
+
+		DFEVar finished = Reductions.streamHold(finalCmd, finalCmd);
+		optimization.pushPipeliningFactor(0.0);
+		DFEVar trigger = finished & ~finalCmd;
+		optimization.popPipeliningFactor();
+
+		flush.onTrigger(trigger);
+	}
+
+	private DFEVar safeOffset(DFEVar input, int offset) {
+		DFEVar cycleCount = control.count.simpleCounter(48);
+		return cycleCount < -offset ? 0 : stream.offset(input, offset);
+	}
+}
