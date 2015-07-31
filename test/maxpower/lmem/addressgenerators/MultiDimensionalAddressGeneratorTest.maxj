@@ -1,5 +1,12 @@
 package maxpower.lmem.addressgenerators;
 
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.getSizeNdName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.getSkipNdName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.numBlocksName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.numBurstsName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.numRepeatsName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.outputName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.startAddressName;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
@@ -127,26 +134,26 @@ public class MultiDimensionalAddressGeneratorTest {
 		LAGTestData data = new LAGTestData(numDimensions, numRepeats, numBlocks);
 
 		if (numBlocks == 1) {
-			mgr.setScalarInput("startAddress", data.startAddress[0]);
-			mgr.setScalarInput("numBursts", data.numBursts[0][0]);
+			mgr.setScalarInput(startAddressName, data.startAddress[0]);
+			mgr.setScalarInput(numBurstsName, data.numBursts[0][0]);
 			for (int dim = 2; dim <= numDimensions; dim++) {
-				mgr.setScalarInput("size"+dim+"d", data.numBursts[dim-1][0]);
-				mgr.setScalarInput("skip"+dim+"d", data.skipNd[dim-2][0]);
+				mgr.setScalarInput(getSizeNdName(dim), data.numBursts[dim-1][0]);
+				mgr.setScalarInput(getSkipNdName(dim), data.skipNd[dim-2][0]);
 			}
 		} else {
-			mgr.setMappedRom("startAddress", data.startAddress);
-			mgr.setMappedRom("numBursts", data.numBursts[0]);
-			mgr.setScalarInput("numBlocks", numBlocks);
+			mgr.setMappedRom(startAddressName, data.startAddress);
+			mgr.setMappedRom(numBurstsName, data.numBursts[0]);
+			mgr.setScalarInput(numBlocksName, numBlocks);
 			for (int dim = 2; dim <= numDimensions; dim++) {
-				mgr.setMappedRom("size"+dim+"d", data.numBursts[dim-1]);
-				mgr.setMappedRom("skip"+dim+"d", data.skipNd[dim-2]);
+				mgr.setMappedRom(getSizeNdName(dim), data.numBursts[dim-1]);
+				mgr.setMappedRom(getSkipNdName(dim), data.skipNd[dim-2]);
 			}
 		}
-		mgr.setScalarInput("numRepeats",   numRepeats);
+		mgr.setScalarInput(numRepeatsName,   numRepeats);
 
 		mgr.runTest();
 
-		List<Map<String,Double>> output = mgr.getOutputData(LMemCommandStream.getLMemCommandDFEStructType(), "cmd");
+		List<Map<String,Double>> output = mgr.getOutputData(LMemCommandStream.getLMemCommandDFEStructType(), outputName);
 		assertTrue(data.checkOutput(output));
 	}
 }
