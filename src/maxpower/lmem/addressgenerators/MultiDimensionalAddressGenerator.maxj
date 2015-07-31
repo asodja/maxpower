@@ -16,7 +16,7 @@ public class MultiDimensionalAddressGenerator extends Kernel {
 
 	MultiDimensionalAddressGenerator(KernelParameters parameters, int numDimensions, int maxBlocks) {
 		super(parameters);
-		if (numDimensions > 2) {
+		if (numDimensions < 1) {
 			throw new RuntimeException("Unsupported");
 		}
 		if (maxBlocks < 1) {
@@ -41,12 +41,12 @@ public class MultiDimensionalAddressGenerator extends Kernel {
 			CounterChain chain = control.count.makeCounterChain();
 			DFEVar repeat = chain.addCounter(numRepeats,   1);
 			finalCmd = repeat === numRepeats - 1;
-			if (numDimensions == 2) {
-				DFEVar size2d = io.scalarInput("size2d",    addressType);
-				DFEVar skip2d = io.scalarInput("skip2d",    addressType);
-				DFEVar pos2d  = chain.addCounter(size2d, 1);
-				finalCmd &= pos2d === size2d - 1;
-				startAddress += pos2d * skip2d;//TODO: use accumulator to avoid multiplication
+			for (int dim = numDimensions; dim > 1; dim--) {
+				DFEVar sizend = io.scalarInput("size"+dim+"d", addressType);
+				DFEVar skipnd = io.scalarInput("skip"+dim+"d", addressType);
+				DFEVar posnd  = chain.addCounter(sizend, 1);
+				finalCmd &= posnd === sizend - 1;
+				startAddress += posnd * skipnd;//TODO: use accumulator to avoid multiplication
 			}
 			DFEVar offset = chain.addCounter(numBursts,  128);
 			finalCmd &= offset + 128 >= numBursts;
@@ -68,12 +68,12 @@ public class MultiDimensionalAddressGenerator extends Kernel {
 			finalCmd = repeat === numRepeats - 1;
 			DFEVar blockNum = chain.addCounter(numBlocks,     1);
 			finalCmd &= blockNum === numBlocks - 1;
-			if (numDimensions == 2) {
-				DFEVar size2d = mem.romMapped("size2d", prevBlockNum, addressType, maxBlocks);
-				DFEVar skip2d = mem.romMapped("skip2d", prevBlockNum, addressType, maxBlocks);
-				DFEVar pos2d  = chain.addCounter(size2d, 1);
-				finalCmd &= pos2d === size2d - 1;
-				startAddress += pos2d * skip2d;//TODO: use accumulator to avoid multiplication
+			for (int dim = numDimensions; dim > 1; dim--) {
+				DFEVar sizend = mem.romMapped("size"+dim+"d", prevBlockNum, addressType, maxBlocks);
+				DFEVar skipnd = mem.romMapped("skip"+dim+"d", prevBlockNum, addressType, maxBlocks);
+				DFEVar posnd  = chain.addCounter(sizend, 1);
+				finalCmd &= posnd === sizend - 1;
+				startAddress += posnd * skipnd;//TODO: use accumulator to avoid multiplication
 			}
 			DFEVar offset   = chain.addCounter(numBursts,   128);
 			finalCmd &= offset + 128 >= numBursts;

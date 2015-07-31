@@ -112,6 +112,12 @@ public class MultiDimensionalAddressGeneratorTest {
 	@Test public void test_single_block_2d()       { test(2, 2, 1); }
 	@Test public void test_multi_block_2d()        { test(2, 2, 3); }
 
+	@Test public void test_single_block_3d()       { test(3, 2, 1); }
+	@Test public void test_multi_block_3d()        { test(3, 2, 3); }
+
+	@Test public void test_single_block_4d()       { test(4, 2, 1); }
+	@Test public void test_multi_block_4d()        { test(4, 2, 3); }
+
 	private void test(int numDimensions, int numRepeats, int numBlocks) {
 		SimulationManager mgr = new SimulationManager("MultiDimensionalAddressGeneratorTest_" + numDimensions + "D_"+ numBlocks + "blocks");
 
@@ -123,17 +129,17 @@ public class MultiDimensionalAddressGeneratorTest {
 		if (numBlocks == 1) {
 			mgr.setScalarInput("startAddress", data.startAddress[0]);
 			mgr.setScalarInput("numBursts", data.numBursts[0][0]);
-			if (numDimensions == 2) {
-				mgr.setScalarInput("size2d", data.numBursts[1][0]);
-				mgr.setScalarInput("skip2d", data.skipNd[0][0]);
+			for (int dim = 2; dim <= numDimensions; dim++) {
+				mgr.setScalarInput("size"+dim+"d", data.numBursts[dim-1][0]);
+				mgr.setScalarInput("skip"+dim+"d", data.skipNd[dim-2][0]);
 			}
 		} else {
 			mgr.setMappedRom("startAddress", data.startAddress);
 			mgr.setMappedRom("numBursts", data.numBursts[0]);
 			mgr.setScalarInput("numBlocks", numBlocks);
-			if (numDimensions == 2) {
-				mgr.setMappedRom("size2d", data.numBursts[1]);
-				mgr.setMappedRom("skip2d", data.skipNd[0]);
+			for (int dim = 2; dim <= numDimensions; dim++) {
+				mgr.setMappedRom("size"+dim+"d", data.numBursts[dim-1]);
+				mgr.setMappedRom("skip"+dim+"d", data.skipNd[dim-2]);
 			}
 		}
 		mgr.setScalarInput("numRepeats",   numRepeats);
