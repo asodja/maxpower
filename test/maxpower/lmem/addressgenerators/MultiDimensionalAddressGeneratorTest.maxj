@@ -29,6 +29,7 @@ public class MultiDimensionalAddressGeneratorTest {
 		final int[] address;
 		final int[] size;
 		final int[] tag;
+
 		LAGTestData(int numDimensions, int numRepeats, int numBlocks) {
 			startAddress = new double[numBlocks];
 			numBursts    = new ArrayList<double[]>(numDimensions);
