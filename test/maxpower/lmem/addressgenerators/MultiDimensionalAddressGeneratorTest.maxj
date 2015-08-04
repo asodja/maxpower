@@ -1,0 +1,160 @@
+package maxpower.lmem.addressgenerators;
+
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.getSizeNdName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.getSkipNdName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.numBlocksName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.numBurstsName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.numRepeatsName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.outputName;
+import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.startAddressName;
+import static org.junit.Assert.assertTrue;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.LMemCommandStream;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+public class MultiDimensionalAddressGeneratorTest {
+
+	private class MDAGTestData {
+		final double[] startAddress;
+		final List<double[]> numBursts;
+		final List<double[]> skipNd;
+		final int[] address;
+		final int[] size;
+		final int[] tag;
+
+		MDAGTestData(int numDimensions, int numRepeats, int numBlocks) {
+			startAddress = new double[numBlocks];
+			numBursts    = new ArrayList<double[]>(numDimensions);
+			skipNd       = new ArrayList<double[]>(numDimensions - 1);
+			numBursts.add(new double[numBlocks]);
+			for (int i = 1; i < numDimensions; i++) {
+				numBursts.add(new double[numBlocks]);
+				skipNd.add(new double[numBlocks]);
+			}
+
+			long seed = System.currentTimeMillis();
+			System.out.println("Using seed " + seed);
+			Random rand = new Random(seed);
+			for (int i = 0; i < numBlocks; i++) {
+				startAddress[i] = rand.nextInt(1024);
+				numBursts[0][i] = 1 + rand.nextInt(1024);
+				for (int j = 1; j < numDimensions; j++) {
+					numBursts[j][i] = 1 + rand.nextInt(10);
+					skipNd[j-1][i]  = numBursts[0][i] + rand.nextInt(1024);
+				}
+			}
+
+			int numCmds = 0;
+			for (int i = 0; i < numBlocks; i++) {
+				int nb = MathUtils.ceilDivide((int)numBursts[0][i], 128);
+				for (int j = 1; j < numDimensions; j++) {
+					nb *= numBursts[j][i];
+				}
+				numCmds += nb * numRepeats;
+			}
+
+			address = new int[numCmds];
+			size    = new int[numCmds];
+			tag     = new int[numCmds];
+
+			int idx = 0;
+			for (int i = 0; i < numBlocks; i++) {
+				idx = fillAddresses((int)startAddress[i], idx, numDimensions - 1, numDimensions, i);
+			}
+			for (int i = numCmds / numRepeats; i < numCmds; i++) {
+				address[i] = address[i - numCmds / numRepeats];
+				size[i]    = size[i - numCmds / numRepeats];
+			}
+			for (int i = 0; i < numCmds; i++) {
+				tag[i] = (i == numCmds - 1 ? 1 : 0);
+			}
+		}
+
+		int fillAddresses(int startAdd, int idx, int dimension, int numDimensions, int blockNum) {
+			if (dimension == 0) {
+				for (int k = 0; k < MathUtils.ceilDivide((int)numBursts[0][blockNum], 128); k++) {
+					address[idx] = startAdd + k * 128;
+					size[idx]    = k * 128 + 128 > numBursts[0][blockNum] ? (int)numBursts[0][blockNum] - k * 128 : 128;
+					idx++;
+				}
+			} else {
+				for (int i = 0; i < numBursts[dimension][blockNum]; i++) {
+					idx = fillAddresses(startAdd + i * (int)skipNd[dimension - 1][blockNum], idx, dimension - 1, numDimensions, blockNum);
+				}
+			}
+			return idx;
+		}
+
+		boolean checkOutput(List<Map<String,Double>> output) {
+			if (output.size() != address.length) {
+				System.out.println("Output is the wrong length. Expected " + address.length + ", got " + output.size());
+				return false;
+			}
+			boolean correct = true;
+			for (int i = 0; i < output.size(); i++) {
+				boolean correctAddress = output[i]["address"] == address[i];
+				boolean correctSize    = output[i]["size"]    == size[i];
+				boolean correctTag     = output[i]["tag"]     == tag[i];
+
+				if (!correctAddress) System.out.println("Address wrong on command number " + i +". Expected " + address[i] + ", got " + output[i]["address"]);
+				if (!correctSize)    System.out.println("Size wrong on command number "    + i +". Expected " + size[i]    + ", got " + output[i]["size"]);
+				if (!correctTag)     System.out.println("Tag wrong on command number "     + i +". Expected " + tag[i]     + ", got " + output[i]["tag"]);
+
+				correct &= correctAddress & correctSize && correctTag;
+			}
+			return correct;
+		}
+	}
+
+	@Test public void test_single_block_1d()       { test(1, 5, 1); }
+	@Test public void test_multi_block_1d()        { test(1, 5, 3); }
+
+	@Test public void test_single_block_2d()       { test(2, 2, 1); }
+	@Test public void test_multi_block_2d()        { test(2, 2, 3); }
+
+	@Test public void test_single_block_3d()       { test(3, 2, 1); }
+	@Test public void test_multi_block_3d()        { test(3, 2, 3); }
+
+	@Test public void test_single_block_4d()       { test(4, 2, 1); }
+	@Test public void test_multi_block_4d()        { test(4, 2, 3); }
+
+	private void test(int numDimensions, int numRepeats, int numBlocks) {
+		SimulationManager mgr = new SimulationManager("MultiDimensionalAddressGeneratorTest_" + numDimensions + "D_"+ numBlocks + "blocks");
+
+		MultiDimensionalAddressGenerator kernel = new MultiDimensionalAddressGenerator(mgr.makeKernelParameters(), numDimensions, numBlocks);
+		mgr.setKernel(kernel);
+
+		MDAGTestData data = new MDAGTestData(numDimensions, numRepeats, numBlocks);
+
+		if (numBlocks == 1) {
+			mgr.setScalarInput(startAddressName, data.startAddress[0]);
+			mgr.setScalarInput(numBurstsName, data.numBursts[0][0]);
+			for (int dim = 2; dim <= numDimensions; dim++) {
+				mgr.setScalarInput(getSizeNdName(dim), data.numBursts[dim-1][0]);
+				mgr.setScalarInput(getSkipNdName(dim), data.skipNd[dim-2][0]);
+			}
+		} else {
+			mgr.setMappedRom(startAddressName, data.startAddress);
+			mgr.setMappedRom(numBurstsName, data.numBursts[0]);
+			mgr.setScalarInput(numBlocksName, numBlocks);
+			for (int dim = 2; dim <= numDimensions; dim++) {
+				mgr.setMappedRom(getSizeNdName(dim), data.numBursts[dim-1]);
+				mgr.setMappedRom(getSkipNdName(dim), data.skipNd[dim-2]);
+			}
+		}
+		mgr.setScalarInput(numRepeatsName,   numRepeats);
+
+		mgr.runTest();
+
+		List<Map<String,Double>> output = mgr.getOutputData(LMemCommandStream.getLMemCommandDFEStructType(), outputName);
+		assertTrue(data.checkOutput(output));
+	}
+}
