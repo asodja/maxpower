@@ -71,10 +71,9 @@ public class BoxBufferTest {
 
 			DFEVector<DFEVar> wrData = io.input("wrData", inType);
 
-			BoxBuffer<DFEVar> buffer = new BoxBuffer<DFEVar>(this, maxItems, numInputItems, numOutputItems, totalBits);
-
-			DFEVector<DFEVar> out = buffer.readBox(wrBuffer, wrRow, wrData, rdBuffer, rdIndex, wrEnable);
-			io.output("rdData", out, outType);
+			BoxBuffer<DFEVar> buffer = new BoxBuffer<DFEVar>(this, maxItems, numOutputItems, inType);
+			buffer.write(wrData, wrRow, wrEnable, wrBuffer);
+			io.output("rdData", outType) <== buffer.read(rdIndex, rdBuffer);
 		}
 	}
 
