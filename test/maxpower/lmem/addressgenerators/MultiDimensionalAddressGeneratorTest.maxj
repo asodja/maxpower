@@ -16,13 +16,13 @@ import java.util.Random;
 
 import org.junit.Test;
 
-import com.maxeler.maxcompiler.v0.utils.MathUtils;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.LMemCommandStream;
 import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 public class MultiDimensionalAddressGeneratorTest {
 
-	private class LAGTestData {
+	private class MDAGTestData {
 		final double[] startAddress;
 		final List<double[]> numBursts;
 		final List<double[]> skipNd;
@@ -30,7 +30,7 @@ public class MultiDimensionalAddressGeneratorTest {
 		final int[] size;
 		final int[] tag;
 
-		LAGTestData(int numDimensions, int numRepeats, int numBlocks) {
+		MDAGTestData(int numDimensions, int numRepeats, int numBlocks) {
 			startAddress = new double[numBlocks];
 			numBursts    = new ArrayList<double[]>(numDimensions);
 			skipNd       = new ArrayList<double[]>(numDimensions - 1);
@@ -132,7 +132,7 @@ public class MultiDimensionalAddressGeneratorTest {
 		MultiDimensionalAddressGenerator kernel = new MultiDimensionalAddressGenerator(mgr.makeKernelParameters(), numDimensions, numBlocks);
 		mgr.setKernel(kernel);
 
-		LAGTestData data = new LAGTestData(numDimensions, numRepeats, numBlocks);
+		MDAGTestData data = new MDAGTestData(numDimensions, numRepeats, numBlocks);
 
 		if (numBlocks == 1) {
 			mgr.setScalarInput(startAddressName, data.startAddress[0]);

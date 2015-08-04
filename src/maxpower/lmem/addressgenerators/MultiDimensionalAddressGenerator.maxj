@@ -70,83 +70,68 @@ public class MultiDimensionalAddressGenerator extends Kernel {
 
 		DFEStruct cmd = LMemCommandStream.getLMemCommandDFEStructType().newInstance(this);
 		DFEType addressType = (DFEType)cmd["address"].getType();
-		DFEType sizeType    = (DFEType)cmd["size"].getType();
 
 		DFEVar numRepeats = io.scalarInput(numRepeatsName, dfeUInt(32));
+		DFEVar numBlocks  = maxBlocks > 1
+		                  ? io.scalarInput(numBlocksName, dfeUInt(MathUtils.bitsToRepresent(maxBlocks)))
+		                  : null;
 
-		DFEVar address;
-		DFEVar finalCmd;
-		DFEVar size;
-		DFEVar enableOutput;
+		DFEVar prevBlockNum = maxBlocks > 1 ? numBlocks.getType().newInstance(this) : null;
+		DFEVar startAddress = scalarOrRom(startAddressName, prevBlockNum, addressType, maxBlocks);
+		DFEVar numBursts    = scalarOrRom(numBurstsName,    prevBlockNum, addressType, maxBlocks);
 
-		if (maxBlocks == 1) {
-			DFEVar startAddress = io.scalarInput(startAddressName, addressType);
-			DFEVar numBursts    = io.scalarInput(numBurstsName,    addressType);
+		CounterChain chain = control.count.makeCounterChain();
+		//Repeat all the whole sequence of commands numRepeats times before creating interrupt.
+		chain.addCounter(numRepeats, 1);
+		//Add an interrupt to the command when all the counters wrap
+		DFEVar finalCmd = chain.getCurrentCounterWrap();
 
-			CounterChain chain = control.count.makeCounterChain();
-			DFEVar repeat = chain.addCounter(numRepeats,   1);
-			finalCmd = repeat === numRepeats - 1;
-			for (int dim = numDimensions; dim > 1; dim--) {
-				DFEVar sizend = io.scalarInput(getSizeNdName(dim), addressType);
-				DFEVar skipnd = io.scalarInput(getSkipNdName(dim), addressType);
-				DFEVar posnd  = chain.addCounter(sizend, 1);
-				finalCmd &= posnd === sizend - 1;
-				Accumulator.Params config = Reductions.accumulator.makeAccumulatorConfig(addressType)
-					                                              .withClear(stream.offset(posnd === 0, 1))
-					                                              .withEnable(posnd !== safeOffset(posnd, -1) & posnd !== 0);
-				startAddress += Reductions.accumulator.makeAccumulator(skipnd, config);
-			}
-			DFEVar offset = chain.addCounter(numBursts,  128);
-			finalCmd &= offset + 128 >= numBursts;
-
-			enableOutput = constant.var(true);
-
-			DFEVar burstsLeft = numBursts - offset;
-			address  = startAddress + offset;
-			size     = burstsLeft < 128 ? burstsLeft.cast(sizeType) : 128;
-		} else {
-			DFEVar numBlocks = io.scalarInput(numBlocksName, dfeUInt(MathUtils.bitsToRepresent(maxBlocks)));
-
-			DFEVar prevBlockNum = numBlocks.getType().newInstance(this);
-			DFEVar startAddress = mem.romMapped(startAddressName, prevBlockNum, addressType, maxBlocks);
-			DFEVar numBursts    = mem.romMapped(numBurstsName,    prevBlockNum, addressType, maxBlocks);
-
-			CounterChain chain = control.count.makeCounterChain();
-			DFEVar repeat   = chain.addCounter(numRepeats,    1);
-			finalCmd = repeat === numRepeats - 1;
-			DFEVar blockNum = chain.addCounter(numBlocks,     1);
-			finalCmd &= blockNum === numBlocks - 1;
-			for (int dim = numDimensions; dim > 1; dim--) {
-				DFEVar sizend = mem.romMapped(getSizeNdName(dim), prevBlockNum, addressType, maxBlocks);
-				DFEVar skipnd = mem.romMapped(getSkipNdName(dim), prevBlockNum, addressType, maxBlocks);
-				DFEVar posnd  = chain.addCounter(sizend, 1);
-				finalCmd &= posnd === sizend - 1;
-				Accumulator.Params config = Reductions.accumulator.makeAccumulatorConfig(addressType)
-					                                              .withClear(stream.offset(posnd === 0, 1))
-					                                              .withEnable(posnd !== safeOffset(posnd, -1) & posnd !== 0);
-				startAddress += Reductions.accumulator.makeAccumulator(skipnd, config);
-			}
-			DFEVar offset   = chain.addCounter(numBursts,   128);
-			finalCmd &= offset + 128 >= numBursts;
-			DFEVar cycle    = chain.addCounter(latency + 1,   1);
-
+		if (maxBlocks > 1) {
+			//If we have multiple blocks, then add a counter to address the ROMs.
+			DFEVar blockNum = chain.addCounter(numBlocks, 1);
+			finalCmd = andWrap(chain, finalCmd);
+			//Using stream offset to cope with the loop around the ROMs and counter chain.
 			prevBlockNum <== safeOffset(blockNum, -latency);
-			enableOutput = latency === cycle;
-
-			DFEVar burstsLeft = numBursts - offset;
-			address   = startAddress + offset;
-			size      = burstsLeft < 128 ? burstsLeft.cast(sizeType) : 128;
-			finalCmd &= enableOutput;
 		}
 
-		cmd["address"] = address;
-		cmd["size"]    = size;
+		//Add an additional counter for all dimensions higher than 1 in reverse order.
+		for (int dim = numDimensions; dim > 1; dim--) {
+			DFEVar sizend = scalarOrRom(getSizeNdName(dim), prevBlockNum, addressType, maxBlocks);
+			DFEVar skipnd = scalarOrRom(getSkipNdName(dim), prevBlockNum, addressType, maxBlocks);
+			DFEVar posnd  = chain.addCounter(sizend, 1);
+			finalCmd = andWrap(chain, finalCmd);
+
+			//Using an accumulator to avoid using DPSs for calculating posnd * skipnd
+			Accumulator.Params config = Reductions.accumulator.makeAccumulatorConfig(addressType)
+				                                              .withClear(stream.offset(posnd === 0, 1))
+				                                              .withEnable(posnd !== safeOffset(posnd, -1) & posnd !== 0);
+			//Moving start address to the beginning of the current 1D strip.
+			startAddress += Reductions.accumulator.makeAccumulator(skipnd, config);
+		}
+
+		//Calculate the distance from start address in the 1D strip.
+		DFEVar offset = chain.addCounter(numBursts,   128);
+		finalCmd = andWrap(chain, finalCmd);
+
+		//All commands are 128 bursts until we reach the final command in our 1D strip.
+		DFEVar burstsLeft = (numBursts - offset).cast((DFEType)cmd["size"].getType());
+		DFEVar smallCmd   = chain.getCurrentCounterWrap();
+
+		//In the multi-block case we need to only output once every 4 cycles to cope with the loop latency.
+		DFEVar enableOutput = maxBlocks > 1
+		                    ? chain.addCounter(latency + 1, 1) === latency
+		                    : constant.var(true);
+
+		//Create output.
+		cmd["address"] = startAddress + offset;
+		cmd["size"]    = smallCmd ? burstsLeft : 128;
 		cmd["inc"]     = constant.var((DFEType)cmd["inc"].getType(),    1);
 		cmd["stream"]  = constant.var((DFEType)cmd["stream"].getType(), 1);
-		cmd["tag"]     = finalCmd;
+		cmd["tag"]     = finalCmd & enableOutput;
 
 		LMemCommandStream.makeKernelOutput(outputName, enableOutput, cmd);
 
+		//Flush after we have sent out the final command
 		DFEVar finished = Reductions.streamHold(finalCmd, finalCmd);
 		optimization.pushPipeliningFactor(0.0);
 		DFEVar trigger = finished & ~finalCmd;
@@ -160,11 +145,26 @@ public class MultiDimensionalAddressGenerator extends Kernel {
 		if (offset > 0) {
 			throw new RuntimeException("safeOffset is only for negative stream offsets.");
 		}
-		Params params = control.count.makeParams(MathUtils.bitsToRepresent(-offset+1))
-		                             .withMax(-offset+1)
+		Params params = control.count.makeParams(MathUtils.bitsToRepresent(-offset))
+		                             .withMax(-offset)
 		                             .withWrapMode(WrapMode.STOP_AT_MAX);
 		DFEVar cycleCount = control.count.makeCounter(params).getCount();
 		return cycleCount < -offset ? 0 : stream.offset(input, offset);
+	}
+
+	//This ands in the wrap signal of the current counter. This is put in a method just to hide the pipelining factor.
+	private DFEVar andWrap(CounterChain chain, DFEVar wrap) {
+		DFEVar newWrap = chain.getCurrentCounterWrap();
+		optimization.pushPipeliningFactor(0.0);
+		DFEVar output = wrap & newWrap;
+		optimization.popPipeliningFactor();
+		return output;
+	}
+
+	//Create a scalar input if maxBlocks is 1, and a ROM otherwise.
+	private DFEVar scalarOrRom(String name, DFEVar address, DFEType type, int maxBlocks) {
+		return maxBlocks > 1 ? mem.romMapped(name, address, type, maxBlocks)
+						     : io.scalarInput(name, type);
 	}
 
 	/**
