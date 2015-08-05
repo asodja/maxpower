@@ -88,12 +88,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 		DFEVar wrCol  = slice(wrRowCol, 0, m_params.colAddrBits);
 		DFEVar _wrRow = slice(wrRowCol, m_params.colAddrBits, m_params.rowAddrBits);
-		/*
-		 * Striped version of the RAM
-		 *
-		 * Each input item is stored in a separate ram, we write [numInputItems]
-		 * at a time, we expect to have a whole-multiple of numInputItems RAMs
-		 */
 
 		// Widen wrRow in if we've had to pad the ram depth
 		DFEVar ramWriteCol = wrCol;
@@ -102,18 +96,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 		//Stop writing at the end of the RAM
 		DFEVar wrEnablep1 = ramWriteRow < m_params.maxAddress ? enable : 0;
-
-
-		/**
-		 * Build up the input data word we use to write into the RAMs
-		 *
-		 * ----------------------------------------- | 0 | 1 | 2 | 3 | X | X | X
-		 * |-3 |-2 |-1 | ----------------------------------------- | new data |
-		 * pad | old data | -----------------------------------------
-		 *
-		 * We put the new data in, plus tileWidth-1 items of oldData
-		 *
-		 */
 
 		DFEVector<T> paddedInputData = padInput(data);
 
@@ -136,7 +118,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			                    : writeRow.cast(dfeUInt(m_params.ramAddrBits));
 
 			m_rams[i].write(optimization.limitFanout(writeAddress, 2), tileInputData, optimization.limitFanout(writeEn, 2));
-			debug.simPrintf(writeAddress >= m_params.ramDepth, "writeAddress = %d, address = %d, writeRow = %d, buffer = %d, enable = %d, nextRow = %d\n", writeAddress, address, writeRow, buffer, writeEn, nextRow);
 		}
 	}
 
@@ -171,7 +152,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			                   ? readRow.cat(buffer).cast(dfeUInt(m_params.ramAddrBits))
 			                   : readRow.cast(dfeUInt(m_params.ramAddrBits));
 
-			debug.simPrintf(readAddress >= m_params.ramDepth, "readAddress = %d, address = %d, readRow = %d, buffer = %d\n", readAddress, address, readRow, buffer);
 			// Read from the RAM and add it to the output
 			ramOutputData.addAll(m_rams[i].read(optimization.limitFanout(readAddress, 2)).getElementsAsList());
 		}

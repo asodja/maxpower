@@ -85,19 +85,15 @@ public class BoxBufferTest {
 		final Bits[] m_rdBuffer;
 		final double[] m_rdIndex;
 		final int numCycles;
-		final int m_maxItems;
 		final int m_itemBitWidth;
-		final int m_numInputItems;
 		final int m_numOutputItems;
 
 
 		private TestData(int maxItems, int itemBitWidth, int numInputItems, int numOutputItems) {
 			int inDataWidth  = numInputItems * itemBitWidth;
 			int rowAddrWidth = MathUtils.bitsToAddress(maxItems / numInputItems);
-			numCycles        = (int) Math.ceil(2.0 * maxItems / numInputItems);
-			m_maxItems       = maxItems;
+			numCycles        = 2 * MathUtils.ceilDivide(maxItems, numInputItems);
 			m_itemBitWidth   = itemBitWidth;
-			m_numInputItems  = numInputItems;
 			m_numOutputItems = numOutputItems;
 
 			m_wrData   = new Bits[numCycles];
@@ -108,7 +104,7 @@ public class BoxBufferTest {
 			m_rdIndex  = new double[numCycles];
 
 			// Build up input data
-			for (int i = 0; i < (2 * maxItems) / numInputItems; i++) {
+			for (int i = 0; i < numCycles; i++) {
 				// Write first [maxItems] items into the buffer
 				// Don't over-write as it will wrap
 				if ((i * numInputItems + numInputItems) <= maxItems) {
@@ -136,7 +132,7 @@ public class BoxBufferTest {
 				m_wrRow[i].setBits(i % (maxItems / numInputItems));
 
 				// Test the corners first, then random offsets
-				switch (i - maxItems / numInputItems) {
+				switch (i - numCycles / 2) {
 					case 0:
 						m_rdIndex[i] = maxItems - numOutputItems;
 						break;
@@ -151,7 +147,7 @@ public class BoxBufferTest {
 
 		boolean testOutput(List<Bits> rdData) {
 			boolean testPassed = true;
-			for (int i = m_maxItems / m_numInputItems; i < (2 * m_maxItems / m_numInputItems); i++) {
+			for (int i = numCycles / 2; i < numCycles; i++) {
 				//TODO: generate golden output properly (actually base it on the input), and then compare integers (not Bits).
 				Bits tmp = new Bits(m_numOutputItems * m_itemBitWidth);
 				long index = (long) m_rdIndex[i];
