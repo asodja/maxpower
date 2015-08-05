@@ -66,8 +66,15 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	}
 
 
-	public void write(DFEVector<T> wrData, DFEVar wrRow, DFEVar wrEnable, DFEVar wrBuffer) {
-		if (!wrData.getType().equals(m_inputType)) {
+	public void write(DFEVector<T> data, DFEVar address, DFEVar enable) {
+		if (m_params.doubleBuffered) {
+			throw new RuntimeException("If the Box Buffer is double buffered, then you must specify which buffer you want to write to.");
+		}
+	}
+
+
+	public void write(DFEVector<T> data, DFEVar address, DFEVar enable, DFEVar buffer) {
+		if (!data.getType().equals(m_inputType)) {
 			throw new RuntimeException("Type given to write function does not match type passed to the constructor.");
 		}
 		if (m_hasWritten) {
@@ -75,8 +82,8 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		}
 		m_hasWritten = true;
 
-		DFEType wrRow_m_numInputItemsType = dfeUInt(wrRow.getType().getTotalBits() + MathUtils.bitsToRepresent(m_params.numInputItems));
-		DFEVar wrRow_m_numInputItems = wrRow.cast(wrRow_m_numInputItemsType) * m_params.numInputItems;
+		DFEType wrRow_m_numInputItemsType = dfeUInt(address.getType().getTotalBits() + MathUtils.bitsToRepresent(m_params.numInputItems));
+		DFEVar wrRow_m_numInputItems = address.cast(wrRow_m_numInputItemsType) * m_params.numInputItems;
 		DFEVar wrRowCol = xyLookup(wrRow_m_numInputItems, dfeUInt(m_params.rowAddrBits + m_params.colAddrBits));
 
 		DFEVar wrCol  = slice(wrRowCol, 0, m_params.colAddrBits);
@@ -90,11 +97,11 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 		// Widen wrRow in if we've had to pad the ram depth
 		DFEVar ramWriteCol = wrCol;
-		DFEVar ramWriteRow = _wrRow.cast(dfeUInt(m_params.rowAddrBits));// ;
+		DFEVar ramWriteRow = _wrRow.cast(dfeUInt(m_params.rowAddrBits));
 		DFEVar ramWriteRowp1 = ramWriteRow + 1;
 
-		// Make wrEnable, prevent next rows writing at 0 if we're right at the end of the RAM
-		DFEVar wrEnablep1 = ramWriteRowp1 > 0 ? wrEnable : 0;
+		//Stop writing at the end of the RAM
+		DFEVar wrEnablep1 = ramWriteRow < m_params.maxAddress ? enable : 0;
 
 
 		/**
@@ -108,7 +115,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		 *
 		 */
 
-		DFEVector<T> paddedInputData = padInput(wrData);
+		DFEVector<T> paddedInputData = padInput(data);
 
 		DFEVector<T> alignedInputData = alignInput(paddedInputData, ramWriteCol);
 
@@ -119,35 +126,41 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			// Write port - wrBuffer:ramWriteRow
 			DFEVar nextRow = ramWriteCol > tileLastItem;
 			DFEVar writeRow = ~nextRow ? ramWriteRow : ramWriteRowp1;
-			DFEVar writeEn = ~nextRow ? wrEnable : wrEnablep1;
+			DFEVar writeEn = ~nextRow ? enable : wrEnablep1;
 
 			DFEVector<T> tileInputData = slice(alignedInputData, i * m_params.tileItems, m_params.tileItems);
 
 			// Create actual write address
 			DFEVar writeAddress = m_params.doubleBuffered
-			                    ? wrBuffer.cat(writeRow).cast(dfeUInt(m_params.ramAddrBits))
+			                    ? writeRow.cat(buffer).cast(dfeUInt(m_params.ramAddrBits))
 			                    : writeRow.cast(dfeUInt(m_params.ramAddrBits));
 
 			m_rams[i].write(optimization.limitFanout(writeAddress, 2), tileInputData, optimization.limitFanout(writeEn, 2));
+			debug.simPrintf(writeAddress >= m_params.ramDepth, "writeAddress = %d, address = %d, writeRow = %d, buffer = %d, enable = %d, nextRow = %d\n", writeAddress, address, writeRow, buffer, writeEn, nextRow);
 		}
 	}
 
 
-	public DFEVector<T> read(DFEVar rdIndex, DFEVar rdBuffer) {
-		DFEVar addr = xyLookup(rdIndex, dfeUInt(m_params.readAddrBits));
+	public DFEVector<T> read(DFEVar address) {
+		if (m_params.doubleBuffered) {
+			throw new RuntimeException("If the Box Buffer is double buffered, then you must specify which buffer you want to read from.");
+		}
+		return read(address, null);
+	}
+
+
+	public DFEVector<T> read(DFEVar address, DFEVar buffer) {
+		DFEVar addr = xyLookup(address, dfeUInt(m_params.readAddrBits));
 
 		// Slice up into mux select + row select
 		DFEVar rdShiftAmt = optimization.limitFanout(slice(addr, 0, m_params.colAddrBits), 30);
 		DFEVar ramReadRow = slice(addr, m_params.colAddrBits, m_params.rowAddrBits);
 
-		DFEVectorType<T> outType = new DFEVectorType<T>(m_inputType.getContainedType(), m_params.numOutputItems);
 
-		/////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// Read Logic - calculate the next address when we read off the end of
-		// the buffer
+		// Read Logic - calculate the next address when we read off the end of the buffer
 		DFEVar ramReadRowp1 = ramReadRow + 1;
 
-		List<DFEVector<T>> ramOutputData = new ArrayList<DFEVector<T>>();
+		List<T> ramOutputData = new ArrayList<T>();
 		for (int i = 0; i < m_params.numTiles; i++) {
 			// Choose which row to read from this RAM depending on the column
 			// the first item is in (use -1 and gte to avoid constant overflow)
@@ -155,18 +168,15 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 			// Read port - rdBuffer:readRow
 			DFEVar readAddress = m_params.doubleBuffered
-			                   ? rdBuffer.cat(readRow).cast(dfeUInt(m_params.ramAddrBits))
+			                   ? readRow.cat(buffer).cast(dfeUInt(m_params.ramAddrBits))
 			                   : readRow.cast(dfeUInt(m_params.ramAddrBits));
 
-			// Create the RAM and add it to the output array
-			ramOutputData.add(m_rams[i].read(optimization.limitFanout(readAddress, 2)));
+			debug.simPrintf(readAddress >= m_params.ramDepth, "readAddress = %d, address = %d, readRow = %d, buffer = %d\n", readAddress, address, readRow, buffer);
+			// Read from the RAM and add it to the output
+			ramOutputData.addAll(m_rams[i].read(optimization.limitFanout(readAddress, 2)).getElementsAsList());
 		}
 
-		DFEVector<T> ramOut = asSingleDFEVector(ramOutputData);
-
-		DFEVector<T> outItem = alignRamOutput(rdShiftAmt, ramOut, outType);
-
-		return outItem;
+		return alignRamOutput(rdShiftAmt, ramOutputData);
 	}
 
 
@@ -270,15 +280,12 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	}
 
 
-	private DFEVector<T> alignRamOutput(DFEVar rdShiftAmt, DFEVector<T> ramOut, DFEVectorType<T> outType) {
-		DFEVector<T> shiftedRamOut = ramOut.rotateElementsRight(rdShiftAmt);
-		DFEVector<T> outItem = outType.newInstance(this);
-		for (int i = 0; i < outItem.getSize(); i++) {
-			outItem[i] <== shiftedRamOut[i];
-		}
+	private DFEVector<T> alignRamOutput(DFEVar rdShiftAmt, List<T> ramOut) {
+		DFEVector<T> shiftedRamOut = asDFEVector(ramOut).rotateElementsRight(rdShiftAmt);
+		DFEVector<T> outItem = slice(shiftedRamOut, 0, m_params.numOutputItems);
 
 		// Minimize unconnected warnings; these will optimize away
-		for (int j = outItem.getSize(); j < ramOut.getSize(); j++) {
+		for (int j = outItem.getSize(); j < shiftedRamOut.getSize(); j++) {
 			shiftedRamOut[j].setReportOnUnused(false);
 		}
 
@@ -306,11 +313,10 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 
 	private class BoxBufferParams {
-		final static int minRamDepth = 512;
-
 		final int numInputItems;
 		final int numOutputItems;
 		final int ramDepth;
+		final int maxAddress;
 		final int ramAddrBits;
 		final int rowAddrBits;
 
@@ -318,7 +324,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 		final int colAddrBits;
 		final int readAddrBits;
-		final int numRows;
 		final int numCols;
 		final int numTiles;
 		final int tileItems;
@@ -344,15 +349,18 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 			// This is the total width needed
 			int totalWidthNeeded = getTotalWidthNeeded(tileItems, numInputItems, numOutputItems);
-			numTiles = (int) Math.ceil((double) totalWidthNeeded / tileItems);
+			numTiles = MathUtils.ceilDivide(totalWidthNeeded, tileItems);
 
 			// Assume all the tiles have the same number of items
 			numCols     = numTiles * tileItems;
 			colAddrBits = MathUtils.bitsToAddress(numCols);
 
-			// Number of rows, such that rows*cols >= maxItems
-			numRows     = MathUtils.nextPowerOfTwo(MathUtils.ceilDivide(maxItems, numCols));
-			ramDepth    = Math.max(minRamDepth, numBuffers * numRows);
+			// Number of rows, such that rows*cols >= maxItems and so that it lines up with a multiple of numInputItems
+			int paddedItems = MathUtils.nextMultiple(maxItems, MathUtils.leastCommonMultiple(numCols, numInputItems));
+			maxAddress = MathUtils.ceilDivide(paddedItems, numCols) - 1;
+			ramDepth = numBuffers * (maxAddress+ 1);
+			System.out.println("Depth = " + ramDepth + ", maxItems = " + maxItems + ", numCols = " + numCols);
+			System.out.println("numTiles = " + numTiles + ", tileItems = " + tileItems + ", totalWidthNeeded = " + totalWidthNeeded);
 			ramAddrBits = MathUtils.bitsToAddress(ramDepth);
 			rowAddrBits = ramAddrBits - MathUtils.bitsToAddress(numBuffers);
 
