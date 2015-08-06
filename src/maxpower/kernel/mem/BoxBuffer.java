@@ -37,6 +37,8 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  */
 public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelLib {
 
+	private static final int defaultLutCost = 200;
+
 	private final BoxBufferParams m_params;
 	private final List<Memory<DFEVector<T>>> m_rams;
 	private final DFEVectorType<T> m_inputType;
@@ -44,10 +46,22 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	private boolean m_hasWritten = false;
 
 	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType) {
+		this(root, maxItems, numOutputItems, inputType, defaultLutCost);
+	}
+
+	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
+		this(root, maxItems, numOutputItems, inputType, doubleBuffered, defaultLutCost);
+	}
+
+	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
+		this(root, maxItems, numOutputItems, inputType, true, costOfBramInLuts);
+	}
+
+	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
 		super(root);
 		KernelType<T> itemType = inputType.getContainedType();
 		m_inputType = inputType;
-		m_params = new BoxBufferParams(maxItems, inputType.getSize(), numOutputItems, itemType.getTotalBits());
+		m_params = new BoxBufferParams(maxItems, inputType.getSize(), numOutputItems, itemType.getTotalBits(), costOfBramInLuts, doubleBuffered);
 
 		DFEVectorType<T> tileType = new DFEVectorType<T>(itemType, m_params.tileItems);
 		m_rams = new ArrayList<Memory<DFEVector<T>>>(m_params.numTiles);
@@ -75,7 +89,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 	public void write(DFEVector<T> data, DFEVar address, DFEVar enable, DFEVar buffer) {
 		if (!data.getType().equals(m_inputType)) {
-			throw new RuntimeException("Type given to write function does not match type passed to the constructor.");
+			throw new RuntimeException("Type given to write function does not match type passed to the BoxBuffer constructor.");
 		}
 		if (m_hasWritten) {
 			throw new RuntimeException("The box buffer can only be written to once.");
@@ -308,11 +322,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		final int numTiles;
 		final int tileItems;
 
-		BoxBufferParams(int maxItems, int numInputItems, int numOutputItems, int itemWidthBits) {
-			this(maxItems, numInputItems, numOutputItems, itemWidthBits, true);
-		}
-
-		BoxBufferParams(int maxItems, int numInputItems, int numOutputItems, int itemWidthBits, boolean doubleBuffered) {
+		BoxBufferParams(int maxItems, int numInputItems, int numOutputItems, int itemWidthBits, int bramCostInLuts, boolean doubleBuffered) {
 			this.doubleBuffered = doubleBuffered;
 			this.numInputItems  = numInputItems;
 			this.numOutputItems = numOutputItems;
@@ -322,10 +332,9 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 					+ ") is not whole multiple of numInputItems ("
 					+ numInputItems + ")");
 			}
-			boolean isAltera = BoxBuffer.this.getManager().getManagerConfiguration().getBoardModel().isAltera();
-			int bramWidth = isAltera        ? 40 : 72;
+
 			int numBuffers = doubleBuffered ?  2 :  1;
-			tileItems = getTileWidth(itemWidthBits, numBuffers, maxItems, numInputItems, numOutputItems, bramWidth);
+			tileItems = getTileWidth(itemWidthBits, numBuffers, maxItems, numInputItems, numOutputItems, bramCostInLuts);
 
 			// This is the total width needed
 			int totalWidthNeeded = getTotalWidthNeeded(tileItems, numInputItems, numOutputItems);
@@ -337,24 +346,24 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 			// Number of rows, such that rows*cols >= maxItems and so that it lines up with a multiple of numInputItems
 			int paddedItems = MathUtils.nextMultiple(maxItems, MathUtils.leastCommonMultiple(numCols, numInputItems));
-			maxAddress = MathUtils.ceilDivide(paddedItems, numCols) - 1;
-			ramDepth = numBuffers * (maxAddress+ 1);
-			System.out.println("Depth = " + ramDepth + ", maxItems = " + maxItems + ", numCols = " + numCols);
-			System.out.println("numTiles = " + numTiles + ", tileItems = " + tileItems + ", totalWidthNeeded = " + totalWidthNeeded);
+			maxAddress  = MathUtils.ceilDivide(paddedItems, numCols) - 1;
+			ramDepth    = numBuffers * (maxAddress+ 1);
 			ramAddrBits = MathUtils.bitsToAddress(ramDepth);
 			rowAddrBits = ramAddrBits - MathUtils.bitsToAddress(numBuffers);
 
 			readAddrBits = rowAddrBits + colAddrBits;
 		}
 
-		int estimateDepth(int minDepth) {
-			return (int) Math.ceil(Math.pow(2.0, Math.max(9.0, Math.ceil(Math
-				.log(minDepth)
-				/ Math.log(2.0)))));
-		}
-
-		int estimateMinRamWidth(int depth, int bramWidth) {
-			return (int) Math.floor(bramWidth / Math.pow(2, Math.max(0, Math.log(depth) / Math.log(2) - 9)));
+		int estimateMinRamWidth(long depth, int bramWidth) {
+			int numOptions = MathUtils.bitsToRepresent(MathUtils.greatestCommonDivisor(bramWidth, MathUtils.nextPowerOfTwo(bramWidth)));
+			for (int i = 0; i < numOptions; i++) {
+				long optionDepth = 512       << (numOptions - 1 - i);
+				int  optionWidth = bramWidth >> (numOptions - 1 - i);
+				if (depth % optionDepth == 0) {
+					return optionWidth;
+				}
+			}
+			return bramWidth;
 		}
 
 		int getTotalWidthNeeded(int tileItems, int numInputItems, int numOutputItems) {
@@ -366,16 +375,21 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			return Math.max(inputNeeded, outputNeeded);
 		}
 
-		int getTileWidth(int itemWidthBits, int numBuffers, int maxItems, int numInputItems, int numOutputItems, int bramWidth) {
+		int getTileWidth(int itemWidthBits, int numBuffers, int maxItems, int numInputItems, int numOutputItems, int costOfBramInLuts) {
 			int bestWidth = -1;
-			double bestScore = 0.0;
+			int bestScore= Integer.MAX_VALUE;
+
+			boolean isAltera = BoxBuffer.this.getManager().getManagerConfiguration().getBoardModel().isAltera();
+			int bramWidth = isAltera ? 40 : 72;
 
 			int biggestTile = MathUtils.leastCommonMultiple(bramWidth, itemWidthBits);
 			int mostItems = biggestTile / itemWidthBits;
 
 			for (int i = 1; i <= mostItems; i++) {
-				double score = estimateEfficiency(i, itemWidthBits, numBuffers, maxItems, numInputItems, numOutputItems, bramWidth);
-				if(score > bestScore) {
+				int bramCost = costInBrams(i, itemWidthBits, numBuffers, maxItems, numInputItems, numOutputItems, bramWidth);
+				int lutCost  = costInLuts(i, itemWidthBits, numInputItems, numOutputItems, maxItems);
+				int score = lutCost + costOfBramInLuts * bramCost;
+				if(score < bestScore) {
 					bestScore = score;
 					bestWidth = i;
 				}
@@ -383,17 +397,51 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			return bestWidth;
 		}
 
-		double estimateEfficiency(int tileItems, int itemWidthBits, int numBuffers, int maxItems, int numInputItems, int numOutputItems, int bramWidth) {
+		int costInBrams(int tileItems, int itemWidthBits, int numBuffers, int maxItems, int numInputItems, int numOutputItems, int bramWidth) {
 			int totalWidthNeeded = getTotalWidthNeeded(tileItems, numInputItems, numOutputItems);
-			int depth = estimateDepth((numBuffers * maxItems + (totalWidthNeeded / 2)) / totalWidthNeeded);
+			int depth = MathUtils.nextMultiple(numBuffers * MathUtils.ceilDivide(maxItems, totalWidthNeeded), 512);
 			int optWidth = estimateMinRamWidth(depth, bramWidth);
 
-			double packingEff = (double) itemWidthBits
-				* Math.max(numInputItems, numOutputItems)
-				/ (MathUtils.nextMultiple(itemWidthBits * tileItems, optWidth)
-					* MathUtils.ceilDivide(totalWidthNeeded, tileItems));
+			int tileWidth = MathUtils.nextMultiple(itemWidthBits * tileItems, optWidth);
+			int numTiles = MathUtils.ceilDivide(totalWidthNeeded, tileItems);
 
-			return packingEff;
+			return MathUtils.ceilDivide(depth * tileWidth * numTiles, bramWidth * 512);
+		}
+
+		//TODO: move everything to the finaliser so that we know how many times it has been read from and multiply the number of LUTs for output by that.
+		int costInLuts(int tileItems, int itemWidthBits, int numInputItems, int numOutputItems, int maxItems) {
+			int totalWidthNeeded = getTotalWidthNeeded(tileItems, numInputItems, numOutputItems);
+			int numTiles = MathUtils.ceilDivide(totalWidthNeeded, tileItems);
+
+			int numCols = numTiles * tileItems;
+
+			int gcd = MathUtils.greatestCommonDivisor(numCols, numInputItems);
+			int chunks = numCols / gcd;
+			int bitsForNumerator = MathUtils.bitsToAddress(maxItems / numInputItems);
+			int bitsForDenominator = MathUtils.bitsToRepresent(gcd);
+
+			int lutsForOutput = getLutsForRotate(numCols, itemWidthBits);
+			int lutsForInput  = getLutsForRotate(chunks, itemWidthBits * gcd);
+			lutsForInput += MathUtils.isPowerOf2(gcd) ? 0 : bitsForNumerator * bitsForDenominator;//LUTs for DivMod
+			lutsForInput = numCols == numInputItems ? 0 : lutsForInput;//No rotate needed in this case.
+
+			return lutsForOutput + lutsForInput;
+		}
+
+		int getLutsForRotate(int size, int bitWidth) {
+			boolean isAltera = BoxBuffer.this.getManager().getManagerConfiguration().getBoardModel().isAltera();
+			int luts;
+			if (isAltera) {
+				luts = Math.min(log(size, 4) * 2, log(size, 3));
+			} else {
+				luts = log(size, 4);
+			}
+
+			return luts * size * bitWidth;
+		}
+
+		int log(int x, int base) {
+			return (int)Math.ceil(Math.log(x) / Math.log(base));
 		}
 	}
 }

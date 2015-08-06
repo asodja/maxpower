@@ -69,6 +69,13 @@ public class BoxBufferTest {
 			DFEVar rdIndex  = io.input("rdIndex",  dfeUInt(idxBits));
 			DFEVar wrEnable = io.input("wrEnable", dfeUInt(1));
 
+//int numBits = 29;
+//DFEVar count = control.count.makeCounterChain().addCounter(1536 / numBits, 0);
+//DFEVar in = io.input("myInput", dfeRawBits(1536), count === 0);
+//DFEVar state = dfeRawBits(1536).newInstance(this);
+//state <== count === 0 ? in : stream.offset(state, -1) >> numBits;
+//DFEVar output = state.slice(0, numBits);
+
 			DFEVector<DFEVar> wrData = io.input("wrData", inType);
 
 			BoxBuffer<DFEVar> buffer = new BoxBuffer<DFEVar>(this, maxItems, numOutputItems, inType);
