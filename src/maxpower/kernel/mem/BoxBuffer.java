@@ -9,7 +9,6 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath.DivModResult;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
@@ -34,40 +33,70 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * that the new section can be written while the old section is read, so we can do
  * useful compute on every cycle. If instead you need a sliding window or you only
  * have a single section to read, then use single buffering.
+ *
+ * Note that data must be written in linearly with new data on every cycle (when buffer
+ * is in use), but can be read out in any order. This is due to a stream offset used
+ * to cluster input items together to use FMem more efficiently. To disable this
+ * behaviour, set defaultLutCost to zero (this forces it to only optimise for LUTs).
+ *
+ * Also note that when using this buffer with more than one dimension, the fast dimension
+ * (the one we write in linearly) is the last dimension specified.
  */
 public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelLib {
 
 	private static final int defaultLutCost = 200;
 
-	private final BoxBufferParams m_params;
-	private final List<Memory<DFEVector<T>>> m_rams;
 	private final DFEVectorType<T> m_inputType;
+	private final int m_numDimensions;
+	private final BoxBufferParams m_1dParams;
+	private final List<Buffer1D> buffers;
 
 	private boolean m_hasWritten = false;
 
 	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType) {
-		this(root, maxItems, numOutputItems, inputType, defaultLutCost);
+		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType);
 	}
 
 	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
-		this(root, maxItems, numOutputItems, inputType, doubleBuffered, defaultLutCost);
+		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, doubleBuffered);
 	}
 
 	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
-		this(root, maxItems, numOutputItems, inputType, true, costOfBramInLuts);
+		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, costOfBramInLuts);
 	}
 
 	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
-		super(root);
-		KernelType<T> itemType = inputType.getContainedType();
-		m_inputType = inputType;
-		m_params = new BoxBufferParams(maxItems, inputType.getSize(), numOutputItems, itemType.getTotalBits(), costOfBramInLuts, doubleBuffered);
+		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, doubleBuffered, costOfBramInLuts);
+	}
 
-		DFEVectorType<T> tileType = new DFEVectorType<T>(itemType, m_params.tileItems);
-		m_rams = new ArrayList<Memory<DFEVector<T>>>(m_params.numTiles);
-		for (int i = 0; i < m_params.numTiles; i++) {
-			m_rams.add(mem.alloc(tileType, m_params.ramDepth));
+	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType) {
+		this(root, maxItems, numOutputItems, inputType, defaultLutCost);
+	}
+
+	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
+		this(root, maxItems, numOutputItems, inputType, doubleBuffered, defaultLutCost);
+	}
+
+	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
+		this(root, maxItems, numOutputItems, inputType, true, costOfBramInLuts);
+	}
+
+	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
+		super(root);
+		if (maxItems.length != numOutputItems.length) {
+			throw new RuntimeException("The number of dimensions of the box must be the same as the number of dimensions of the buffer.");
 		}
+		if (maxItems.length > 1) {
+			throw new RuntimeException("Only 1D supported right now.");
+		}
+
+		m_numDimensions = maxItems.length;
+		m_inputType = inputType;
+
+		m_1dParams = new BoxBufferParams(maxItems[0], inputType.getSize(), numOutputItems[0], inputType.getContainedType().getTotalBits(), costOfBramInLuts, doubleBuffered);//TODO: multidim
+
+		buffers = new ArrayList<Buffer1D>();
+		buffers.add(new Buffer1D(maxItems[0], numOutputItems[0], inputType, doubleBuffered, costOfBramInLuts));//TODO: multidim
 	}
 
 
@@ -81,96 +110,87 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 
 	public void write(DFEVector<T> data, DFEVar address, DFEVar enable) {
-		if (m_params.doubleBuffered) {
+		write(data, new DFEVar[] {address}, enable);
+	}
+
+	public void write(DFEVector<T> data, DFEVar address, DFEVar enable, DFEVar buffer) {
+		write(data, new DFEVar[] {address}, enable, buffer);
+	}
+
+	public void write(DFEVector<T> data, DFEVar[] address, DFEVar enable) {
+		if (m_1dParams.doubleBuffered) {
 			throw new RuntimeException("If the Box Buffer is double buffered, then you must specify which buffer you want to write to.");
 		}
 	}
 
-
-	public void write(DFEVector<T> data, DFEVar address, DFEVar enable, DFEVar buffer) {
+	public void write(DFEVector<T> data, DFEVar[] address, DFEVar enable, DFEVar buffer) {
 		if (!data.getType().equals(m_inputType)) {
 			throw new RuntimeException("Type given to write function does not match type passed to the BoxBuffer constructor.");
+		}
+		if (address.length != m_numDimensions) {
+			throw new RuntimeException("You must supply an address for each dimension, i.e. the length of address must be that same as the number of dimensions specified in the constructor.");
 		}
 		if (m_hasWritten) {
 			throw new RuntimeException("The box buffer can only be written to once.");
 		}
 		m_hasWritten = true;
 
-		DFEType wrRow_m_numInputItemsType = dfeUInt(address.getType().getTotalBits() + MathUtils.bitsToRepresent(m_params.numInputItems));
-		DFEVar wrRow_m_numInputItems = address.cast(wrRow_m_numInputItemsType) * m_params.numInputItems;
-		DFEVar wrRowCol = xyLookup(wrRow_m_numInputItems, dfeUInt(m_params.rowAddrBits + m_params.colAddrBits));
+		DFEType wrRow_m_numInputItemsType = dfeUInt(address[0].getType().getTotalBits() + MathUtils.bitsToRepresent(m_1dParams.numInputItems));//TODO: multidim
+		DFEVar wrRow_m_numInputItems = address[0].cast(wrRow_m_numInputItemsType) * m_1dParams.numInputItems;//TODO: get rid of this
+		DFEVar wrRowCol = xyLookup(wrRow_m_numInputItems, dfeUInt(m_1dParams.rowAddrBits + m_1dParams.colAddrBits));
 
-		DFEVar wrCol  = slice(wrRowCol, 0, m_params.colAddrBits);
-		DFEVar _wrRow = slice(wrRowCol, m_params.colAddrBits, m_params.rowAddrBits);
+		DFEVar wrCol  = slice(wrRowCol, 0, m_1dParams.colAddrBits);
+		DFEVar _wrRow = slice(wrRowCol, m_1dParams.colAddrBits, m_1dParams.rowAddrBits);
 
 		// Widen wrRow in if we've had to pad the ram depth
 		DFEVar ramWriteCol = wrCol;
-		DFEVar ramWriteRow = _wrRow.cast(dfeUInt(m_params.rowAddrBits));
+		DFEVar ramWriteRow = _wrRow.cast(dfeUInt(m_1dParams.rowAddrBits));
 		DFEVar ramWriteRowp1 = ramWriteRow + 1;
 
 		//Stop writing at the end of the RAM
-		DFEVar wrEnablep1 = ramWriteRow < m_params.maxAddress ? enable : 0;
+		DFEVar wrEnablep1 = ramWriteRow < m_1dParams.maxAddress ? enable : 0;//TODO: multidim
 
 		DFEVector<T> paddedInputData = padInput(data);
 
 		DFEVector<T> alignedInputData = alignInput(paddedInputData, ramWriteCol);
 
-		for (int i = 0; i < m_params.numTiles; i++) {
-
-			int tileLastItem = ((i + 1) * m_params.tileItems) - 1;
+		DFEVar[] writeAddress = new DFEVar[m_1dParams.numTiles];
+		DFEVar[] writeEnable  = new DFEVar[m_1dParams.numTiles];
+		for (int i = 0; i < m_1dParams.numTiles; i++) {
+			int tileLastItem = ((i + 1) * m_1dParams.tileItems) - 1;
 
 			// Write port - wrBuffer:ramWriteRow
 			DFEVar nextRow = ramWriteCol > tileLastItem;
 			DFEVar writeRow = ~nextRow ? ramWriteRow : ramWriteRowp1;
-			DFEVar writeEn = ~nextRow ? enable : wrEnablep1;
-
-			DFEVector<T> tileInputData = slice(alignedInputData, i * m_params.tileItems, m_params.tileItems);
+			writeEnable[i] = ~nextRow ? enable : wrEnablep1;
 
 			// Create actual write address
-			DFEVar writeAddress = m_params.doubleBuffered
-			                    ? writeRow.cat(buffer).cast(dfeUInt(m_params.ramAddrBits))
-			                    : writeRow.cast(dfeUInt(m_params.ramAddrBits));
-
-			m_rams[i].write(optimization.limitFanout(writeAddress, 2), tileInputData, optimization.limitFanout(writeEn, 2));
+			writeAddress[i] = m_1dParams.doubleBuffered
+			                ? writeRow.cat(buffer).cast(dfeUInt(m_1dParams.ramAddrBits))
+			                : writeRow.cast(dfeUInt(m_1dParams.ramAddrBits));
 		}
+
+		buffers[0].write(alignedInputData, writeAddress, writeEnable);//TODO: multidim
 	}
 
 
 	public DFEVector<T> read(DFEVar address) {
-		if (m_params.doubleBuffered) {
+		return read(new DFEVar[] {address});
+	}
+
+	public DFEVector<T> read(DFEVar address, DFEVar buffer) {
+		return read(new DFEVar[] {address}, buffer);
+	}
+
+	public DFEVector<T> read(DFEVar address[]) {
+		if (m_1dParams.doubleBuffered) {
 			throw new RuntimeException("If the Box Buffer is double buffered, then you must specify which buffer you want to read from.");
 		}
 		return read(address, null);
 	}
 
-
-	public DFEVector<T> read(DFEVar address, DFEVar buffer) {
-		DFEVar addr = xyLookup(address, dfeUInt(m_params.readAddrBits));
-
-		// Slice up into mux select + row select
-		DFEVar rdShiftAmt = optimization.limitFanout(slice(addr, 0, m_params.colAddrBits), 30);
-		DFEVar ramReadRow = slice(addr, m_params.colAddrBits, m_params.rowAddrBits);
-
-
-		// Read Logic - calculate the next address when we read off the end of the buffer
-		DFEVar ramReadRowp1 = ramReadRow + 1;
-
-		List<T> ramOutputData = new ArrayList<T>();
-		for (int i = 0; i < m_params.numTiles; i++) {
-			// Choose which row to read from this RAM depending on the column
-			// the first item is in (use -1 and gte to avoid constant overflow)
-			DFEVar readRow = (i + 1) * m_params.tileItems - 1 >= rdShiftAmt ? ramReadRow : ramReadRowp1;
-
-			// Read port - rdBuffer:readRow
-			DFEVar readAddress = m_params.doubleBuffered
-			                   ? readRow.cat(buffer).cast(dfeUInt(m_params.ramAddrBits))
-			                   : readRow.cast(dfeUInt(m_params.ramAddrBits));
-
-			// Read from the RAM and add it to the output
-			ramOutputData.addAll(m_rams[i].read(optimization.limitFanout(readAddress, 2)).getElementsAsList());
-		}
-
-		return alignRamOutput(rdShiftAmt, ramOutputData);
+	public DFEVector<T> read(DFEVar[] address, DFEVar buffer) {
+		return buffers[0].read(address[0], buffer);//TODO: multidim
 	}
 
 
@@ -180,27 +200,18 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		return output.cast(dfeUInt(width));
 	}
 
-	private DFEVector<T> slice(DFEVector<T> input, int base, int width) {
-		List<T> output = new ArrayList<T>();
-		for (int j = 0; j < width; j++) {
-			output.add(input[base + j]);
-		}
-		return asDFEVector(output);
-	}
-
 
 	private DFEVector<T> padInput(DFEVector<T> input) {
 		List<T> paddedInputData = new ArrayList<T>();
-		for (int i = 0; i < m_params.numCols; i++) {
-			if(i < m_params.numInputItems) {
+		for (int i = 0; i < m_1dParams.numCols; i++) {
+			if(i < m_1dParams.numInputItems) {
 				// New Data
 				paddedInputData.add(input[i]);
-			} else if(i > (m_params.numCols - m_params.tileItems)) {
-
-				int offsetFromEnd = (m_params.numCols - 1) - i;
-				int index = m_params.numInputItems
-					- (1 + (offsetFromEnd % m_params.numInputItems));
-				int lookback = 1 + offsetFromEnd / m_params.numInputItems;
+			} else if(i > (m_1dParams.numCols - m_1dParams.tileItems)) {
+				//Old data
+				int offsetFromEnd = (m_1dParams.numCols - 1) - i;
+				int index = m_1dParams.numInputItems - (1 + (offsetFromEnd % m_1dParams.numInputItems));
+				int lookback = 1 + offsetFromEnd / m_1dParams.numInputItems;
 
 				paddedInputData.add(stream.offset(input[index], -lookback));
 			} else {
@@ -214,9 +225,9 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 	private DFEVector<T> alignInput(DFEVector<T> input, DFEVar ramWriteCol) {
 		DFEVector<T> output;
-		if(m_params.numInputItems != m_params.numCols) {
-			int gcd = MathUtils.greatestCommonDivisor(m_params.numCols, m_params.numInputItems);
-			int chunks = m_params.numCols / gcd;
+		if(m_1dParams.numInputItems != m_1dParams.numCols) {
+			int gcd = MathUtils.greatestCommonDivisor(m_1dParams.numCols, m_1dParams.numInputItems);
+			int chunks = m_1dParams.numCols / gcd;
 
 			DFEVector<DFEVector<T>> chunkedInputData = as2dDFEVector(input, gcd, chunks);
 			DFEVar rotate = KernelMath.divMod(ramWriteCol, constant.var(gcd), MathUtils.bitsToAddress(chunks)).getQuotient();//TODO: can we use constant division instead?
@@ -240,14 +251,9 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 
 	private DFEVector<T> asSingleDFEVector(DFEVector<DFEVector<T>> input) {
-		return asSingleDFEVector(input.getElementsAsList());
-	}
-
-
-	private DFEVector<T> asSingleDFEVector(List<DFEVector<T>> input) {
-		DFEVectorType<T> type = new DFEVectorType<T>(input[0][0].getType(), input.size() * input[0].getSize());
+		DFEVectorType<T> type = new DFEVectorType<T>(input[0][0].getType(), input.getSize() * input[0].getSize());
 		DFEVector<T> output = type.newInstance(this);
-		for (int i = 0; i < input.size(); i++) {
+		for (int i = 0; i < input.getSize(); i++) {
 			for (int j = 0; j < input[i].getSize(); j++) {
 				output[i * input[i].getSize() + j] <== input[i][j];
 			}
@@ -257,11 +263,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 
 	private DFEVector<DFEVector<T>> as2dDFEVector(DFEVector<T> input, int numItems, int numVectors) {
-		return as2dDFEVector(input.getElementsAsList(), numItems, numVectors);
-	}
-
-
-	private DFEVector<DFEVector<T>> as2dDFEVector(List<T> input, int numItems, int numVectors) {
 		DFEVectorType<DFEVector<T>> type = new DFEVectorType<DFEVector<T>>(new DFEVectorType<T>(input[0].getType(), numItems), numVectors);
 		DFEVector<DFEVector<T>> output = type.newInstance(this);
 
@@ -274,36 +275,102 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	}
 
 
-	private DFEVector<T> alignRamOutput(DFEVar rdShiftAmt, List<T> ramOut) {
-		DFEVector<T> shiftedRamOut = asDFEVector(ramOut).rotateElementsRight(rdShiftAmt);
-		DFEVector<T> outItem = slice(shiftedRamOut, 0, m_params.numOutputItems);
-
-		// Minimize unconnected warnings; these will optimize away
-		for (int j = outItem.getSize(); j < shiftedRamOut.getSize(); j++) {
-			shiftedRamOut[j].setReportOnUnused(false);
-		}
-
-		return outItem;
-	}
-
 	/**
 	 * Find the row and column for item i in ordered table (row-major)
 	 */
 	private DFEVar xyLookup(DFEVar rdIndex, DFEType addrType) {
 		/* If numcols is a power of two we can slice */
-		if(MathUtils.isPowerOf2(m_params.numCols)) {
-			if((int) Math.pow(2, m_params.colAddrBits) != m_params.numCols)
+		if(MathUtils.isPowerOf2(m_1dParams.numCols)) {
+			if((int) Math.pow(2, m_1dParams.colAddrBits) != m_1dParams.numCols)
 				throw new MaxCompilerAPIError(getManager(), "Math.pow(2, colAddrBits) != numCols");
 			else
 				return rdIndex.cast(addrType);
 		} else {
 			DivModResult dmr = KernelMath.divMod(rdIndex,
-				constant.var(m_params.numCols), addrType.getTotalBits() - m_params.colAddrBits);
+				constant.var(m_1dParams.numCols), addrType.getTotalBits() - m_1dParams.colAddrBits);
 			return dmr.getQuotient().cat(
-				dmr.getRemainder().cast(dfeUInt(m_params.colAddrBits))).cast(addrType);
+				dmr.getRemainder().cast(dfeUInt(m_1dParams.colAddrBits))).cast(addrType);
 		}
 	}
 
+	private class Buffer1D extends KernelLib {
+		private final List<Memory<DFEVector<T>>> m_rams;
+
+		public Buffer1D(int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
+			super(BoxBuffer.this);
+			DFEVectorType<T> tileType = new DFEVectorType<T>(inputType.getContainedType(), m_1dParams.tileItems);
+			m_rams = new ArrayList<Memory<DFEVector<T>>>(m_1dParams.numTiles);
+			for (int i = 0; i < m_1dParams.numTiles; i++) {
+				m_rams.add(mem.alloc(tileType, m_1dParams.ramDepth));
+			}
+		}
+
+
+		public void write(DFEVector<T> alignedInputData, DFEVar[] writeAddress, DFEVar[] writeEn) {
+			for (int i = 0; i < m_1dParams.numTiles; i++) {
+				DFEVector<T> tileInputData = slice(alignedInputData, i * m_1dParams.tileItems, m_1dParams.tileItems);
+				m_rams[i].write(optimization.limitFanout(writeAddress[i], 2), tileInputData, optimization.limitFanout(writeEn[i], 2));
+			}
+		}
+
+
+		public DFEVector<T> read(DFEVar address, DFEVar buffer) {
+			DFEVar addr = xyLookup(address, dfeUInt(m_1dParams.readAddrBits));
+
+			// Slice up into mux select + row select
+			DFEVar rdShiftAmt = optimization.limitFanout(slice(addr, 0, m_1dParams.colAddrBits), 30);
+			DFEVar ramReadRow = slice(addr, m_1dParams.colAddrBits, m_1dParams.rowAddrBits);
+
+
+			// Read Logic - calculate the next address when we read off the end of the buffer
+			DFEVar ramReadRowp1 = ramReadRow + 1;
+
+			List<T> ramOutputData = new ArrayList<T>();
+			for (int i = 0; i < m_1dParams.numTiles; i++) {
+				// Choose which row to read from this RAM depending on the column
+				// the first item is in (use -1 and gte to avoid constant overflow)
+				DFEVar readRow = (i + 1) * m_1dParams.tileItems - 1 >= rdShiftAmt ? ramReadRow : ramReadRowp1;
+
+				// Read port - rdBuffer:readRow
+				DFEVar readAddress = m_1dParams.doubleBuffered
+				                   ? readRow.cat(buffer).cast(dfeUInt(m_1dParams.ramAddrBits))
+				                   : readRow.cast(dfeUInt(m_1dParams.ramAddrBits));
+
+				// Read from the RAM and add it to the output
+				ramOutputData.addAll(m_rams[i].read(optimization.limitFanout(readAddress, 2)).getElementsAsList());
+			}
+
+			return alignRamOutput(rdShiftAmt, ramOutputData);
+		}
+
+
+		//Slice bits out of a DFEVar and reinterpret as an unsigned integer (rather than raw bits).
+		private DFEVar slice(DFEVar input, int base, int width) {
+			DFEVar output = input.slice(base, width);
+			return output.cast(dfeUInt(width));
+		}
+
+		private DFEVector<T> slice(DFEVector<T> input, int base, int width) {
+			List<T> output = new ArrayList<T>();
+			for (int j = 0; j < width; j++) {
+				output.add(input[base + j]);
+			}
+			return asDFEVector(output);
+		}
+
+
+		private DFEVector<T> alignRamOutput(DFEVar rdShiftAmt, List<T> ramOut) {
+			DFEVector<T> shiftedRamOut = asDFEVector(ramOut).rotateElementsRight(rdShiftAmt);
+			DFEVector<T> outItem = slice(shiftedRamOut, 0, m_1dParams.numOutputItems);
+
+			// Minimize unconnected warnings; these will optimize away
+			for (int j = outItem.getSize(); j < shiftedRamOut.getSize(); j++) {
+				shiftedRamOut[j].setReportOnUnused(false);
+			}
+
+			return outItem;
+		}
+	}
 
 
 	private class BoxBufferParams {
