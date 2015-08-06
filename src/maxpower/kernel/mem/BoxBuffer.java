@@ -9,6 +9,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath.DivModResult;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
@@ -50,6 +51,8 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	private final int m_numDimensions;
 	private final BoxBufferParams m_1dParams;
 	private final List<Buffer1D> buffers;
+	private final int[] m_maxItems;
+	private final int[] m_numOutputItems;
 
 	private boolean m_hasWritten = false;
 
@@ -92,11 +95,26 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 		m_numDimensions = maxItems.length;
 		m_inputType = inputType;
+		m_numOutputItems = new int[m_numDimensions];
+		m_maxItems = new int[m_numDimensions];
+		for (int i = 0; i < m_numDimensions; i++) {
+			m_numOutputItems[i] = numOutputItems[i];
+			m_maxItems[i] = maxItems[i];
+		}
 
-		m_1dParams = new BoxBufferParams(maxItems[0], inputType.getSize(), numOutputItems[0], inputType.getContainedType().getTotalBits(), costOfBramInLuts, doubleBuffered);//TODO: multidim
+		int numBuffers = 1;
+		int bufferDepth = maxItems[m_numDimensions - 1];
+		for (int i = m_numDimensions - 2; i >= 0; i--) {
+			numBuffers  *= numOutputItems[i];
+			bufferDepth *= MathUtils.ceilDivide(maxItems[i], numOutputItems[i]);
+		}
 
-		buffers = new ArrayList<Buffer1D>();
-		buffers.add(new Buffer1D(maxItems[0], numOutputItems[0], inputType, doubleBuffered, costOfBramInLuts));//TODO: multidim
+		m_1dParams = new BoxBufferParams(bufferDepth, inputType.getSize(), numOutputItems[m_numDimensions - 1], inputType.getContainedType().getTotalBits(), costOfBramInLuts, doubleBuffered);
+
+		buffers = new ArrayList<Buffer1D>(numBuffers);
+		for (int i = 0; i < numBuffers; i++) {
+			buffers.add(new Buffer1D(inputType.getContainedType()));
+		}
 	}
 
 
@@ -135,9 +153,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		}
 		m_hasWritten = true;
 
-		DFEType wrRow_m_numInputItemsType = dfeUInt(address[0].getType().getTotalBits() + MathUtils.bitsToRepresent(m_1dParams.numInputItems));//TODO: multidim
-		DFEVar wrRow_m_numInputItems = address[0].cast(wrRow_m_numInputItemsType) * m_1dParams.numInputItems;//TODO: get rid of this
-		DFEVar wrRowCol = xyLookup(wrRow_m_numInputItems, dfeUInt(m_1dParams.rowAddrBits + m_1dParams.colAddrBits));
+		DFEVar wrRowCol = xyLookup(address[0], dfeUInt(m_1dParams.rowAddrBits + m_1dParams.colAddrBits));//TODO: multidim
 
 		DFEVar wrCol  = slice(wrRowCol, 0, m_1dParams.colAddrBits);
 		DFEVar _wrRow = slice(wrRowCol, m_1dParams.colAddrBits, m_1dParams.rowAddrBits);
@@ -278,15 +294,15 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	/**
 	 * Find the row and column for item i in ordered table (row-major)
 	 */
-	private DFEVar xyLookup(DFEVar rdIndex, DFEType addrType) {
+	private DFEVar xyLookup(DFEVar index, DFEType addrType) {
 		/* If numcols is a power of two we can slice */
 		if(MathUtils.isPowerOf2(m_1dParams.numCols)) {
 			if((int) Math.pow(2, m_1dParams.colAddrBits) != m_1dParams.numCols)
 				throw new MaxCompilerAPIError(getManager(), "Math.pow(2, colAddrBits) != numCols");
 			else
-				return rdIndex.cast(addrType);
+				return index.cast(addrType);
 		} else {
-			DivModResult dmr = KernelMath.divMod(rdIndex,
+			DivModResult dmr = KernelMath.divMod(index,
 				constant.var(m_1dParams.numCols), addrType.getTotalBits() - m_1dParams.colAddrBits);
 			return dmr.getQuotient().cat(
 				dmr.getRemainder().cast(dfeUInt(m_1dParams.colAddrBits))).cast(addrType);
@@ -296,9 +312,9 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	private class Buffer1D extends KernelLib {
 		private final List<Memory<DFEVector<T>>> m_rams;
 
-		public Buffer1D(int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
+		public Buffer1D(KernelType<T> itemType) {
 			super(BoxBuffer.this);
-			DFEVectorType<T> tileType = new DFEVectorType<T>(inputType.getContainedType(), m_1dParams.tileItems);
+			DFEVectorType<T> tileType = new DFEVectorType<T>(itemType, m_1dParams.tileItems);
 			m_rams = new ArrayList<Memory<DFEVector<T>>>(m_1dParams.numTiles);
 			for (int i = 0; i < m_1dParams.numTiles; i++) {
 				m_rams.add(mem.alloc(tileType, m_1dParams.ramDepth));

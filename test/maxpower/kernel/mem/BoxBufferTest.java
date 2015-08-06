@@ -18,16 +18,16 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 public class BoxBufferTest {
 
-	@Test public void edgeCase_5_3() { testBoxBuffer( 500,  24,  5,  3); }
-	@Test public void pow2mode()     { testBoxBuffer(1024, 128,  2,  2); }
-	@Test public void crs8pipe()     { testBoxBuffer(2508,  48, 12,  8); }
-	@Test public void crs12pipe()    { testBoxBuffer(2508,  48, 12, 12); }
-	@Test public void crs16pipe()    { testBoxBuffer(2508,  48, 12, 16); }
-	@Test public void gsmp_4_16()    { testBoxBuffer(2500,  24,  4, 16); }
-	@Test public void gsmp_4_20()    { testBoxBuffer(2000,  24,  4, 20); }
-	@Test public void gsmp_16_20()   { testBoxBuffer(2512,  24, 16, 20); }
-	@Test public void gsmp_12_8()    { testBoxBuffer(2508,  24, 12,  8); }
-	@Test public void gsmp_16_8()    { testBoxBuffer(2512,  24, 16,  8); }
+	@Test public void edgeCase_5_3() { testBoxBuffer( 500, 24,  5,  3); }
+	@Test public void pow2mode()     { testBoxBuffer(1024, 64,  2,  2); }
+	@Test public void crs8pipe()     { testBoxBuffer(2508, 48, 12,  8); }
+	@Test public void crs12pipe()    { testBoxBuffer(2508, 48, 12, 12); }
+	@Test public void crs16pipe()    { testBoxBuffer(2508, 48, 12, 16); }
+	@Test public void gsmp_4_16()    { testBoxBuffer(2500, 24,  4, 16); }
+	@Test public void gsmp_4_20()    { testBoxBuffer(2000, 24,  4, 20); }
+	@Test public void gsmp_16_20()   { testBoxBuffer(2512, 24, 16, 20); }
+	@Test public void gsmp_12_8()    { testBoxBuffer(2508, 24, 12,  8); }
+	@Test public void gsmp_16_8()    { testBoxBuffer(2512, 24, 16,  8); }
 
 
 	private void testBoxBuffer(int maxItems, int itemBitWidth, int numInputItems, int numOutputItems) {
@@ -39,14 +39,15 @@ public class BoxBufferTest {
 		mgr.setKernel(dutA);
 
 		TestData data = new TestData(maxItems, itemBitWidth, numInputItems, numOutputItems);
-		mgr.setInputDataRaw("wrData",   data.m_wrData);
-		mgr.setInputDataRaw("wrRow",    data.m_wrRow);
-		mgr.setInputDataRaw("wrEnable", data.m_wrEnable);
-		mgr.setInputDataRaw("wrBuffer", data.m_wrBuffer);
-		mgr.setInputDataRaw("rdBuffer", data.m_rdBuffer);
-		mgr.setInputData(   "rdIndex",  data.m_rdIndex);
+		mgr.setInputDataRaw("wrData", data.m_wrData);
 
-		mgr.setKernelCycles(data.numCycles);
+		mgr.setInputData("wrEnable", data.m_wrEnable);
+		mgr.setInputData("wrBuffer", data.m_wrBuffer);
+		mgr.setInputData("rdBuffer", data.m_rdBuffer);
+		mgr.setInputData("wrIndex",  data.m_wrIndex);
+		mgr.setInputData("rdIndex",  data.m_rdIndex);
+
+		mgr.setKernelCycles(data.m_numCycles);
 
 		mgr.runTest();
 
@@ -60,79 +61,70 @@ public class BoxBufferTest {
 			DFEVectorType<DFEVar> inType  = new DFEVectorType<DFEVar>(dfeUInt(totalBits), numInputItems);
 			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(dfeUInt(totalBits), numOutputItems);
 
-			int rowBits = MathUtils.bitsToAddress(maxItems / numInputItems);
 			int idxBits = MathUtils.bitsToAddress(maxItems);
 
 			DFEVar wrBuffer = io.input("wrBuffer", dfeUInt(1));
 			DFEVar rdBuffer = io.input("rdBuffer", dfeUInt(1));
-			DFEVar wrRow    = io.input("wrRow",    dfeUInt(rowBits));
+			DFEVar wrIndex  = io.input("wrIndex",  dfeUInt(idxBits));
 			DFEVar rdIndex  = io.input("rdIndex",  dfeUInt(idxBits));
 			DFEVar wrEnable = io.input("wrEnable", dfeUInt(1));
 
 			DFEVector<DFEVar> wrData = io.input("wrData", inType);
 
 			BoxBuffer<DFEVar> buffer = new BoxBuffer<DFEVar>(this, maxItems, numOutputItems, inType);
-			buffer.write(wrData, wrRow, wrEnable, wrBuffer);
+			buffer.write(wrData, wrIndex, wrEnable, wrBuffer);
 			io.output("rdData", outType) <== buffer.read(rdIndex, rdBuffer);
 		}
 	}
 
 	private class TestData {
+		final int[] m_data;
 		final Bits[] m_wrData;
-		final Bits[] m_wrRow;
-		final Bits[] m_wrEnable;
-		final Bits[] m_wrBuffer;
-		final Bits[] m_rdBuffer;
+		final double[] m_wrEnable;
+		final double[] m_wrBuffer;
+		final double[] m_rdBuffer;
+		final double[] m_wrIndex;
 		final double[] m_rdIndex;
-		final int numCycles;
+		final int m_numCycles;
 		final int m_itemBitWidth;
 		final int m_numOutputItems;
 
 
-		private TestData(int maxItems, int itemBitWidth, int numInputItems, int numOutputItems) {
-			int inDataWidth  = numInputItems * itemBitWidth;
-			int rowAddrWidth = MathUtils.bitsToAddress(maxItems / numInputItems);
-			numCycles        = 2 * MathUtils.ceilDivide(maxItems, numInputItems);
+		private TestData(int maxItems, int itemBitWidth, int numInputItems, int numOutputItems) {//TODO: multidim
+			DFEVectorType<DFEVar> inType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(itemBitWidth), numInputItems);
+			m_numCycles        = 2 * MathUtils.ceilDivide(maxItems, numInputItems);
 			m_itemBitWidth   = itemBitWidth;
 			m_numOutputItems = numOutputItems;
 
-			m_wrData   = new Bits[numCycles];
-			m_wrRow    = new Bits[numCycles];
-			m_wrEnable = new Bits[numCycles];
-			m_wrBuffer = new Bits[numCycles];
-			m_rdBuffer = new Bits[numCycles];
-			m_rdIndex  = new double[numCycles];
+			m_data = new int[maxItems];
+			int maxValue = itemBitWidth < 31 ? 1 << itemBitWidth : Integer.MAX_VALUE;
+			for (int i = 0; i < maxItems; i++) {
+				m_data[i] = i % maxValue;
+			}
+
+			m_wrData   = new Bits[m_numCycles];
+			m_wrEnable = new double[m_numCycles];
+			m_wrBuffer = new double[m_numCycles];
+			m_rdBuffer = new double[m_numCycles];
+			m_wrIndex  = new double[m_numCycles];
+			m_rdIndex  = new double[m_numCycles];
 
 			// Build up input data
-			for (int i = 0; i < numCycles; i++) {
-				// Write first [maxItems] items into the buffer
-				// Don't over-write as it will wrap
-				if ((i * numInputItems + numInputItems) <= maxItems) {
-					m_wrEnable[i] = Bits.allOnes(1);
-
-					m_wrData[i] = new Bits(inDataWidth);
-					for (int j = 0; j < numInputItems; j++) {
-						m_wrData[i].setBits(j * itemBitWidth, itemBitWidth, i * numInputItems + j);
-					}
-
-					// Switch buffers as we reach maxItems written to buffer
-					m_wrBuffer[i] = Bits.allZeros(1);
-					m_rdBuffer[i] = Bits.allOnes(1);
-				} else {
-					m_wrEnable[i] = Bits.allZeros(1);
-
-					m_wrData[i] = Bits.allZeros(inDataWidth);
-
-					// Switch buffers as we reach maxItems written to buffer
-					m_wrBuffer[i] = Bits.allOnes(1);
-					m_rdBuffer[i] = Bits.allZeros(1);
+			for (int i = 0; i < m_numCycles; i++) {
+				boolean phase1 = i < m_numCycles / 2;
+				m_wrEnable[i] = phase1 ? 1 : 0;
+				m_wrBuffer[i] = phase1 ? 0 : 1;
+				m_rdBuffer[i] = phase1 ? 1 : 0;
+				int[] input = new int[numInputItems];
+				for (int j = 0; j < numInputItems; j++) {
+					input[j] = phase1 ? m_data[numInputItems * i + j] : 0;
 				}
+				m_wrData[i] = inType.encodeConstant(input);
 
-				m_wrRow[i] = new Bits(rowAddrWidth);
-				m_wrRow[i].setBits(i % (maxItems / numInputItems));
+				m_wrIndex[i] = (numInputItems * i) % maxItems;
 
 				// Test the corners first, then random offsets
-				switch (i - numCycles / 2) {
+				switch (i - m_numCycles / 2) {
 					case 0:
 						m_rdIndex[i] = maxItems - numOutputItems;
 						break;
@@ -146,18 +138,16 @@ public class BoxBufferTest {
 		}
 
 		boolean testOutput(List<Bits> rdData) {
+			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(m_itemBitWidth), m_numOutputItems);
 			boolean testPassed = true;
-			for (int i = numCycles / 2; i < numCycles; i++) {
-				//TODO: generate golden output properly (actually base it on the input), and then compare integers (not Bits).
-				Bits tmp = new Bits(m_numOutputItems * m_itemBitWidth);
-				long index = (long) m_rdIndex[i];
+			for (int i = m_numCycles / 2; i < m_numCycles; i++) {
+				@SuppressWarnings("unchecked")
+                List<Double> output = outType.decodeConstant(rdData[i]);
 				for (int j = 0; j < m_numOutputItems; j++) {
-					tmp.setBits(j * m_itemBitWidth, m_itemBitWidth, index++);
-				}
-
-				if (!tmp.equals(rdData[i])) {
-					System.out.println("[" + i + "] " + m_rdIndex[i] + " Value expected: " + tmp.valueAsHexString() + " != got: " + rdData[i].valueAsHexString());
-					testPassed = false;
+					if (output[j].intValue() != m_data[(int)m_rdIndex[i] + j]) {
+						System.out.println("[" + i + "] " + ((int)m_rdIndex[i] + j) + " Value expected: " + m_data[(int)m_rdIndex[i] + j] + " != got: " + output[j].intValue());
+						testPassed = false;
+					}
 				}
 			}
 			return testPassed;
