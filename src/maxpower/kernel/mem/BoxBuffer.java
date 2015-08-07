@@ -53,6 +53,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	private final List<Buffer1D> buffers;
 	private final int[] m_maxItems;
 	private final int[] m_numOutputItems;
+	private final int[] m_skip;
 
 	private boolean m_hasWritten = false;
 
@@ -93,10 +94,11 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			throw new RuntimeException("Only 1D supported right now.");
 		}
 
-		m_numDimensions = maxItems.length;
-		m_inputType = inputType;
+		m_numDimensions  = maxItems.length;
+		m_inputType      = inputType;
 		m_numOutputItems = new int[m_numDimensions];
-		m_maxItems = new int[m_numDimensions];
+		m_maxItems       = new int[m_numDimensions];
+		m_skip           = new int[m_numDimensions];
 		for (int i = 0; i < m_numDimensions; i++) {
 			m_numOutputItems[i] = numOutputItems[i];
 			m_maxItems[i] = maxItems[i];
@@ -104,9 +106,11 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 		int numBuffers = 1;
 		int bufferDepth = maxItems[m_numDimensions - 1];
+		m_skip[m_numDimensions - 1] = 1;
 		for (int i = m_numDimensions - 2; i >= 0; i--) {
 			numBuffers  *= numOutputItems[i];
 			bufferDepth *= MathUtils.ceilDivide(maxItems[i], numOutputItems[i]);
+			m_skip[i]    = MathUtils.ceilDivide(maxItems[i], numOutputItems[i]) * m_skip[i + 1];
 		}
 
 		m_1dParams = new BoxBufferParams(bufferDepth, inputType.getSize(), numOutputItems[m_numDimensions - 1], inputType.getContainedType().getTotalBits(), costOfBramInLuts, doubleBuffered);
@@ -152,8 +156,9 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			throw new RuntimeException("The box buffer can only be written to once.");
 		}
 		m_hasWritten = true;
+		optimization.pushEnableBitGrowth(false);//Make sure we don't have any weird modes on
 
-		DFEVar wrRowCol = xyLookup(address[0], dfeUInt(m_1dParams.rowAddrBits + m_1dParams.colAddrBits));//TODO: multidim
+		DFEVar wrRowCol = xyLookup(get1dAddress(address), dfeUInt(m_1dParams.rowAddrBits + m_1dParams.colAddrBits));
 
 		DFEVar wrCol  = slice(wrRowCol, 0, m_1dParams.colAddrBits);
 		DFEVar _wrRow = slice(wrRowCol, m_1dParams.colAddrBits, m_1dParams.rowAddrBits);
@@ -164,7 +169,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		DFEVar ramWriteRowp1 = ramWriteRow + 1;
 
 		//Stop writing at the end of the RAM
-		DFEVar wrEnablep1 = ramWriteRow < m_1dParams.maxAddress ? enable : 0;//TODO: multidim
+		DFEVar wrEnablep1 = ramWriteRow < m_1dParams.maxAddress ? enable : 0;
 
 		DFEVector<T> paddedInputData = padInput(data);
 
@@ -186,7 +191,12 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			                : writeRow.cast(dfeUInt(m_1dParams.ramAddrBits));
 		}
 
-		buffers[0].write(alignedInputData, writeAddress, writeEnable);//TODO: multidim
+		for (int i = 0; i < buffers.size(); i++) {
+			DFEVar inThisBuffer = constant.var(true);//TODO: multidim
+			buffers[i].write(alignedInputData, writeAddress, writeEnable, inThisBuffer);
+
+		}
+		optimization.popEnableBitGrowth();
 	}
 
 
@@ -214,6 +224,34 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	private DFEVar slice(DFEVar input, int base, int width) {
 		DFEVar output = input.slice(base, width);
 		return output.cast(dfeUInt(width));
+	}
+
+
+	private DFEVar get1dAddress(DFEVar[] address) {
+		optimization.pushEnableBitGrowth(true);
+		List<DFEVar> summands = new ArrayList<DFEVar>();
+		summands.add(address[m_numDimensions - 1]);
+		for (int i = 0; i < m_numDimensions - 1; i++) {
+			summands.add(address[i] * m_skip[i]);
+		}
+		DFEVar output = adderTree(summands);
+		optimization.popEnableBitGrowth();
+		return output.cast(dfeUInt(MathUtils.bitsToAddress(m_1dParams.maxItems)));
+	}
+
+
+	private DFEVar adderTree(List<DFEVar> input) {
+		if (input.size() == 1) {
+			return input[0];
+		}
+		List<DFEVar> output = new ArrayList<DFEVar>();
+		for (int i = 0; i < input.size() / 2; i++) {
+			output.add(input[2 * i] + input[2 * i + 1]);
+		}
+		if (input.size() % 2 != 0) {
+			output.add(input[input.size() - 1]);
+		}
+		return adderTree(output);
 	}
 
 
@@ -322,15 +360,16 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		}
 
 
-		public void write(DFEVector<T> alignedInputData, DFEVar[] writeAddress, DFEVar[] writeEn) {
+		public void write(DFEVector<T> alignedInputData, DFEVar[] writeAddress, DFEVar[] writeEn, DFEVar enable) {
 			for (int i = 0; i < m_1dParams.numTiles; i++) {
 				DFEVector<T> tileInputData = slice(alignedInputData, i * m_1dParams.tileItems, m_1dParams.tileItems);
-				m_rams[i].write(optimization.limitFanout(writeAddress[i], 2), tileInputData, optimization.limitFanout(writeEn[i], 2));
+				m_rams[i].write(optimization.limitFanout(writeAddress[i], 2), tileInputData, optimization.limitFanout(writeEn[i] & enable, 2));
 			}
 		}
 
 
 		public DFEVector<T> read(DFEVar address, DFEVar buffer) {
+			optimization.pushEnableBitGrowth(false);//Make sure we don't have any weird modes on
 			DFEVar addr = xyLookup(address, dfeUInt(m_1dParams.readAddrBits));
 
 			// Slice up into mux select + row select
@@ -356,6 +395,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 				ramOutputData.addAll(m_rams[i].read(optimization.limitFanout(readAddress, 2)).getElementsAsList());
 			}
 
+			optimization.popEnableBitGrowth();
 			return alignRamOutput(rdShiftAmt, ramOutputData);
 		}
 
@@ -396,6 +436,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		final int maxAddress;
 		final int ramAddrBits;
 		final int rowAddrBits;
+		final int maxItems;
 
 		final boolean doubleBuffered;
 
@@ -409,6 +450,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			this.doubleBuffered = doubleBuffered;
 			this.numInputItems  = numInputItems;
 			this.numOutputItems = numOutputItems;
+			this.maxItems       = maxItems;
 
 			if(maxItems % numInputItems != 0) {
 				throw new MaxCompilerAPIError("maxItems (" + maxItems

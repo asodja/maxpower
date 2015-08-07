@@ -18,27 +18,28 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 public class BoxBufferTest {
 
-	@Test public void edgeCase_5_3() { testBoxBuffer( 500, 24,  5,  3); }
-	@Test public void pow2mode()     { testBoxBuffer(1024, 64,  2,  2); }
-	@Test public void crs8pipe()     { testBoxBuffer(2508, 48, 12,  8); }
-	@Test public void crs12pipe()    { testBoxBuffer(2508, 48, 12, 12); }
-	@Test public void crs16pipe()    { testBoxBuffer(2508, 48, 12, 16); }
-	@Test public void gsmp_4_16()    { testBoxBuffer(2500, 24,  4, 16); }
-	@Test public void gsmp_4_20()    { testBoxBuffer(2000, 24,  4, 20); }
-	@Test public void gsmp_16_20()   { testBoxBuffer(2512, 24, 16, 20); }
-	@Test public void gsmp_12_8()    { testBoxBuffer(2508, 24, 12,  8); }
-	@Test public void gsmp_16_8()    { testBoxBuffer(2512, 24, 16,  8); }
+	private static final int m_itemBitWidth = 24;
+
+	@Test public void coprime_5_3()          { testBoxBuffer(3125,  5,  3); }
+	@Test public void simple_2_2()           { testBoxBuffer(1024,  2,  2); }
+	@Test public void nonPow2simle()         { testBoxBuffer(2508, 12, 12); }
+	@Test public void pow2multiple_4_16()    { testBoxBuffer(2500,  4, 16); }
+	@Test public void nonPow2multiple_4_20() { testBoxBuffer(2500,  4, 20); }
+	@Test public void nonMultiple_12_16()    { testBoxBuffer(2508, 12, 16); }
+	@Test public void nonMultiple_16_20()    { testBoxBuffer(2512, 16, 20); }
+	@Test public void pow2factor_16_8()      { testBoxBuffer(2512, 16,  8); }
+	@Test public void nonFactor_12_8()       { testBoxBuffer(2508, 12,  8); }
 
 
-	private void testBoxBuffer(int maxItems, int itemBitWidth, int numInputItems, int numOutputItems) {
-		SimulationManager mgr = new SimulationManager("BoxBufferTest_"+maxItems+"_"+itemBitWidth+"_"+numInputItems+"_"+numOutputItems,
+	private void testBoxBuffer(int maxItems, int numInputItems, int numOutputItems) {
+		SimulationManager mgr = new SimulationManager("BoxBufferTest_"+maxItems+"_"+numInputItems+"_"+numOutputItems,
 						                              SimulationParams.BITACCURATE_MAX4);
 
-		TestKernel dutA = new TestKernel(mgr.makeKernelParameters(), maxItems, numInputItems, numOutputItems, itemBitWidth);
+		TestKernel dutA = new TestKernel(mgr.makeKernelParameters(), maxItems, numInputItems, numOutputItems);
 
 		mgr.setKernel(dutA);
 
-		TestData data = new TestData(maxItems, itemBitWidth, numInputItems, numOutputItems);
+		TestData data = new TestData(maxItems, numInputItems, numOutputItems);
 		mgr.setInputDataRaw("wrData", data.m_wrData);
 
 		mgr.setInputData("wrEnable", data.m_wrEnable);
@@ -56,10 +57,10 @@ public class BoxBufferTest {
 
 
 	private class TestKernel extends Kernel {
-		private TestKernel(KernelParameters p, int maxItems, int numInputItems, int numOutputItems, int totalBits) {
+		private TestKernel(KernelParameters p, int maxItems, int numInputItems, int numOutputItems) {
 			super(p);
-			DFEVectorType<DFEVar> inType  = new DFEVectorType<DFEVar>(dfeUInt(totalBits), numInputItems);
-			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(dfeUInt(totalBits), numOutputItems);
+			DFEVectorType<DFEVar> inType  = new DFEVectorType<DFEVar>(dfeUInt(m_itemBitWidth), numInputItems);
+			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(dfeUInt(m_itemBitWidth), numOutputItems);
 
 			int idxBits = MathUtils.bitsToAddress(maxItems);
 
@@ -86,20 +87,17 @@ public class BoxBufferTest {
 		final double[] m_wrIndex;
 		final double[] m_rdIndex;
 		final int m_numCycles;
-		final int m_itemBitWidth;
 		final int m_numOutputItems;
 
 
-		private TestData(int maxItems, int itemBitWidth, int numInputItems, int numOutputItems) {//TODO: multidim
-			DFEVectorType<DFEVar> inType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(itemBitWidth), numInputItems);
-			m_numCycles        = 2 * MathUtils.ceilDivide(maxItems, numInputItems);
-			m_itemBitWidth   = itemBitWidth;
+		private TestData(int maxItems, int numInputItems, int numOutputItems) {//TODO: multidim
+			DFEVectorType<DFEVar> inType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(m_itemBitWidth), numInputItems);
+			m_numCycles      = 2 * MathUtils.ceilDivide(maxItems, numInputItems);
 			m_numOutputItems = numOutputItems;
 
 			m_data = new int[maxItems];
-			int maxValue = itemBitWidth < 31 ? 1 << itemBitWidth : Integer.MAX_VALUE;
 			for (int i = 0; i < maxItems; i++) {
-				m_data[i] = i % maxValue;
+				m_data[i] = i % (1 << m_itemBitWidth);
 			}
 
 			m_wrData   = new Bits[m_numCycles];
