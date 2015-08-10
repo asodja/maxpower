@@ -76,15 +76,38 @@ public class ConstDenominator {
 		return result.m_quot.cast(lhsType);
 	}
 
+
+	/**
+	 * A much more efficient implementation of integer division by a constant denominator.
+	 * This is particularly useful for small denominators such as 3 and 5. It will also handle
+	 * check for powers of two first, so denominators 6, 12, 24, etc. will use the same amount
+	 * of resource as 3.
+	 * <p>
+	 * Usage is the same as KernelMath.divMod.
+	 */
 	public static ConstDivModResult divMod(DFEVar numerator, int denominator) {
 		return divMod(numerator, denominator, numerator.getType().getTotalBits());
 	}
 
+
+	/**
+	 * A much more efficient implementation of integer division by a constant denominator.
+	 * This is particularly useful for small denominators such as 3 and 5. It will also handle
+	 * check for powers of two first, so denominators 6, 12, 24, etc. will use the same amount
+	 * of resource as 3.
+	 * <p>
+	 * Usage is the same as KernelMath.divMod.
+	 */
 	public static ConstDivModResult divMod(DFEVar numerator, int denominator, int quotBits) {
 		ConstDenominator denom = new ConstDenominator(denominator);
 		return denom.divModAsRHS(numerator, quotBits);
 	}
 
+
+	/**
+	 *  DivMod is implemented as a non-static method to reuse the same code used by divAsRHS.
+	 *  However, the public interface is static to match KernelMath.divMod.
+	 */
 	private ConstDivModResult divModAsRHS(DFEVar numerator, int resultBits) {
 		checkType(numerator, true);
 		DFEFix outType = Kernel.dfeUInt(resultBits);
@@ -192,7 +215,7 @@ public class ConstDenominator {
 	}
 
 
-	public static class ConstDivModResult {//TODO: replace with DivModResult once constructor is made public
+	public static class ConstDivModResult {//TODO: replace with DivModResult if constructor is made public
 		public DFEVar m_quot;
 		public DFEVar m_rem;
 
