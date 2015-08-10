@@ -3,10 +3,11 @@ package maxpower.kernel.mem;
 import java.util.ArrayList;
 import java.util.List;
 
+import maxpower.kernel.arithmetic.ConstDenominator;
+import maxpower.kernel.arithmetic.ConstDenominator.ConstDivModResult;
+
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath.DivModResult;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
@@ -284,8 +285,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			int chunks = m_1dParams.numCols / gcd;
 
 			DFEVector<DFEVector<T>> chunkedInputData = as2dDFEVector(input, gcd, chunks);
-			DFEVar rotate = KernelMath.divMod(ramWriteCol, constant.var(gcd), MathUtils.bitsToAddress(chunks)).getQuotient();//TODO: can we use constant division instead?
-
+			DFEVar rotate = ConstDenominator.divMod(ramWriteCol, gcd, MathUtils.bitsToAddress(chunks)).m_quot;
 			output = asSingleDFEVector(chunkedInputData.rotateElementsLeft(rotate));
 		} else {
 			output = input;
@@ -334,17 +334,8 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	 */
 	private DFEVar xyLookup(DFEVar index, DFEType addrType) {
 		/* If numcols is a power of two we can slice */
-		if(MathUtils.isPowerOf2(m_1dParams.numCols)) {
-			if((int) Math.pow(2, m_1dParams.colAddrBits) != m_1dParams.numCols)
-				throw new MaxCompilerAPIError(getManager(), "Math.pow(2, colAddrBits) != numCols");
-			else
-				return index.cast(addrType);
-		} else {
-			DivModResult dmr = KernelMath.divMod(index,
-				constant.var(m_1dParams.numCols), addrType.getTotalBits() - m_1dParams.colAddrBits);
-			return dmr.getQuotient().cat(
-				dmr.getRemainder().cast(dfeUInt(m_1dParams.colAddrBits))).cast(addrType);
-		}
+		ConstDivModResult dmr = ConstDenominator.divMod(index, m_1dParams.numCols, addrType.getTotalBits() - m_1dParams.colAddrBits);
+		return dmr.m_quot.cat(dmr.m_rem.cast(dfeUInt(m_1dParams.colAddrBits))).cast(addrType);
 	}
 
 	private class Buffer1D extends KernelLib {

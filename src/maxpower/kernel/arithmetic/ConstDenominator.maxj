@@ -1,8 +1,11 @@
 package maxpower.kernel.arithmetic;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.RoundingMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath.DivModResult;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
@@ -50,33 +53,106 @@ public class ConstDenominator {
 	}
 
 	public DFEVar divAsRHS(DFEVar lhs) {
-		if (! (lhs.getType() instanceof DFEFix))
-			throw new MaxCompilerAPIError("Only fixed point numerators supported.");
+		checkType(lhs, false);
 
-		KernelLib owner = lhs.getKernel();
-
-		if (owner.optimization.getRoundingMode() != RoundingMode.TRUNCATE)
-			throw new MaxCompilerAPIError("Only truncate rounding mode supported.");
+		if (m_denom == 1) {
+			return lhs;
+		}
 
 		DFEFix lhsType = (DFEFix) lhs.getType();
-		if (lhsType.getSignMode() != SignMode.UNSIGNED)
-			throw new MaxCompilerAPIError("Only unsigned numerators supported.");
+		// can we reduce resource usage further by performing a shift first
+		if (m_denom % 2 == 0) {
+			int   newSize = lhs.getType().getTotalBits() - 1;
+			DFEFix newType = DFETypeFactory.dfeFixOffset(newSize, lhsType.getOffset(), SignMode.UNSIGNED);
+			return (lhs.slice(1, newSize).cast(newType) / new ConstDenominator(m_denom / 2)).cast(lhsType);
+		}
 
-		if (m_denom == 1)
-			return lhs;
+		// if denom too big for this method - revert to standard division
+		if (m_carryBits >= LUTBITS) {
+			return (lhs / m_denom);
+		}
+
+		ConstDivModResult result = internalDivide(lhs);
+		return result.m_quot.cast(lhsType);
+	}
+
+	public static ConstDivModResult divMod(DFEVar numerator, int denominator) {
+		return divMod(numerator, denominator, numerator.getType().getTotalBits());
+	}
+
+	public static ConstDivModResult divMod(DFEVar numerator, int denominator, int quotBits) {
+		ConstDenominator denom = new ConstDenominator(denominator);
+		return denom.divModAsRHS(numerator, quotBits);
+	}
+
+	private ConstDivModResult divModAsRHS(DFEVar numerator, int resultBits) {
+		checkType(numerator, true);
+		DFEFix outType = Kernel.dfeUInt(resultBits);
+		if (m_denom == 1) {
+			return new ConstDivModResult(numerator.cast(outType), numerator.getKernel().constant.var(0));
+		}
+
+		if (MathUtils.isPowerOf2(m_denom)) {
+			int remBits  = MathUtils.bitsToAddress(m_denom);
+			int quotBits = numerator.getType().getTotalBits() - remBits;
+			DFEVar quot = numerator.slice(remBits, quotBits).cast(Kernel.dfeUInt(quotBits));
+			DFEVar rem  = numerator.slice(0, remBits).cast(Kernel.dfeUInt(remBits));
+			return new ConstDivModResult(quot.cast(outType), rem);
+		}
 
 		// can we reduce resource usage further by performing a shift first
 		if (m_denom % 2 == 0) {
-			int   newSize = lhs.getType().getTotalBits()-1;
-			DFEFix newType = DFETypeFactory.dfeFixOffset(newSize, lhsType.getOffset(), SignMode.UNSIGNED);
-			return (lhs.slice(1, newSize).cast(newType) / new ConstDenominator(m_denom/2)).cast(lhsType);
+			int    newSize = numerator.getType().getTotalBits() - 1;
+			DFEFix newType = Kernel.dfeUInt(newSize);
+			DFEVar newLhs  = numerator.slice(1, newSize).cast(newType);
+
+			ConstDenominator newDenom = new ConstDenominator(m_denom / 2);
+			ConstDivModResult result = newDenom.divModAsRHS(newLhs, resultBits);
+			//add the remained bit back on
+			result.m_rem = result.m_rem # numerator[0];
+			result.m_rem = result.m_rem.cast(Kernel.dfeUInt(result.m_rem.getType().getTotalBits()));
+			return result;
 		}
 
-		if (m_carryBits >= LUTBITS)
-			// denom too big for this method - revert to standard division
-			return (lhs / m_denom);
+		// if denom too big for this method - revert to standard division
+		if (m_carryBits >= LUTBITS) {
+			DivModResult dmr = KernelMath.divMod(numerator, numerator.getKernel().constant.var(m_denom), outType.getTotalBits());
+			return new ConstDivModResult(dmr);
+		}
 
-		int chunks = MathUtils.ceilDivide(lhsType.getTotalBits(), m_chunkBits);
+		ConstDivModResult result = internalDivide(numerator);
+		result.m_quot = result.m_quot.cast(Kernel.dfeUInt(result.m_quot.getType().getTotalBits()));//reinterpret as UInt
+		result.m_quot = result.m_quot.cast(outType);//cast requested output type
+		result.m_rem  = result.m_rem.cast(Kernel.dfeUInt(result.m_rem.getType().getTotalBits()));//reinterpret as UInt
+
+		return result;
+	}
+
+
+	private void checkType(DFEVar lhs, boolean isDivMod) {
+		if (! (lhs.getType() instanceof DFEFix)) {
+			throw new MaxCompilerAPIError("Only fixed point numerators supported.");
+		}
+		DFEFix lhsType = (DFEFix) lhs.getType();
+		if (lhsType.getSignMode() != SignMode.UNSIGNED) {
+			throw new MaxCompilerAPIError("Only unsigned numerators supported.");
+		}
+		if (isDivMod) {
+			if (lhsType.getFractionBits() != 0) {
+				throw new MaxCompilerAPIError("Only supports integer division / modulo.");
+			}
+		} else {
+		KernelLib owner = lhs.getKernel();
+			if (owner.optimization.getRoundingMode() != RoundingMode.TRUNCATE) {
+				throw new MaxCompilerAPIError("Only truncate rounding mode supported.");
+			}
+		}
+	}
+
+
+	private ConstDivModResult internalDivide(DFEVar lhs) {
+		KernelLib owner = lhs.getKernel();
+		int chunks = MathUtils.ceilDivide(lhs.getType().getTotalBits(), m_chunkBits);
 
 		DFEType carryType = DFETypeFactory.dfeUInt(m_carryBits);
 
@@ -98,9 +174,9 @@ public class ConstDenominator {
 			DFEVar divisor = lookup.slice(m_carryBits, sliceBits);
 			result = (result == null) ? divisor : (result # divisor);
 		}
-
-		return result.cast(lhsType);
+		return new ConstDivModResult(result, carry);
 	}
+
 
 	private DFEVar[] getLutContents(KernelLib owner) {
 		DFEType carryType = DFETypeFactory.dfeUInt(m_carryBits);
@@ -113,5 +189,21 @@ public class ConstDenominator {
 			lutContents[i] = owner.constant.var(divisorType, divisor) # owner.constant.var(carryType, i % m_denom);
 		}
 		return lutContents;
+	}
+
+
+	public static class ConstDivModResult {//TODO: replace with DivModResult once constructor is made public
+		public DFEVar m_quot;
+		public DFEVar m_rem;
+
+		public ConstDivModResult(DFEVar quot, DFEVar rem) {
+			m_quot = quot;
+			m_rem = rem;
+		}
+
+		public ConstDivModResult(DivModResult dmr) {
+			m_quot = dmr.getQuotient();
+			m_rem = dmr.getRemainder();
+		}
 	}
 }

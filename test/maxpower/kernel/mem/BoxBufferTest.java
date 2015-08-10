@@ -92,7 +92,7 @@ public class BoxBufferTest {
 
 		private TestData(int maxItems, int numInputItems, int numOutputItems) {//TODO: multidim
 			DFEVectorType<DFEVar> inType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(m_itemBitWidth), numInputItems);
-			m_numCycles      = 2 * MathUtils.ceilDivide(maxItems, numInputItems);
+			m_numCycles      = 2 * MathUtils.ceilDivide(maxItems, numInputItems);//TODO: use stream offset in kernel so that the following is simpler.
 			m_numOutputItems = numOutputItems;
 
 			m_data = new int[maxItems];

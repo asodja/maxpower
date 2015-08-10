@@ -4,6 +4,8 @@ import static org.junit.Assert.assertArrayEquals;
 
 import java.util.Random;
 
+import maxpower.kernel.arithmetic.ConstDenominator.ConstDivModResult;
+
 import org.junit.Test;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
@@ -37,21 +39,30 @@ public class ConstDenominatorTest {
 			DFEVar input = io.input("input", uintType);
 			DFEVar inDenom = io.scalarInput("denom", uintType);
 
-			DFEVar result = constant.var(uintType, 0);
+			DFEVar divResult  = constant.var(uintType, 0);
+			DFEVar quotResult = constant.var(uintType, 0);
+			DFEVar remResult  = constant.var(uintType, 0);
 			for (int denom : DENOMS) {
 				optimization.pushRoundingMode(RoundingMode.TRUNCATE);
-				result = result + ((inDenom === denom) ? (input / (new ConstDenominator(denom))) : 0);
+				divResult = divResult + ((inDenom === denom) ? (input / (new ConstDenominator(denom))) : 0);
 				optimization.popRoundingMode();
+				ConstDivModResult dmr = ConstDenominator.divMod(input, denom);
+				quotResult = quotResult + ((inDenom === denom) ? dmr.m_quot : 0);
+				remResult  = remResult  + ((inDenom === denom) ? dmr.m_rem.cast(uintType) : 0);
 			}
 
-			io.output("result", result, uintType);
+			io.output("divResult",  divResult, uintType);
+			io.output("quotResult", quotResult, uintType);
+			io.output("remResult",  remResult, uintType);
 		}
 	}
 
 	@Test
 	public void testRandom() {
-		double[] input    = new double[N];
-		double[] expected = new double[N];
+		double[] input        = new double[N];
+		double[] expectedDiv  = new double[N];
+		double[] expectedQuot = new double[N];
+		double[] expectedRem  = new double[N];
 
 		SimulationManager m = new SimulationManager("ConstDenominatorTest");
 		m.setKernel(new ConstDenominatorTestKernel(m.makeKernelParameters(), 32));
@@ -64,7 +75,9 @@ public class ConstDenominatorTest {
 		for (int denom : DENOMS) {
 			for (int i = 0; i < N; ++i) {
 				input[i] = Math.abs(rng.nextInt());
-				expected[i] = (((int) input[i]) / denom);
+				expectedDiv[i]  = (((int) input[i]) / denom);
+				expectedQuot[i] = (((int) input[i]) / denom);
+				expectedRem[i]  = (((int) input[i]) % denom);
 			}
 
 			m.setKernelCycles(N);
@@ -73,8 +86,13 @@ public class ConstDenominatorTest {
 			m.logMsg("Running test for denom = %s...\n", denom);
 			m.run();
 
-			double[] actual = m.getOutputDataArray("result");
-			assertArrayEquals("denom_"+denom, expected, actual, 0);
+			double[] actualDiv  = m.getOutputDataArray("divResult");
+			double[] actualQuot = m.getOutputDataArray("quotResult");
+			double[] actualRem  = m.getOutputDataArray("remResult");
+
+			assertArrayEquals("div_denom_"+denom,  expectedDiv,  actualDiv,  0);
+			assertArrayEquals("quot_denom_"+denom, expectedQuot, actualQuot, 0);
+			assertArrayEquals("rem_denom_"+denom,  expectedRem,  actualRem,  0);
 		}
 	}
 }
