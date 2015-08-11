@@ -32,14 +32,13 @@ public class BoxBufferTest {
 
 
 	private void testBoxBuffer(int maxItems, int numInputItems, int numOutputItems) {
-		SimulationManager mgr = new SimulationManager("BoxBufferTest_"+maxItems+"_"+numInputItems+"_"+numOutputItems,
-						                              SimulationParams.BITACCURATE_MAX4);
+		SimulationManager mgr = new SimulationManager("BoxBufferTest_"+maxItems+"_"+numInputItems+"_"+numOutputItems,  SimulationParams.BITACCURATE_MAX4);
 
-		TestKernel dutA = new TestKernel(mgr.makeKernelParameters(), maxItems, numInputItems, numOutputItems);
+		TestData data = new TestData(maxItems, numInputItems, numOutputItems);
+		TestKernel dutA = new TestKernel(mgr.makeKernelParameters(), maxItems, numInputItems, numOutputItems, data.m_numCycles);
 
 		mgr.setKernel(dutA);
 
-		TestData data = new TestData(maxItems, numInputItems, numOutputItems);
 		mgr.setInputDataRaw("wrData", data.m_wrData);
 
 		mgr.setInputData("wrEnable", data.m_wrEnable);
@@ -57,24 +56,26 @@ public class BoxBufferTest {
 
 
 	private class TestKernel extends Kernel {
-		private TestKernel(KernelParameters p, int maxItems, int numInputItems, int numOutputItems) {
+		private TestKernel(KernelParameters p, int maxItems, int numInputItems, int numOutputItems, int numCycles) {
 			super(p);
+			stream.suppressOffsetVectorWarnings();
 			DFEVectorType<DFEVar> inType  = new DFEVectorType<DFEVar>(dfeUInt(m_itemBitWidth), numInputItems);
 			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(dfeUInt(m_itemBitWidth), numOutputItems);
 
 			int idxBits = MathUtils.bitsToAddress(maxItems);
 
 			DFEVar wrBuffer = io.input("wrBuffer", dfeUInt(1));
-			DFEVar rdBuffer = io.input("rdBuffer", dfeUInt(1));
 			DFEVar wrIndex  = io.input("wrIndex",  dfeUInt(idxBits));
-			DFEVar rdIndex  = io.input("rdIndex",  dfeUInt(idxBits));
 			DFEVar wrEnable = io.input("wrEnable", dfeUInt(1));
+
+			DFEVar rdBuffer = stream.offset(io.input("rdBuffer", dfeUInt(1)),       -numCycles);
+			DFEVar rdIndex  = stream.offset(io.input("rdIndex",  dfeUInt(idxBits)), -numCycles);
 
 			DFEVector<DFEVar> wrData = io.input("wrData", inType);
 
 			BoxBuffer<DFEVar> buffer = new BoxBuffer<DFEVar>(this, maxItems, numOutputItems, inType);
 			buffer.write(wrData, wrIndex, wrEnable, wrBuffer);
-			io.output("rdData", outType) <== buffer.read(rdIndex, rdBuffer);
+			io.output("rdData", outType) <== stream.offset(buffer.read(rdIndex, rdBuffer), numCycles);
 		}
 	}
 
@@ -92,7 +93,7 @@ public class BoxBufferTest {
 
 		private TestData(int maxItems, int numInputItems, int numOutputItems) {//TODO: multidim
 			DFEVectorType<DFEVar> inType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(m_itemBitWidth), numInputItems);
-			m_numCycles      = 2 * MathUtils.ceilDivide(maxItems, numInputItems);//TODO: use stream offset in kernel so that the following is simpler.
+			m_numCycles      = MathUtils.ceilDivide(maxItems, numInputItems);
 			m_numOutputItems = numOutputItems;
 
 			m_data = new int[maxItems];
@@ -109,20 +110,19 @@ public class BoxBufferTest {
 
 			// Build up input data
 			for (int i = 0; i < m_numCycles; i++) {
-				boolean phase1 = i < m_numCycles / 2;
-				m_wrEnable[i] = phase1 ? 1 : 0;
-				m_wrBuffer[i] = phase1 ? 0 : 1;
-				m_rdBuffer[i] = phase1 ? 1 : 0;
+				m_wrEnable[i] = 1;
+				m_wrBuffer[i] = 0;
+				m_rdBuffer[i] = 0;
 				int[] input = new int[numInputItems];
 				for (int j = 0; j < numInputItems; j++) {
-					input[j] = phase1 ? m_data[numInputItems * i + j] : 0;
+					input[j] = m_data[numInputItems * i + j];
 				}
 				m_wrData[i] = inType.encodeConstant(input);
 
 				m_wrIndex[i] = (numInputItems * i) % maxItems;
 
 				// Test the corners first, then random offsets
-				switch (i - m_numCycles / 2) {
+				switch (i) {
 					case 0:
 						m_rdIndex[i] = maxItems - numOutputItems;
 						break;
@@ -138,7 +138,7 @@ public class BoxBufferTest {
 		boolean testOutput(List<Bits> rdData) {
 			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(m_itemBitWidth), m_numOutputItems);
 			boolean testPassed = true;
-			for (int i = m_numCycles / 2; i < m_numCycles; i++) {
+			for (int i = 0; i < m_numCycles; i++) {
 				@SuppressWarnings("unchecked")
                 List<Double> output = outType.decodeConstant(rdData[i]);
 				for (int j = 0; j < m_numOutputItems; j++) {
