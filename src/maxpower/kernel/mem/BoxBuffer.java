@@ -192,9 +192,19 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			                : writeRow.cast(dfeUInt(m_1dParams.ramAddrBits));
 		}
 
+		List<DFEVar> inThisBuffer = new ArrayList<DFEVar>();
+		for (int i = m_numDimensions - 2; i >= 0; i--) {
+			DFEVar modulo = ConstDenominator.divMod(address[i], m_numOutputItems[i]).m_rem;
+			for (int j = 0; j < m_numOutputItems[i]; j++) {//TODO: can we do a more efficient one-hot encode?
+				inThisBuffer.add(modulo === j);
+			}
+		}
+		if (m_numDimensions == 1) {
+			inThisBuffer.add(constant.var(true));
+		}
+
 		for (int i = 0; i < buffers.size(); i++) {
-			DFEVar inThisBuffer = constant.var(true);//TODO: multidim
-			buffers[i].write(alignedInputData, writeAddress, writeEnable, inThisBuffer);
+			buffers[i].write(alignedInputData, writeAddress, writeEnable, inThisBuffer[i]);
 
 		}
 		optimization.popEnableBitGrowth();
@@ -217,7 +227,46 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	}
 
 	public DFEVector<T> read(DFEVar[] address, DFEVar buffer) {
-		return buffers[0].read(address[0], buffer);//TODO: multidim
+		DFEVar[] modulo = new DFEVar[m_numDimensions];
+		for (int i = m_numDimensions - 2; i >= 0; i--) {
+			modulo[i] = ConstDenominator.divMod(address[i], m_numOutputItems[i]).m_rem;
+		}
+		return read(address, buffer, modulo, 0, 0);
+	}
+
+
+	private DFEVector<T> read(DFEVar[] address, DFEVar buffer, DFEVar[] modulo, int dimension, int index) {
+		if (dimension == m_numDimensions - 1) {
+			DFEVar address1d = get1dAddress(address);
+			return buffers[index].read(address1d, buffer);
+		}
+
+		DFEVar[] newAddress = new DFEVar[address.length];
+		for (int j = 0; j < address.length; j++) {
+			newAddress[j] = address[j];
+		}
+
+		List<DFEVector<T>> bufferOutput = new ArrayList<DFEVector<T>>();
+		for (int j = 0; j < m_numOutputItems[dimension]; j++) {
+			newAddress[dimension] = address[dimension] + j;//TODO: fix address calculation (this address may not be in this buffer) - use modulo
+			bufferOutput.add(read(newAddress, buffer, modulo, dimension + 1, index + j));//TODO: fix index calculation
+		}
+
+		if (bufferOutput.size() > 1) {
+			DFEVectorType<T> outputType = bufferOutput[0].getType();
+			DFEVectorType<DFEVar> rotateType = new DFEVectorType<DFEVar>(dfeRawBits(outputType.getTotalBits()), bufferOutput.size());
+			DFEVector<DFEVar> rotated = rotateType.newInstance(this);
+			for (DFEVector<T> member: bufferOutput) {
+				rotated <== member.pack();
+			}
+			rotated = rotated.rotateElementsRight(modulo[dimension]);
+			bufferOutput.clear();
+			for (DFEVar member: rotated.getElementsAsList()) {
+				bufferOutput.add(outputType.unpack(member));
+			}
+		}
+
+		return asSingleDFEVector(bufferOutput);
 	}
 
 
@@ -305,9 +354,20 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 
 	private DFEVector<T> asSingleDFEVector(DFEVector<DFEVector<T>> input) {
-		DFEVectorType<T> type = new DFEVectorType<T>(input[0][0].getType(), input.getSize() * input[0].getSize());
+		return asSingleDFEVector(input.getElementsAsList());
+	}
+
+
+	private DFEVector<T> asSingleDFEVector(List<DFEVector<T>> input) {
+		int totalSize = 0;
+		for (int i = 0; i < input.size(); i++) {
+			for (int j = 0; j < input[i].getSize(); j++) {
+				totalSize++;
+			}
+		}
+		DFEVectorType<T> type = new DFEVectorType<T>(input[0][0].getType(), totalSize);
 		DFEVector<T> output = type.newInstance(this);
-		for (int i = 0; i < input.getSize(); i++) {
+		for (int i = 0; i < input.size(); i++) {
 			for (int j = 0; j < input[i].getSize(); j++) {
 				output[i * input[i].getSize() + j] <== input[i][j];
 			}
