@@ -3,7 +3,6 @@ package maxpower.blas.l3;
 import maxpower.kernel.KernelBinaryOp.Add;
 import maxpower.kernel.TreeReduce;
 import maxpower.kernel.arithmetic.FloatingPointMultiAdder;
-import maxpower.kernel.arithmetic.FloatingPointMultiAdder.Optimization;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
@@ -61,9 +60,7 @@ public class TileMultiplier extends KernelLib {
 		}
 
 		if (aIn.getType() instanceof DFEFloat) {
-			FloatingPointMultiAdder adder =
-				new FloatingPointMultiAdder(this, 1, false, Optimization.COND_ADD_SUB, Optimization.TRI_ADDER);
-			output = adder.compute(summands);
+			output = FloatingPointMultiAdder.add(1, summands);
 		} else {
 			output = TreeReduce.reduce(new Add<DFEVar>(), summands);
 		}

@@ -7,7 +7,6 @@ import maxpower.kernel.KernelBinaryOp.Add;
 import maxpower.kernel.LargeStreamOffset;
 import maxpower.kernel.TreeReduce;
 import maxpower.kernel.arithmetic.FloatingPointMultiAdder;
-import maxpower.kernel.arithmetic.FloatingPointMultiAdder.Optimization;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
@@ -54,9 +53,7 @@ public class TileAccumulator extends KernelLib {
 		summands.addAll(inputs);
 
 		if (sum.getType() instanceof DFEFloat) {
-			FloatingPointMultiAdder adder =
-				new FloatingPointMultiAdder(this, 1, false, Optimization.COND_ADD_SUB, Optimization.TRI_ADDER);
-			sum <== adder.compute(summands);
+			sum <== FloatingPointMultiAdder.add(1, summands);
 		} else {
 			sum <== TreeReduce.reduce(new Add<DFEVar>(), summands);
 		}
