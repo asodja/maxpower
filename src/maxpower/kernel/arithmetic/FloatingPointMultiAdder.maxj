@@ -1,9 +1,11 @@
 package maxpower.kernel.arithmetic;
 
+import static com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops.bitreverse;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops.leading1Detect;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops.onehotDecode;
 import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeBool;
-import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeFloat;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeFixOffset;
 import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeInt;
-import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeRawBits;
 import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeUInt;
 import static com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType.sft;
 
@@ -18,9 +20,12 @@ import maxpower.ops.AssociativeOp;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.RoundingMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.SMIO;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.FloatingPoint;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
@@ -57,6 +62,7 @@ public class FloatingPointMultiAdder {
 
 		KernelLib owner = summands[0].getKernel();
 		DFEFloat  type  = (DFEFloat) summands[0].getType();
+
 		DFEVar maxExponent = getMaxExponent(summands);
 
 		List<DFEStruct> treeValues = getReductionInputs(numGuardBits, summands, maxExponent);
@@ -66,52 +72,42 @@ public class FloatingPointMultiAdder {
 		DFEVar sumVal = sum["val"];
 
 		// Fix the signs of the result after the reduction
+		sumNeg ^= (sumVal < 0);
+		sumVal  = asUnsigned(KernelMath.abs(sumVal));
+
+		// Reinterpret our result as though it has a single integer bit and calculate appropriate exponent.
+		DFEVar sumValExp = maxExponent + (((DFEFix) sumVal.getType()).getIntegerBits() - 1);
 		int sumValBits = sumVal.getType().getTotalBits();
-		sumNeg ^= sumVal.slice(sumValBits-1);
-		sumVal  = sumVal.slice(sumValBits-1) ? -sumVal : sumVal;
+		sumVal = reinterpretCast(sumVal, dfeFixOffset(sumValBits, -sumValBits+1, SignMode.UNSIGNED));
 
-		int exponent_size = maxExponent.getType().getTotalBits();
-		int mantissa_size = type.getMantissaBits() - 1;
+		// Shift to get rid of any leading zeroes
+		DFEVar shift           = getLeadingZeroes(sumVal);
+		DFEVar shiftCast       = shift.cast(sumValExp.getType());
+		DFEVar underflows      = (shiftCast >= sumValExp);
+		// We don't support denormalized numbers
+		DFEVar shiftedExponent = ((sumVal === 0) | underflows) ? 0 : (sumValExp - shiftCast);
+		DFEVar shiftedSumVal   = underflows ? 0 : (sumVal << shift);
 
-		DFEVar leading_one = getLeadingOnePosition(sumVal).cast(maxExponent.getType());
+		// FIXME Floating point typically uses near-even rounding. To do this properly, we'd have to do
+		//       the reduction with 2*mantissa bits.
+		owner.optimization.pushRoundingMode(RoundingMode.TONEAR);
+		// Cast away guard bits to perform the rounding. We need the extra integer bit in case it rounds up to 2.
+		DFEVar resultMantissa =
+			shiftedSumVal.cast(dfeFixOffset(type.getMantissaBits()+1, -type.getMantissaBits()+1, SignMode.UNSIGNED));
+		owner.optimization.popRoundingMode();
+		DFEVar resultExponent = shiftedExponent;
 
-		DFEVar is_zero = sumVal.eq(0);
+		// Renormalize as necessary and slice out the fractional bits of the mantissa.
+		DFEVar gteTwo  = (resultMantissa >= 2);
+		resultMantissa = (gteTwo ? (resultMantissa >> 1) : resultMantissa).slice(0, type.getMantissaBits()-1);
+		resultExponent = (gteTwo ? (resultExponent + 1) : resultExponent);
 
-		// Check that the amount that we have to shift to the left is not greater than the maximum exponent. If that were the case,
-		// we have underflow happening.
-		DFEVar is_underflow = maxExponent.cast(dfeUInt(16)) + leading_one.cast(dfeUInt(16)) <= mantissa_size + numGuardBits;
-
-		DFEVar incorrect_result = is_zero | is_underflow;
-
-		DFEVar result_exponent = maxExponent + (leading_one - mantissa_size - numGuardBits);
-
-		sumVal = sumVal << (sumValBits - leading_one).cast(dfeUInt(MathUtils.bitsToAddress(sumValBits)));
-
-		// Use guard bits to round
-		if (numGuardBits > 0) {
-			// Add a bit to the left to check for overflow
-			DFEVar result_mantissa_overflow= (owner.constant.var(false) # sumVal).cast(dfeUInt(sumValBits+1));
-
-			DFEVar result_mantissa_extended_rounded = result_mantissa_overflow + (1 << ((sumValBits - mantissa_size) - 1));
-
-			DFEVar overflow = result_mantissa_extended_rounded[sumValBits];
-
-			result_exponent = overflow ? result_exponent + 1 : result_exponent;
-
-			sumVal = result_mantissa_extended_rounded.slice(0, sumValBits);
-		}
-
-		DFEVar result_mantissa = sumVal.slice(sumValBits-mantissa_size, mantissa_size).cast(dfeUInt(mantissa_size));
-
-		result_exponent = incorrect_result ? 0 : result_exponent;
-		result_mantissa = incorrect_result ? 0 : result_mantissa;
-
-		return (sumNeg # result_exponent # result_mantissa).cast(dfeFloat(exponent_size, mantissa_size+1));
+		return (sumNeg # resultExponent # resultMantissa).cast(type);
 	}
 
-	private static DFEVar getLeadingOnePosition(DFEVar v) {
-		int bits = v.getType().getTotalBits();
-		return Bitops.onehotDecode(Bitops.leading1Detect(v.cast(dfeRawBits(bits)).cast(dfeUInt(bits))));
+	// Count the number of '0's before the first '1' (starting from MSB)
+	private static DFEVar getLeadingZeroes(DFEVar v) {
+		return onehotDecode(bitreverse(leading1Detect(v)));
 	}
 
 	private static DFEVar getMaxExponent(List<DFEVar> summands) {
@@ -146,18 +142,15 @@ public class FloatingPointMultiAdder {
 		if (numGuardBits > 0)
 			mantissa = mantissa # owner.constant.zero(dfeUInt(numGuardBits));
 
-		return mantissa.cast(dfeUInt(mantissa.getType().getTotalBits()));
+		int bits = mantissa.getType().getTotalBits();
+		// fixed point type with one integer bit (the rest fractional bits)
+		return mantissa.cast(dfeFixOffset(bits, -bits+1, SignMode.UNSIGNED));
 	}
 
 	private static DFEVar getShift(DFEVar maxExponent, DFEVar summand, int maxShiftBits) {
-		DFEVar shift = maxExponent - getExponent(summand);
-
-		// it is slightly cheaper to check the top bits of the shift that do a comparison
-		// TODO will they not optimize to exactly the same thing?
-		int shiftMsbBits = shift.getType().getTotalBits() - maxShiftBits;
-		DFEVar shiftMsb = shift.slice(maxShiftBits, shiftMsbBits).cast(dfeUInt(shiftMsbBits));
-
-		return (shiftMsb === 0) ? shift.cast(dfeUInt(maxShiftBits)) : ((1<<maxShiftBits) - 1);
+		DFEVar expDelta = maxExponent - getExponent(summand);
+		DFEVar maxShift = summand.getKernel().constant.var(expDelta.getType(), (1 << maxShiftBits) - 1);
+		return KernelMath.min(maxShift, expDelta).cast(dfeUInt(maxShiftBits));
 	}
 
 	private static List<DFEStruct> getReductionInputs(int numGuardBits, List<DFEVar> summands, DFEVar maxExponent) {
@@ -169,8 +162,7 @@ public class FloatingPointMultiAdder {
 			int    maxShiftBits = MathUtils.bitsToRepresent(mantissa.getType().getTotalBits());
 			DFEVar normalized   = (mantissa >> getShift(maxExponent, summand, maxShiftBits));
 
-			DFEVar zeroBit  = owner.constant.zero(dfeUInt(1));
-			DFEVar redValue = (zeroBit # normalized).cast(dfeInt(normalized.getType().getTotalBits()+1));
+			DFEVar redValue = asSigned(normalized); // convert to signed type
 
 			DFEStruct redVal = getReductionType(redValue.getType()).newInstance(owner);
 			redVal["neg"] <== getSign(summand);
@@ -179,6 +171,22 @@ public class FloatingPointMultiAdder {
 			redVals.add(redVal);
 		}
 		return redVals;
+	}
+
+	private static DFEVar asSigned(DFEVar v) {
+		DFEFix unsignedType = (DFEFix) v.getType();
+		DFEFix signedType   = dfeFixOffset(unsignedType.getTotalBits()+1, unsignedType.getOffset(), SignMode.TWOSCOMPLEMENT);
+		return v.cast(signedType);
+	}
+
+	private static DFEVar asUnsigned(DFEVar v) {
+		DFEFix signedType   = (DFEFix) v.getType();
+		DFEFix unsignedType = dfeFixOffset(signedType.getTotalBits()-1, signedType.getOffset(), SignMode.UNSIGNED);
+		return v.cast(unsignedType);
+	}
+
+	private static DFEVar reinterpretCast(DFEVar v, DFEType type) {
+		return type.unpack(v.pack());
 	}
 
 	private static void checkTypesIdentical(List<DFEVar> summands) {
@@ -201,18 +209,18 @@ public class FloatingPointMultiAdder {
 			private final DFEsmInput a, b, c;
 			private final DFEsmOutput r;
 
-			protected SM(KernelLib owner, int aBits, int bBits) {
+			protected SM(KernelLib owner, int bits) {
 				super(owner);
 
-				a = io.input("a", dfeInt(aBits));
-				b = io.input("b", dfeInt(bBits));
+				a = io.input("a", dfeInt(bits));
+				b = io.input("b", dfeInt(bits));
 				c = io.input("c", dfeBool());
-				r = io.output("r", dfeInt(Math.max(aBits, bBits)+1));
+				r = io.output("r", dfeInt(bits));
 			}
 
 			@Override
 			protected void outputFunction() {
-				r <== a.cast(r.getType()) + (b.cast(r.getType()) ^ mask(c, r.getType())) + c.cast(r.getType());
+				r <== a + (b ^ mask(c, r.getType())) + c.cast(r.getType());
 			}
 
 			private DFEsmValue mask(DFEsmValue c, DFEsmValueType type) {
@@ -236,17 +244,18 @@ public class FloatingPointMultiAdder {
 
 			KernelLib owner = a.getKernel();
 
-			int aBits = aVal.getType().getTotalBits();
-			int bBits = bVal.getType().getTotalBits();
+			owner.optimization.pushEnableBitGrowth(true);
+			DFEType rValType = (aVal + bVal).getType(); // this addition will be optimized away
+			owner.optimization.popEnableBitGrowth();
 
-			SMIO sm = owner.addStateMachine("CondAddSubSM"+i++, new SM(owner, aBits, bBits));
-			sm.connectInput("a", aVal);
-			sm.connectInput("b", bVal);
+			SMIO sm = owner.addStateMachine("CondAddSubSM"+i++, new SM(owner, rValType.getTotalBits()));
+			sm.connectInput("a", reinterpretCast(aVal.cast(rValType), dfeInt(rValType.getTotalBits())));
+			sm.connectInput("b", reinterpretCast(bVal.cast(rValType), dfeInt(rValType.getTotalBits())));
 			sm.connectInput("c", aNeg ^ bNeg);
 
-			DFEStruct result = getReductionType(sm.getOutput("r").getType()).newInstance(a.getKernel());
+			DFEStruct result = getReductionType(rValType).newInstance(a.getKernel());
 			result["neg"] <== aNeg;
-			result["val"] <== a.getKernel().optimization.pipeline(sm.getOutput("r"));
+			result["val"] <== owner.optimization.pipeline(reinterpretCast(sm.getOutput("r"), rValType));
 			return result;
 		}
 	}
