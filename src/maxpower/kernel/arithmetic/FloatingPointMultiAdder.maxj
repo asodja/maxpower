@@ -73,7 +73,11 @@ public class FloatingPointMultiAdder {
 
 		// Fix the signs of the result after the reduction
 		sumNeg ^= (sumVal < 0);
-		sumVal  = asUnsigned(KernelMath.abs(sumVal));
+		// FIXME There is a ticket open on the compiler which will make abs work in a single cycle
+		//       without manual pipelining.
+		owner.optimization.pushPipeliningFactor(0);
+		sumVal  = owner.optimization.pipeline(asUnsigned(KernelMath.abs(sumVal)));
+		owner.optimization.popPipeliningFactor();
 
 		// Reinterpret our result as though it has a single integer bit and calculate appropriate exponent.
 		DFEVar sumValExp = maxExponent + (((DFEFix) sumVal.getType()).getIntegerBits() - 1);
@@ -98,9 +102,12 @@ public class FloatingPointMultiAdder {
 		DFEVar resultExponent = shiftedExponent;
 
 		// Renormalize as necessary and slice out the fractional bits of the mantissa.
+		// Comparison to 2 depends on only a single bit, so remove pipelining.
+		owner.optimization.pushPipeliningFactor(0);
 		DFEVar gteTwo  = (resultMantissa >= 2);
-		resultMantissa = (gteTwo ? (resultMantissa >> 1) : resultMantissa).slice(0, type.getMantissaBits()-1);
-		resultExponent = (gteTwo ? (resultExponent + 1) : resultExponent);
+		owner.optimization.popPipeliningFactor();
+		resultMantissa  = (gteTwo ? (resultMantissa >> 1) : resultMantissa).slice(0, type.getMantissaBits()-1);
+		resultExponent +=  gteTwo.cast(resultExponent.getType());
 
 		return (sumNeg # resultExponent # resultMantissa).cast(type);
 	}
