@@ -20,22 +20,26 @@ public class BoxBufferTest {
 
 	private static final int m_itemBitWidth = 24;
 
-	@Test public void coprime_5_3()          { testBoxBuffer(3125,  5,  3); }
-	@Test public void simple_2_2()           { testBoxBuffer(1024,  2,  2); }
-	@Test public void nonPow2simle()         { testBoxBuffer(2508, 12, 12); }
-	@Test public void pow2multiple_4_16()    { testBoxBuffer(2500,  4, 16); }
-	@Test public void nonPow2multiple_4_20() { testBoxBuffer(2500,  4, 20); }
-	@Test public void nonMultiple_12_16()    { testBoxBuffer(2508, 12, 16); }
-	@Test public void nonMultiple_16_20()    { testBoxBuffer(2512, 16, 20); }
-	@Test public void pow2factor_16_8()      { testBoxBuffer(2512, 16,  8); }
-	@Test public void nonFactor_12_8()       { testBoxBuffer(2508, 12,  8); }
+	@Test public void coprime_5_3()          { testBoxBuffer(1, 3125,  5,  3); }
+	@Test public void simple_2_2()           { testBoxBuffer(1, 1024,  2,  2); }
+	@Test public void nonPow2simle()         { testBoxBuffer(1, 2508, 12, 12); }
+	@Test public void pow2multiple_4_16()    { testBoxBuffer(1, 2500,  4, 16); }
+	@Test public void nonPow2multiple_4_20() { testBoxBuffer(1, 2500,  4, 20); }
+	@Test public void nonMultiple_12_16()    { testBoxBuffer(1, 2508, 12, 16); }
+	@Test public void nonMultiple_16_20()    { testBoxBuffer(1, 2512, 16, 20); }
+	@Test public void pow2factor_16_8()      { testBoxBuffer(1, 2512, 16,  8); }
+	@Test public void nonFactor_12_8()       { testBoxBuffer(1, 2508, 12,  8); }
 
 
-	private void testBoxBuffer(int maxItems, int numInputItems, int numOutputItems) {
-		SimulationManager mgr = new SimulationManager("BoxBufferTest_"+maxItems+"_"+numInputItems+"_"+numOutputItems,  SimulationParams.BITACCURATE_MAX4);
+	private void testBoxBuffer(int numDimensions, int maxItemsPerDim, int numInputItems, int... numOutputItems) {
+		SimulationManager mgr = new SimulationManager("BoxBufferTest_"+numDimensions+"D_"+maxItemsPerDim+"_"+numInputItems+"_"+numOutputItems[0],  SimulationParams.BITACCURATE_MAX4);
+		int[] maxItems = new int[numDimensions];
+		for (int i = 0; i < numDimensions; i++) {
+			maxItems[i] = maxItemsPerDim;
+		}
 
 		TestData data = new TestData(maxItems, numInputItems, numOutputItems);
-		TestKernel dutA = new TestKernel(mgr.makeKernelParameters(), maxItems, numInputItems, numOutputItems, data.m_numCycles);
+		TestKernel dutA = new TestKernel(mgr.makeKernelParameters(), numDimensions, maxItems, numInputItems, numOutputItems);
 
 		mgr.setKernel(dutA);
 
@@ -44,8 +48,10 @@ public class BoxBufferTest {
 		mgr.setInputData("wrEnable", data.m_wrEnable);
 		mgr.setInputData("wrBuffer", data.m_wrBuffer);
 		mgr.setInputData("rdBuffer", data.m_rdBuffer);
-		mgr.setInputData("wrIndex",  data.m_wrIndex);
-		mgr.setInputData("rdIndex",  data.m_rdIndex);
+		for (int i = 0; i < numDimensions; i++) {
+			mgr.setInputData("wrIndex"+i,  data.m_wrIndex[i]);
+			mgr.setInputData("rdIndex"+i,  data.m_rdIndex[i]);
+		}
 
 		mgr.setKernelCycles(data.m_numCycles);
 
@@ -56,20 +62,24 @@ public class BoxBufferTest {
 
 
 	private class TestKernel extends Kernel {
-		private TestKernel(KernelParameters p, int maxItems, int numInputItems, int numOutputItems, int numCycles) {
+		TestKernel(KernelParameters p, int numDimensions, int[] maxItems, int numInputItems, int[] numOutputItems) {
 			super(p);
 			stream.suppressOffsetVectorWarnings();
+			int numCycles = product(maxItems);
 			DFEVectorType<DFEVar> inType  = new DFEVectorType<DFEVar>(dfeUInt(m_itemBitWidth), numInputItems);
-			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(dfeUInt(m_itemBitWidth), numOutputItems);
-
-			int idxBits = MathUtils.bitsToAddress(maxItems);
+			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(dfeUInt(m_itemBitWidth), product(numOutputItems));
+			DFEVar[] wrIndex = new DFEVar[numDimensions];
+			DFEVar[] rdIndex = new DFEVar[numDimensions];
+			for (int i = 0; i < numDimensions; i++) {
+				int idxBits = MathUtils.bitsToAddress(maxItems[i]);
+				wrIndex[i] = io.input("wrIndex"+i,  dfeUInt(idxBits));
+				rdIndex[i] = stream.offset(io.input("rdIndex"+i,  dfeUInt(idxBits)), -numCycles);
+			}
 
 			DFEVar wrBuffer = io.input("wrBuffer", dfeUInt(1));
-			DFEVar wrIndex  = io.input("wrIndex",  dfeUInt(idxBits));
 			DFEVar wrEnable = io.input("wrEnable", dfeUInt(1));
 
-			DFEVar rdBuffer = stream.offset(io.input("rdBuffer", dfeUInt(1)),       -numCycles);
-			DFEVar rdIndex  = stream.offset(io.input("rdIndex",  dfeUInt(idxBits)), -numCycles);
+			DFEVar rdBuffer = stream.offset(io.input("rdBuffer", dfeUInt(1)), -numCycles);
 
 			DFEVector<DFEVar> wrData = io.input("wrData", inType);
 
@@ -85,19 +95,24 @@ public class BoxBufferTest {
 		final double[] m_wrEnable;
 		final double[] m_wrBuffer;
 		final double[] m_rdBuffer;
-		final double[] m_wrIndex;
-		final double[] m_rdIndex;
+		final double[][] m_wrIndex;
+		final double[][] m_rdIndex;
 		final int m_numCycles;
-		final int m_numOutputItems;
+		final int[] m_numOutputItems;
+		final int[] m_maxItems;
 
 
-		private TestData(int maxItems, int numInputItems, int numOutputItems) {//TODO: multidim
+		TestData(int[] maxItems, int numInputItems, int[] numOutputItems) {
 			DFEVectorType<DFEVar> inType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(m_itemBitWidth), numInputItems);
-			m_numCycles      = MathUtils.ceilDivide(maxItems, numInputItems);
-			m_numOutputItems = numOutputItems;
+			if (maxItems[maxItems.length - 1] % numInputItems != 0) {
+				throw new RuntimeException("Maximum number of items in the fast dimension needs to be a multiple of the number of input items.");
+			}
+			m_numCycles      = product(maxItems) / numInputItems;
+			m_numOutputItems = numOutputItems.clone();
+			m_maxItems       = maxItems.clone();
 
-			m_data = new int[maxItems];
-			for (int i = 0; i < maxItems; i++) {
+			m_data = new int[product(m_maxItems)];
+			for (int i = 0; i < m_data.length; i++) {
 				m_data[i] = i % (1 << m_itemBitWidth);
 			}
 
@@ -105,8 +120,10 @@ public class BoxBufferTest {
 			m_wrEnable = new double[m_numCycles];
 			m_wrBuffer = new double[m_numCycles];
 			m_rdBuffer = new double[m_numCycles];
-			m_wrIndex  = new double[m_numCycles];
-			m_rdIndex  = new double[m_numCycles];
+			m_wrIndex  = new double[m_maxItems.length][m_numCycles];
+			m_rdIndex  = new double[m_maxItems.length][m_numCycles];
+
+			int lastIndex = m_data.length - product(numOutputItems);
 
 			// Build up input data
 			for (int i = 0; i < m_numCycles; i++) {
@@ -119,36 +136,107 @@ public class BoxBufferTest {
 				}
 				m_wrData[i] = inType.encodeConstant(input);
 
-				m_wrIndex[i] = (numInputItems * i) % maxItems;
-
+				int readIndex = 0;
 				// Test the corners first, then random offsets
 				switch (i) {
 					case 0:
-						m_rdIndex[i] = maxItems - numOutputItems;
+						readIndex = lastIndex;
 						break;
 					case 1:
-						m_rdIndex[i] = 0;
+						readIndex = 0;
 						break;
 					default:
-						m_rdIndex[i] = ((long) (Math.random() * (numInputItems * (maxItems / numInputItems) - numOutputItems)));
+						readIndex = ((int) (Math.random() * lastIndex));
+				}
+				int[] readIndices = getAddress(readIndex);
+				int[] writeIndices = getAddress(numInputItems * (long)i);
+				for (int j = maxItems.length - 1; j >= 0; j--) {
+					m_wrIndex[j][i] = writeIndices[j];
+					m_rdIndex[j][i] = readIndices[j];
 				}
 			}
 		}
 
+		int[] getAddress(long index) {
+			int denom = 1;
+			int[] address = new int[m_maxItems.length];
+			for (int dim = m_maxItems.length - 1; dim >= 0; dim--) {
+				address[dim] = (int) ((index / denom) % m_maxItems[dim]);
+				denom *= m_maxItems[dim];
+			}
+			return address;
+		}
+
+		int getIndex(int[] address) {
+			int skip = 1;
+			int index = 0;
+			for (int dim = m_maxItems.length - 1; dim >= 0; dim--) {
+				index += address[dim] * skip;
+				skip *= m_maxItems[dim];
+			}
+			return index;
+		}
+
+		int[] extractBlock(int[] address) {
+			int[] output = new int[product(m_numOutputItems)];
+			for (int i = 0; i < output.length; i++) {
+				int[] newAddress = new int[address.length];
+				int denom = 1;
+				for (int dim = m_maxItems.length - 1; dim >= 0; dim--) {
+					newAddress[dim] = address[dim] + (i / denom) % m_maxItems[dim];
+					denom *= m_maxItems[dim];
+				}
+				int index = getIndex(newAddress);
+				output[i] = m_data[index];
+			}
+			return output;
+		}
+
+		int[] getReadAddress(int cycle) {
+			int[] address = new int[m_maxItems.length];
+			for (int dim = 0; dim < m_maxItems.length; dim++) {
+				address[dim] = (int)m_rdIndex[dim][cycle];
+			}
+			return address;
+		}
+
+		String printArray(int[] array) {
+			String output = " { ";
+			for (int i = 0; i < array.length - 1; i++) {
+				output += array[i] + ", ";
+			}
+			output += array[array.length - 1] + " } ";
+			return output;
+		}
+
 		boolean testOutput(List<Bits> rdData) {
-			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(m_itemBitWidth), m_numOutputItems);
+			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(m_itemBitWidth), product(m_numOutputItems));
 			boolean testPassed = true;
 			for (int i = 0; i < m_numCycles; i++) {
 				@SuppressWarnings("unchecked")
                 List<Double> output = outType.decodeConstant(rdData[i]);
-				for (int j = 0; j < m_numOutputItems; j++) {
-					if (output[j].intValue() != m_data[(int)m_rdIndex[i] + j]) {
-						System.out.println("[" + i + "] " + ((int)m_rdIndex[i] + j) + " Value expected: " + m_data[(int)m_rdIndex[i] + j] + " != got: " + output[j].intValue());
+				int[] expected = extractBlock(getReadAddress(i));
+				for (int j = 0; j < expected.length; j++) {
+//					if (output[j].intValue() != m_data[(int)m_rdIndex[0][i] + j]) {
+//						System.out.println("[" + i + "] " + ((int)m_rdIndex[0][i] + j) + " Value expected: " + m_data[(int)m_rdIndex[0][i] + j] + " != got: " + output[j].intValue());
+//						testPassed = false;
+//					}
+					if (output[j].intValue() != expected[j]) {
+						System.out.println("[" + i + ", " + j + "] " + printArray(getReadAddress(i)) + " Value expected: " + expected[j] + " != got: " + output[j].intValue());
 						testPassed = false;
 					}
 				}
 			}
 			return testPassed;
 		}
+	}
+
+
+	private int product(int[] x) {
+		int result = x[0];
+		for (int i = 1; i < x.length; i++) {
+			result *= x[i];
+		}
+		return result;
 	}
 }
