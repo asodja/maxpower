@@ -1,375 +1,302 @@
 package maxpower.kernel.arithmetic;
 
+import static com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops.bitreverse;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops.leading1Detect;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops.onehotDecode;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeBool;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeFixOffset;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeInt;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeUInt;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType.sft;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import maxpower.kernel.TreeReduce;
-import maxpower.kernel.KernelBinaryOp.Add;
 import maxpower.kernel.KernelBinaryOp.Max;
+import maxpower.kernel.TreeReduce;
 import maxpower.kernel.pipeline.FanoutLimiter;
 import maxpower.ops.AssociativeOp;
 
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
-import com.maxeler.maxcompiler.v2.kernelcompiler._Kernel;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
+import com.maxeler.maxcompiler.v2.kernelcompiler.RoundingMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.SMIO;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.FloatingPoint;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.base._KernelBaseTypes;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType.StructFieldType;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmInput;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmOutput;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmValue;
+import com.maxeler.maxcompiler.v2.statemachine.kernel.KernelStateMachine;
+import com.maxeler.maxcompiler.v2.statemachine.types.DFEsmValueType;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
-import com.maxeler.photon.libs.TriAddFactory;
 
 /**
- * Adds 2 or more floating point streams using less resources than the standard way. The more operands,
- * the greater the save. This is achieved by shifting all inputs at the start, shifting all inputs to fit the
- * biggest one and then shifting the result at the end. The standard way treats a chain of additions as separate
- * operations. As a shift is required for the input and output of each of this operations, resource usage is higher.
- * A boolean flag can be used to disable the multi-adder and use standard floating point additions instead.
+ * Add several floating-point numbers, without de-normalizing and re-normalizing the intermediate results,
+ * thus saving resources.
+ *
+ * N.B. The addition will be performed in a binary tree, which may slightly effect the final result, due
+ * to the altered order of the additions (floating-point addition is not strictly commutative).
  */
-public class FloatingPointMultiAdder extends KernelLib{
+public class FloatingPointMultiAdder {
+	public static final int DEFAULT_NUM_GUARD_BITS = 1;
 
-	public static enum Optimization {
-		TRI_ADDER,  	// Use the tri-adder optimization if possible
-		COND_ADD_SUB, 	// Use the cond-add-sub optimization if possible
-		NONE, 			// Normal binary tree addition.
-		SEQUENTIAL		// Sequential addition, for resource usage comparison.
+	/**
+	 * Sum values using the default number of guard bits.
+	 */
+	public static DFEVar add(DFEVar... summands) {
+		return add(Arrays.asList(summands));
 	}
 
-	private final int fix_num_guard_bits;
-	private final boolean auto_increase_guards;
-	private Optimization optimization_mode;
-
-	public FloatingPointMultiAdder(KernelLib owner, int guard_bits, boolean auto_increase, Optimization... preferences) {
-		super(owner);
-		fix_num_guard_bits = guard_bits;
-		auto_increase_guards = auto_increase;
-		setOptimizationMode(preferences);
+	/**
+	 * Sum values using the default number of guard bits.
+	 */
+	public static DFEVar add(List<DFEVar> summands) {
+		return add(DEFAULT_NUM_GUARD_BITS, summands);
 	}
 
-	public FloatingPointMultiAdder(KernelLib owner, int guard_bits, boolean auto_increase) {
-		super(owner);
-
-		fix_num_guard_bits = guard_bits;
-		auto_increase_guards = auto_increase;
-		setOptimizationMode();
+	/**
+	 * Sum values using the specified number of guard bits.
+	 *
+	 * N.B. Increasing the number of guards bits may decrease the numerical error
+	 * from rounding, but may also increase the resource usage on the DFE.
+	 *
+	 * @param numGuardBits  Number of extra bits used during summation to improve precision.
+	 * @param summands      Values to sum.
+	 */
+	public static DFEVar add(int numGuardBits, DFEVar... summands) {
+		return add(numGuardBits, Arrays.asList(summands));
 	}
 
-	private void setOptimizationMode() {
-		Optimization[] preferences = {Optimization.TRI_ADDER, Optimization.COND_ADD_SUB, Optimization.NONE};
-		setOptimizationMode(preferences);
+	/**
+	 * Sum values using the specified number of guard bits.
+	 *
+	 * N.B. Increasing the number of guards bits may decrease the numerical error
+	 * from rounding, but may also increase the resource usage on the DFE.
+	 *
+	 * @param numGuardBits  Number of extra bits used during summation to improve precision.
+	 * @param summands      Values to sum.
+	 */
+	public static DFEVar add(int numGuardBits, List<DFEVar> summands) {
+		switch (summands.size()) {
+		case 0: throw new MaxCompilerAPIError("Must have at least one float.");
+		case 1: return summands[0];
+		case 2: return summands[0] + summands[1];
+		default: ; // continue
+		}
+
+		checkTypesIdentical(summands);
+
+		KernelLib owner = summands[0].getKernel();
+		DFEFloat  type  = (DFEFloat) summands[0].getType();
+
+		DFEVar maxExponent = getMaxExponent(summands);
+
+		List<DFEStruct> treeValues = getReductionInputs(numGuardBits, summands, maxExponent);
+
+		DFEStruct sum = TreeReduce.reduce(new CondAddSubWithBitGrowth(), treeValues);
+		DFEVar sumNeg = sum["neg"];
+		DFEVar sumVal = sum["val"];
+
+		// Fix the signs of the result after the reduction
+		sumNeg ^= (sumVal < 0);
+		// FIXME There is a ticket open on the compiler which will make abs work in a single cycle
+		//       without manual pipelining.
+		owner.optimization.pushPipeliningFactor(0);
+		sumVal  = owner.optimization.pipeline(asUnsigned(KernelMath.abs(sumVal)));
+		owner.optimization.popPipeliningFactor();
+
+		// Reinterpret our result as though it has a single integer bit and calculate appropriate exponent.
+		DFEVar sumValExp = maxExponent + (((DFEFix) sumVal.getType()).getIntegerBits() - 1);
+		int sumValBits = sumVal.getType().getTotalBits();
+		sumVal = reinterpretCast(sumVal, dfeFixOffset(sumValBits, 1-sumValBits, SignMode.UNSIGNED));
+
+		// Shift to get rid of any leading zeroes
+		DFEVar shift           = getLeadingZeroes(sumVal);
+		DFEVar shiftCast       = shift.cast(sumValExp.getType());
+		DFEVar underflows      = (shiftCast >= sumValExp);
+		// We don't support denormalized numbers
+		DFEVar shiftedExponent = ((sumVal === 0) | underflows) ? 0 : (sumValExp - shiftCast);
+		DFEVar shiftedSumVal   = underflows ? 0 : (sumVal << shift);
+
+		// FIXME Floating point typically uses near-even rounding. To do this properly, we'd have to do
+		//       the reduction with 2*mantissa bits.
+		owner.optimization.pushRoundingMode(RoundingMode.TONEAR);
+		// Cast away guard bits to perform the rounding. We need the extra integer bit in case it rounds up to 2.
+		DFEVar roundedMantissa =
+			shiftedSumVal.cast(dfeFixOffset(type.getMantissaBits()+1, 1-type.getMantissaBits(), SignMode.UNSIGNED));
+		owner.optimization.popRoundingMode();
+
+		// Renormalize as necessary and slice out the fractional bits of the mantissa.
+		// Comparison to 2 depends on only a single bit, so remove pipelining.
+		owner.optimization.pushPipeliningFactor(0);
+		DFEVar gteTwo  = (roundedMantissa >= 2);
+		owner.optimization.popPipeliningFactor();
+		// It is not possible that resultMantissa > 2. If gteTwo, fractional bits must be zero.
+		DFEVar roundedFractionBits = gteTwo ? 0 : roundedMantissa.slice(0, type.getMantissaBits()-1);
+		DFEVar roundedExponent     = shiftedExponent + gteTwo.cast(shiftedExponent.getType());
+
+		return (sumNeg # roundedExponent # roundedFractionBits).cast(type);
 	}
 
-	private void setOptimizationMode(Optimization[] preferences) {
-		boolean optimization_set = false;
+	// Count the number of '0's before the first '1' (starting from MSB)
+	private static DFEVar getLeadingZeroes(DFEVar v) {
+		return onehotDecode(bitreverse(leading1Detect(v)));
+	}
 
-		for(Optimization preference: preferences) {
-			if(!optimization_set) {
-				switch(preference) {
-				case TRI_ADDER:
-					if(getKernelConfig().optimization.getTriAddsEnabled()) {
-						optimization_mode = Optimization.TRI_ADDER;
-						optimization_set = true;
-					}
-					break;
-				case COND_ADD_SUB:
-					if(getKernelConfig().optimization.getConditionalArithmeticEnabled()) {
-						optimization_mode = Optimization.COND_ADD_SUB;
-						optimization_set = true;
-					}
-					break;
-				case NONE:
-					optimization_mode = Optimization.NONE;
-					optimization_set = true;
-					break;
-				case SEQUENTIAL:
-					optimization_set = true;
-					break;
+	private static DFEVar getMaxExponent(List<DFEVar> summands) {
+		KernelLib owner = summands[0].getKernel();
+
+		List<DFEVar> exponents = new ArrayList<DFEVar>();
+		for (DFEVar summand : summands) {
+			exponents.add(getExponent(summand));
+		}
+
+		// TODO this seems rather arbitrary
+		int fanoutLimit = (owner.optimization.getPipeliningFactor() == 0)
+		                ? 1024 : (8 + (int)((1 - owner.optimization.getPipeliningFactor())*8));
+		return new FanoutLimiter(owner, TreeReduce.reduce(new Max(), exponents), fanoutLimit).get();
+	}
+
+	private static DFEVar getSign(DFEVar val) {
+		return FloatingPoint.getSignBit(val).cast(dfeUInt(1));
+	}
+
+	private static DFEVar getExponent(DFEVar val) {
+		int numExponentBits = ((DFEFloat) val.getType()).getExponentBits();
+		return FloatingPoint.getExponentBits(val).cast(dfeUInt(numExponentBits));
+	}
+
+	// get mantissas with implicit leading 1 and guard bits appended
+	private static DFEVar getMantissa(int numGuardBits, DFEVar val) {
+		KernelLib owner = val.getKernel();
+		DFEVar implicit1 = (getExponent(val) !== 0);
+		DFEVar mantissa  = implicit1 # FloatingPoint.getMantissaBits(val);
+
+		if (numGuardBits > 0)
+			mantissa = mantissa # owner.constant.zero(dfeUInt(numGuardBits));
+
+		int bits = mantissa.getType().getTotalBits();
+		// fixed point type with one integer bit (the rest fractional bits)
+		return mantissa.cast(dfeFixOffset(bits, 1-bits, SignMode.UNSIGNED));
+	}
+
+	private static DFEVar getShift(DFEVar maxExponent, DFEVar summand, int maxShiftBits) {
+		DFEVar expDelta = maxExponent - getExponent(summand);
+		DFEVar maxShift = summand.getKernel().constant.var(expDelta.getType(), (1 << maxShiftBits) - 1);
+		return KernelMath.min(maxShift, expDelta).cast(dfeUInt(maxShiftBits));
+	}
+
+	private static List<DFEStruct> getReductionInputs(int numGuardBits, List<DFEVar> summands, DFEVar maxExponent) {
+		KernelLib owner = summands[0].getKernel();
+
+		List<DFEStruct> redVals = new ArrayList<DFEStruct>();
+		for (DFEVar summand : summands) {
+			DFEVar mantissa     = getMantissa(numGuardBits, summand);
+			int    maxShiftBits = MathUtils.bitsToRepresent(mantissa.getType().getTotalBits());
+			DFEVar normalized   = (mantissa >> getShift(maxExponent, summand, maxShiftBits));
+
+			DFEVar redValue = asSigned(normalized); // convert to signed type
+
+			DFEStruct redVal = getReductionType(redValue.getType()).newInstance(owner);
+			redVal["neg"] <== getSign(summand);
+			redVal["val"] <== redValue;
+
+			redVals.add(redVal);
+		}
+		return redVals;
+	}
+
+	private static DFEVar asSigned(DFEVar v) {
+		DFEFix unsignedType = (DFEFix) v.getType();
+		DFEFix signedType   = dfeFixOffset(unsignedType.getTotalBits()+1, unsignedType.getOffset(), SignMode.TWOSCOMPLEMENT);
+		return v.cast(signedType);
+	}
+
+	private static DFEVar asUnsigned(DFEVar v) {
+		DFEFix signedType   = (DFEFix) v.getType();
+		DFEFix unsignedType = dfeFixOffset(signedType.getTotalBits()-1, signedType.getOffset(), SignMode.UNSIGNED);
+		return v.cast(unsignedType);
+	}
+
+	private static DFEVar reinterpretCast(DFEVar v, DFEType type) {
+		return type.unpack(v.pack());
+	}
+
+	private static void checkTypesIdentical(List<DFEVar> summands) {
+		for (DFEVar summand : summands) {
+			if (!summand.getType().equals(summands[0].getType())) {
+				throw new MaxCompilerAPIError("All of the floats must have the same type.");
+			}
+		}
+	}
+
+	private static DFEStructType getReductionType(DFEType valueType) {
+		return new DFEStructType(sft("neg", dfeBool()), sft("val", valueType));
+	}
+
+	// The CondAddSub pass in the compiler does not currently support bit growth.
+	// This is temporary workaround until it does.
+	private static class CondAddSubWithBitGrowth implements AssociativeOp<DFEStruct> {
+		// Implement using state machine so we're not unnecessarily creating extra nodes in graph.
+		private static class SM extends KernelStateMachine {
+			private final DFEsmInput a, b, c;
+			private final DFEsmOutput r;
+
+			protected SM(KernelLib owner, int bits) {
+				super(owner);
+
+				a = io.input("a", dfeInt(bits));
+				b = io.input("b", dfeInt(bits));
+				c = io.input("c", dfeBool());
+				r = io.output("r", dfeInt(bits));
+			}
+
+			@Override
+			protected void outputFunction() {
+				r <== a + (b ^ mask(c, r.getType())) + c.cast(r.getType());
+			}
+
+			private DFEsmValue mask(DFEsmValue c, DFEsmValueType type) {
+				DFEsmValue mask = c;
+				for (int i = 1; i < type.getTotalBits(); ++i) {
+					mask = mask # c;
 				}
-			}
-		}
-
-		if(!optimization_set)
-			optimization_mode = Optimization.NONE;
-	}
-
-	public DFEVar compute(DFEVar... elements) {
-		if(optimization_mode == Optimization.SEQUENTIAL)
-			return computeSequentially(elements);
-		else
-			return computeSimultaneous(elements);
-	}
-
-	public DFEVar compute(List<DFEVar> elements) {
-		return compute(elements.toArray(new DFEVar[0]));
-	}
-
-	public DFEVector<DFEVar> compute(DFEVector<DFEVar>... elements) {
-		if(elements.length == 0)
-			throw new RuntimeException("There should be at least 1 elements to add");
-		if(elements.length == 1)
-			return elements[0];
-
-		int N = elements[0].getSize();
-
-		for(int i = 1; i < elements.length; i++)
-			if(elements[i].getSize() != N)
-				throw new RuntimeException("Cannot add KMultiPipes with different number of pipes");
-
-		DFEVar[][] elementArray = new DFEVar[N][elements.length];
-		for(int i = 0; i < N; i++)
-			for(int j = 0; j < elements.length; j++)
-				elementArray[i][j] = elements[j].get(i);
-
-		DFEVar[] result = new DFEVar[N];
-		for(int i = 0; i < N; i++)
-			result[i] = compute(elementArray[i]);
-
-		return DFEVectorType.newInstance(Arrays.asList(result));
-	}
-
-	private DFEVar computeSequentially(DFEVar... elements)
-	{
-		if(elements.length == 0)
-			throw new RuntimeException("There should be at least 1 elements to add");
-
-		if(elements.length == 1)
-			return elements[0];
-
-		DFEVar sum = elements[0] + elements[1];
-		for(int i = 2; i < elements.length; i++)
-			sum = sum + elements[i];
-
-		return sum;
-	}
-
-	private DFEVar computeSimultaneous(DFEVar... elements) {
-		if(elements.length == 0)
-			throw new RuntimeException("There should be at least 1 elements to add");
-
-		if(elements.length == 1)
-			return elements[0];
-
-		final DFEFloat type = (DFEFloat)elements[0].getType();
-
-		int num_elems = elements.length;
-
-		for(int i=0; i<num_elems; i++)
-			if(!elements[i].getType().equals(type))
-				throw new RuntimeException("All of the elements should have the same type.");
-
-		int preliminary_guard_bits = fix_num_guard_bits;
-
-		final int exponent_size = type.getExponentBits();
-
-		// Not including leading one
-		final int mantissa_size = type.getMantissaBits() - 1;
-
-		// Leading one + float mantissa + guard bits
-		int preliminary_mantissa_guard_size = 1 + mantissa_size + preliminary_guard_bits;
-
-		// Sign bit + overflow bits + leading one + float mantissa + guard bits
-		//		extended_mantissa_size = 1 + MathUtils.bitsToRepresent(num_elems) + mantissa_guard_size;
-		int preliminary_extended_mantissa_size = 1 + MathUtils.bitsToRepresent(num_elems) + preliminary_mantissa_guard_size;
-
-		// If auto_increase_guards is set to true, increase the number of guard bits by the maximum amount of bits that allows both the mantissa
-		// and the extended mantissa to not exceed its current multiple of 4. This is because barrel shifters use blocks of 4 so resources
-		// would be used anyway.
-		if(auto_increase_guards) {
-			int guard_mantissa_increase = (4 - (preliminary_mantissa_guard_size % 4)) % 4;
-			int extended_mantissa_increase = (4 - (preliminary_extended_mantissa_size % 4)) % 4;
-
-			int increment = Math.min(guard_mantissa_increase, extended_mantissa_increase);
-			preliminary_guard_bits += increment;
-			preliminary_mantissa_guard_size += increment;
-			preliminary_extended_mantissa_size += increment;
-		}
-
-		final int num_guard_bits = preliminary_guard_bits;
-		final int mantissa_guard_size = preliminary_mantissa_guard_size;
-		final int extended_mantissa_size = preliminary_extended_mantissa_size;
-
-		final DFEType exponent_type = dfeUInt(exponent_size);
-		final DFEType mantissa_type= dfeUInt(mantissa_size);
-		final DFEType mantissa_guard_type= dfeUInt(mantissa_guard_size);
-
-		final DFEType extended_mantissa_type = dfeInt(extended_mantissa_size);
-
-		// END OF OLD CONSTRUCTOR
-
-		DFEVar[] exps = new DFEVar[num_elems];
-
-		DFEVar[] mantissas = new DFEVar[num_elems];
-		DFEVar[] mantissas_shifted_negated = new DFEVar[num_elems];
-
-		DFEVar[] signs = new DFEVar[num_elems];
-
-		// Extract mantissa, exponent and signs and stick on mantissa implicit one + guard bits
-		for(int i=0; i<num_elems; i++) {
-			exps[i] = FloatingPoint.getExponentBits(elements[i]).cast(exponent_type);
-			DFEVar mantissa = FloatingPoint.getMantissaBits(elements[i]);
-
-			DFEVar leading_plus_mantissa = constant.var(true) # mantissa;
-
-			if(num_guard_bits > 0)
-				mantissas[i] = (leading_plus_mantissa # constant.var(dfeUInt(num_guard_bits), 0)).cast(mantissa_guard_type);
-			else
-				mantissas[i] = leading_plus_mantissa.cast(mantissa_guard_type);
-
-			signs[i] = FloatingPoint.getSignBit(elements[i]).cast(dfeBool());
-		}
-
-		// Compute the maximum exponent
-		DFEVar max_exp = TreeReduce.reduce(new Max(), exps);
-
-		int fanout_limit = optimization.getPipeliningFactor() == 0. ? 1024 : (8 + (int)((1-optimization.getPipeliningFactor())*8)) ;
-		FanoutLimiter fl = new FanoutLimiter(this, max_exp, fanout_limit);
-		DFEStructType reductionType = getReductionType(extended_mantissa_type);
-		DFEStruct[] tree_values = new DFEStruct[num_elems];
-
-		// Denormalize, negate and stick on overflow bits
-		for(int i=0; i<num_elems; i++) {
-			int mantissa_width = mantissas[i].getType().getTotalBits();
-			int num_bits_m = MathUtils.bitsToRepresent(mantissa_width);
-			DFEVar difference_exponent = (fl.get() - exps[i]);
-
-			// Here we would check if difference_exponent is greater than (1 << num_bits_m)-1, the maximum number that the shifter accepts,
-			// and there OR that with the comparison of the exponent with 0. A cheaper way of doing that is picking the top bits of the exponent
-			// (leaving num_bits_m unpicked), concatenate the result of the comparison on top of that and compare to 0, producing the same result
-			DFEVar expIsZero = exps[i].eq(0);
-			DFEVar topExpBits = difference_exponent.slice(num_bits_m, exps[i].getType().getTotalBits()-num_bits_m);
-			DFEVar isZero = (expIsZero # topExpBits).neq(0);
-
-			DFEVar shift_amount = difference_exponent.cast(dfeUInt(num_bits_m));
-			shift_amount = isZero ? mantissa_width : shift_amount;
-
-			DFEVar m_shifted = mantissas[i] >> shift_amount;
-
- 			DFEVar m_shifted_extended = (constant.var(dfeUInt(extended_mantissa_size - mantissa_guard_size), 0) # m_shifted).cast(extended_mantissa_type);
-
- 			if(optimization_mode == Optimization.COND_ADD_SUB) {
-				tree_values[i] = reductionType.newInstance(this);
-				tree_values[i].set("neg", signs[i]);
-				tree_values[i].set("value", m_shifted_extended);
-			}
-			else {
-				optimization.pushPipeliningFactor(0);
-				mantissas_shifted_negated[i] = optimization.pipeline(signs[i] ? -m_shifted_extended : m_shifted_extended);
-				optimization.popPipeliningFactor();
-			}
-		}
-
-		// Sum elements in a tree form to diminish latency
-		DFEVar result_mantissa_extended;
-		DFEVar is_negated = constant.var(false);
-		if(optimization_mode == Optimization.TRI_ADDER) {
-			result_mantissa_extended = triAddReduce(mantissas_shifted_negated);
-		}
-		else if(optimization_mode == Optimization.COND_ADD_SUB) {
-				DFEStruct sum_result = TreeReduce.reduce(new CondAddSub(), tree_values);
-				is_negated = sum_result.get("neg");
-				result_mantissa_extended = sum_result.get("value");
-		}
-		else {
-				result_mantissa_extended = TreeReduce.reduce(new Add<DFEVar>(), mantissas_shifted_negated);
-		}
-
-		DFEVar result_sign = result_mantissa_extended.slice(extended_mantissa_size-1);
-
-		result_mantissa_extended = result_sign ? -result_mantissa_extended : result_mantissa_extended;
-		result_sign = result_sign ^ is_negated;
-
-		DFEVar leading_one = Bitops.onehotDecode(Bitops.leading1Detect(
-			result_mantissa_extended
-			.cast(dfeRawBits(result_mantissa_extended.getType().getTotalBits()))
-			.cast(dfeUInt(result_mantissa_extended.getType().getTotalBits()))))
-			.cast(exponent_type);
-
-
-		DFEVar is_zero = result_mantissa_extended.eq(0);
-
-		// Check that the amount that we have to shift to the left is not greater than the maximum exponent. If that were the case,
-		// we have underflow happening.
-		DFEVar is_underflow = max_exp.cast(dfeUInt(16)) + leading_one.cast(dfeUInt(16)) <= mantissa_size + num_guard_bits;
-
-		DFEVar incorrect_result = is_zero | is_underflow;
-
-		DFEVar result_exponent = max_exp + (leading_one - mantissa_size - num_guard_bits);
-
-		result_mantissa_extended = result_mantissa_extended << (extended_mantissa_size - leading_one).cast(dfeUInt(MathUtils.bitsToAddress(result_mantissa_extended.getType().getTotalBits())));
-
-		// Use guard bits to round
-		if(num_guard_bits > 0) {
-			// Add a bit to the left to check for overflow
-			DFEVar result_mantissa_overflow= (constant.var(false) # result_mantissa_extended).cast(dfeUInt(extended_mantissa_size+1));
-
-			DFEVar result_mantissa_extended_rounded = result_mantissa_overflow + (1 << ((extended_mantissa_size - mantissa_size) - 1));
-
-			DFEVar overflow = result_mantissa_extended_rounded[extended_mantissa_size];
-
-			result_exponent = overflow ? result_exponent + 1 : result_exponent;
-
-			result_mantissa_extended = result_mantissa_extended_rounded.slice(0, extended_mantissa_size);
-		}
-
-		DFEVar result_mantissa = result_mantissa_extended.slice(extended_mantissa_size-mantissa_size, mantissa_size).cast(mantissa_type);
-
-		result_exponent = incorrect_result ? constant.var(exponent_type, 0) : result_exponent;
-		result_mantissa = incorrect_result ? constant.var(mantissa_type, 0) : result_mantissa;
-
-		DFEVar result = (result_sign # result_exponent # result_mantissa).cast(dfeFloat(exponent_size, mantissa_size+1));
-
-		return result;
-	}
-
-	private DFEVar triAddReduce(DFEVar... mantissas_shifted_negated) {
-		List<DFEVar> current = Arrays.asList(mantissas_shifted_negated);
-
-		TriAddFactory triadd = new TriAddFactory(_Kernel.getPhotonDesignData(this));
-		while(current.size() > 2) {
-			List<DFEVar> next = new ArrayList<DFEVar>(current.size()/3 + (current.size() % 3));
-
-			for(int i=0; i<current.size()/3; ++i) {
-				next.add(_KernelBaseTypes.fromImp(this, triadd.add3(
-					_KernelBaseTypes.toImp(current[3*i]),
-					_KernelBaseTypes.toImp(current[3*i+1]),
-					_KernelBaseTypes.toImp(current[3*i+2]))));
+				return mask.cast(type);
 			}
 
-			for(int i = 0; i < current.size() % 3; ++i) {
-				next.add(current[current.size()-1-i]);
-			}
-
-			current = next;
+			@Override protected void nextState() {} // there is no state!!
 		}
 
-		return current.size() == 2 ? current[0] + current[1] : current[0];
-	}
-
-	public static DFEStructType getReductionType(DFEType extended_mantissa_type) {
-		return new DFEStructType(
-			new StructFieldType("neg",   dfeBool()),
-			new StructFieldType("value", extended_mantissa_type)
-			);
-	}
-
-	public static class CondAddSub implements AssociativeOp<DFEStruct> {
+		private static int i = 0;
 		@Override
 		public DFEStruct op(DFEStruct a, DFEStruct b) {
-			DFEStruct result = a.getType().newInstance(a.getKernel());
-			DFEVar a_neg = a.get("neg");
-			DFEVar b_neg = b.get("neg");
-			DFEVar a_val = a.get("value");
-			DFEVar b_val = b.get("value");
+			DFEVar aNeg = a["neg"];
+			DFEVar bNeg = b["neg"];
+			DFEVar aVal = a["val"];
+			DFEVar bVal = b["val"];
 
-			result.set("neg", a_neg);
-			result.set("value", a_neg.eq(b_neg) ? a_val+b_val : a_val-b_val);
+			KernelLib owner = a.getKernel();
+
+			owner.optimization.pushEnableBitGrowth(true);
+			DFEType rValType = (aVal + bVal).getType(); // this addition will be optimized away
+			owner.optimization.popEnableBitGrowth();
+
+			SMIO sm = owner.addStateMachine("CondAddSubSM"+i++, new SM(owner, rValType.getTotalBits()));
+			sm.connectInput("a", reinterpretCast(aVal.cast(rValType), dfeInt(rValType.getTotalBits())));
+			sm.connectInput("b", reinterpretCast(bVal.cast(rValType), dfeInt(rValType.getTotalBits())));
+			sm.connectInput("c", aNeg ^ bNeg);
+
+			DFEStruct result = getReductionType(rValType).newInstance(a.getKernel());
+			result["neg"] <== aNeg;
+			result["val"] <== owner.optimization.pipeline(reinterpretCast(sm.getOutput("r"), rValType));
 			return result;
 		}
 	}
