@@ -46,10 +46,44 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * to the altered order of the additions (floating-point addition is not strictly commutative).
  */
 public class FloatingPointMultiAdder {
+	public static final int DEFAULT_NUM_GUARD_BITS = 1;
+
+	/**
+	 * Sum values using the default number of guard bits.
+	 */
+	public static DFEVar add(DFEVar... summands) {
+		return add(Arrays.asList(summands));
+	}
+
+	/**
+	 * Sum values using the default number of guard bits.
+	 */
+	public static DFEVar add(List<DFEVar> summands) {
+		return add(DEFAULT_NUM_GUARD_BITS, summands);
+	}
+
+	/**
+	 * Sum values using the specified number of guard bits.
+	 *
+	 * N.B. Increasing the number of guards bits may decrease the numerical error
+	 * from rounding, but may also increase the resource usage on the DFE.
+	 *
+	 * @param numGuardBits  Number of extra bits used during summation to improve precision.
+	 * @param summands      Values to sum.
+	 */
 	public static DFEVar add(int numGuardBits, DFEVar... summands) {
 		return add(numGuardBits, Arrays.asList(summands));
 	}
 
+	/**
+	 * Sum values using the specified number of guard bits.
+	 *
+	 * N.B. Increasing the number of guards bits may decrease the numerical error
+	 * from rounding, but may also increase the resource usage on the DFE.
+	 *
+	 * @param numGuardBits  Number of extra bits used during summation to improve precision.
+	 * @param summands      Values to sum.
+	 */
 	public static DFEVar add(int numGuardBits, List<DFEVar> summands) {
 		switch (summands.size()) {
 		case 0: throw new MaxCompilerAPIError("Must have at least one float.");

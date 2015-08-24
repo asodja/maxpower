@@ -60,7 +60,7 @@ public class TileMultiplier extends KernelLib {
 		}
 
 		if (aIn.getType() instanceof DFEFloat) {
-			output = FloatingPointMultiAdder.add(1, summands);
+			output = FloatingPointMultiAdder.add(summands);
 		} else {
 			output = TreeReduce.reduce(new Add<DFEVar>(), summands);
 		}
