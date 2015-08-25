@@ -30,6 +30,8 @@ public class BoxBufferTest {
 	@Test public void pow2factor_16_8()      { testBoxBuffer(1, 2512, 16,  8); }
 	@Test public void nonFactor_12_8()       { testBoxBuffer(1, 2508, 12,  8); }
 
+	@Test public void simple_2d()            { testBoxBuffer(2, 64, 2, 2, 2); }
+
 
 	private void testBoxBuffer(int numDimensions, int maxItemsPerDim, int numInputItems, int... numOutputItems) {
 		SimulationManager mgr = new SimulationManager("BoxBufferTest_"+numDimensions+"D_"+maxItemsPerDim+"_"+numInputItems+"_"+numOutputItems[0],  SimulationParams.BITACCURATE_MAX4);
@@ -72,8 +74,8 @@ public class BoxBufferTest {
 			DFEVar[] rdIndex = new DFEVar[numDimensions];
 			for (int i = 0; i < numDimensions; i++) {
 				int idxBits = MathUtils.bitsToAddress(maxItems[i]);
-				wrIndex[i] = io.input("wrIndex"+i,  dfeUInt(idxBits));
-				rdIndex[i] = stream.offset(io.input("rdIndex"+i,  dfeUInt(idxBits)), -numCycles);
+				wrIndex[i] = io.input("wrIndex"+i,  dfeUInt(idxBits)).simWatch("wrIndex"+i);
+				rdIndex[i] = stream.offset(io.input("rdIndex"+i,  dfeUInt(idxBits)).simWatch("rdIndex"+i), -numCycles);
 			}
 
 			DFEVar wrBuffer = io.input("wrBuffer", dfeUInt(1));
@@ -82,10 +84,11 @@ public class BoxBufferTest {
 			DFEVar rdBuffer = stream.offset(io.input("rdBuffer", dfeUInt(1)), -numCycles);
 
 			DFEVector<DFEVar> wrData = io.input("wrData", inType);
+			wrData.simWatch("wrData");
 
 			BoxBuffer<DFEVar> buffer = new BoxBuffer<DFEVar>(this, maxItems, numOutputItems, inType);
 			buffer.write(wrData, wrIndex, wrEnable, wrBuffer);
-			io.output("rdData", outType) <== stream.offset(buffer.read(rdIndex, rdBuffer), numCycles);
+			io.output("rdData", outType) <== stream.offset(buffer.read(rdIndex, rdBuffer), numCycles).simWatch("rdData");
 		}
 	}
 
@@ -107,9 +110,16 @@ public class BoxBufferTest {
 			if (maxItems[maxItems.length - 1] % numInputItems != 0) {
 				throw new RuntimeException("Maximum number of items in the fast dimension needs to be a multiple of the number of input items.");
 			}
-			m_numCycles      = product(maxItems) / numInputItems;
-			m_numOutputItems = numOutputItems.clone();
-			m_maxItems       = maxItems.clone();
+			m_numCycles       = product(maxItems) / numInputItems;
+			m_numOutputItems  = new int[numOutputItems.length];
+			m_maxItems        = new int[maxItems.length];
+			int[] lastAddress = new int[maxItems.length];
+			for (int i = 0; i < maxItems.length; i++) {
+				m_numOutputItems[i] = numOutputItems[i];
+				m_maxItems[i] = maxItems[i];
+				lastAddress[i] = maxItems[i] - numOutputItems[i];
+			}
+			int lastIndex = getIndex(lastAddress);
 
 			m_data = new int[product(m_maxItems)];
 			for (int i = 0; i < m_data.length; i++) {
@@ -122,8 +132,6 @@ public class BoxBufferTest {
 			m_rdBuffer = new double[m_numCycles];
 			m_wrIndex  = new double[m_maxItems.length][m_numCycles];
 			m_rdIndex  = new double[m_maxItems.length][m_numCycles];
-
-			int lastIndex = m_data.length - product(numOutputItems);
 
 			// Build up input data
 			for (int i = 0; i < m_numCycles; i++) {
@@ -149,6 +157,9 @@ public class BoxBufferTest {
 						readIndex = ((int) (Math.random() * lastIndex));
 				}
 				int[] readIndices = getAddress(readIndex);
+				for (int dim = 0; dim < readIndices.length; dim++) {//Shift it back into a valid range if we have gone off the edge
+					readIndices[dim] = Math.min(readIndices[dim], m_maxItems[dim] - m_numOutputItems[dim]);
+				}
 				int[] writeIndices = getAddress(numInputItems * (long)i);
 				for (int j = maxItems.length - 1; j >= 0; j--) {
 					m_wrIndex[j][i] = writeIndices[j];
@@ -182,9 +193,9 @@ public class BoxBufferTest {
 			for (int i = 0; i < output.length; i++) {
 				int[] newAddress = new int[address.length];
 				int denom = 1;
-				for (int dim = m_maxItems.length - 1; dim >= 0; dim--) {
-					newAddress[dim] = address[dim] + (i / denom) % m_maxItems[dim];
-					denom *= m_maxItems[dim];
+				for (int dim = m_numOutputItems.length - 1; dim >= 0; dim--) {
+					newAddress[dim] = address[dim] + (i / denom) % m_numOutputItems[dim];
+					denom *= m_numOutputItems[dim];
 				}
 				int index = getIndex(newAddress);
 				output[i] = m_data[index];
@@ -217,10 +228,6 @@ public class BoxBufferTest {
                 List<Double> output = outType.decodeConstant(rdData[i]);
 				int[] expected = extractBlock(getReadAddress(i));
 				for (int j = 0; j < expected.length; j++) {
-//					if (output[j].intValue() != m_data[(int)m_rdIndex[0][i] + j]) {
-//						System.out.println("[" + i + "] " + ((int)m_rdIndex[0][i] + j) + " Value expected: " + m_data[(int)m_rdIndex[0][i] + j] + " != got: " + output[j].intValue());
-//						testPassed = false;
-//					}
 					if (output[j].intValue() != expected[j]) {
 						System.out.println("[" + i + ", " + j + "] " + printArray(getReadAddress(i)) + " Value expected: " + expected[j] + " != got: " + output[j].intValue());
 						testPassed = false;
@@ -232,7 +239,7 @@ public class BoxBufferTest {
 	}
 
 
-	private int product(int[] x) {
+	public static int product(int[] x) {
 		int result = x[0];
 		for (int i = 1; i < x.length; i++) {
 			result *= x[i];

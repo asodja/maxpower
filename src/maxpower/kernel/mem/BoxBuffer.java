@@ -92,9 +92,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		if (maxItems.length != numOutputItems.length) {
 			throw new RuntimeException("The number of dimensions of the box must be the same as the number of dimensions of the buffer.");
 		}
-		if (maxItems.length > 1) {
-			throw new RuntimeException("Only 1D supported right now.");
-		}
 
 		m_numDimensions  = maxItems.length;
 		m_inputType      = inputType;
@@ -109,17 +106,20 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 		int numBuffers = 1;
 		int bufferDepth = maxItems[m_numDimensions - 1];
-		m_skipRows[m_numDimensions - 1] = 1;
+		m_skipRows[m_numDimensions - 1] = numOutputItems[m_numDimensions - 1];
 		m_skipBuffers[m_numDimensions - 1] = 1;
 		for (int i = m_numDimensions - 2; i >= 0; i--) {
 			numBuffers      *= numOutputItems[i];
 			bufferDepth     *= MathUtils.ceilDivide(maxItems[i], numOutputItems[i]);
-			m_skipRows[i]    = MathUtils.ceilDivide(maxItems[i], numOutputItems[i]) * m_skipRows[i + 1];
+			m_skipRows[i]    = MathUtils.ceilDivide(maxItems[i + 1], numOutputItems[i + 1]) * m_skipRows[i + 1];
 			m_skipBuffers[i] = numOutputItems[i] * m_skipBuffers[i + 1];
 		}
 
 		m_1dParams = new BoxBufferParams(bufferDepth, inputType.getSize(), numOutputItems[m_numDimensions - 1], inputType.getContainedType().getTotalBits(), costOfBramInLuts, doubleBuffered);
 
+		for (int i = 0; i < m_numDimensions; i++) {
+			System.out.println("skip["+i+"] = "+m_skipRows[i]);
+		}
 		buffers = new ArrayList<Buffer1D>(numBuffers);
 		for (int i = 0; i < numBuffers; i++) {
 			buffers.add(new Buffer1D(inputType.getContainedType()));
@@ -167,16 +167,21 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		addressDivMod[m_numDimensions - 1] = ConstDenominator.divMod(address[m_numDimensions - 1], 1);//We don't calculate DivMod of fast dim address, as we will do something special with that later.
 		for (int i = m_numDimensions - 2; i >= 0; i--) {
 			addressDivMod[i] = ConstDenominator.divMod(address[i], m_numOutputItems[i]);
+			addressDivMod[i].m_quot.simWatch("quot"+i);
+			addressDivMod[i].m_rem.simWatch("rem"+i);
 		}
 
-		DFEVar wrRowCol = xyLookup(get1dAddress(addressDivMod), dfeUInt(m_1dParams.rowAddrBits + m_1dParams.colAddrBits));
+		DFEVar wrRowCol = xyLookup(get1dAddress(addressDivMod).simWatch("get1daddress"), dfeUInt(m_1dParams.rowAddrBits + m_1dParams.colAddrBits));
+		wrRowCol.simWatch("wrRowCol");
 
-		DFEVar wrCol  = slice(wrRowCol, 0, m_1dParams.colAddrBits);
-		DFEVar _wrRow = slice(wrRowCol, m_1dParams.colAddrBits, m_1dParams.rowAddrBits);
+		DFEVar wrCol = slice(wrRowCol, 0, m_1dParams.colAddrBits);
+		DFEVar wrRow = slice(wrRowCol, m_1dParams.colAddrBits, m_1dParams.rowAddrBits);
+		wrCol.simWatch("wrCol");
+		wrRow.simWatch("wrRow");
 
 		// Widen wrRow in if we've had to pad the ram depth
 		DFEVar ramWriteCol = wrCol;
-		DFEVar ramWriteRow = _wrRow.cast(dfeUInt(m_1dParams.rowAddrBits));
+		DFEVar ramWriteRow = wrRow.cast(dfeUInt(m_1dParams.rowAddrBits));
 		DFEVar ramWriteRowp1 = ramWriteRow + 1;
 
 		//Stop writing at the end of the RAM
@@ -195,11 +200,13 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			DFEVar nextRow = ramWriteCol > tileLastItem;
 			DFEVar writeRow = ~nextRow ? ramWriteRow : ramWriteRowp1;
 			writeEnable[i] = ~nextRow ? enable : wrEnablep1;
+			writeEnable[i].simWatch("wr1denable_"+i);
 
 			// Create actual write address
 			writeAddress[i] = m_1dParams.doubleBuffered
 			                ? writeRow.cat(buffer).cast(dfeUInt(m_1dParams.ramAddrBits))
 			                : writeRow.cast(dfeUInt(m_1dParams.ramAddrBits));
+			writeAddress[i].simWatch("wr1daddress_"+i);
 		}
 
 		List<DFEVar> inThisBuffer = new ArrayList<DFEVar>();
@@ -213,6 +220,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		}
 
 		for (int i = 0; i < buffers.size(); i++) {
+			inThisBuffer[i].simWatch("inthisbuffer_"+i);
 			buffers[i].write(alignedInputData, writeAddress, writeEnable, inThisBuffer[i]);
 
 		}
@@ -245,29 +253,38 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	}
 
 
+	private int numCalls = 0;
+
 	private DFEVector<T> read(ConstDivModResult[] address, DFEVar buffer, int dimension, int index) {
+		int numCycles = BoxBufferTest.product(m_maxItems);
+
 		if (dimension == m_numDimensions - 1) {
 			DFEVar address1d = get1dAddress(address);
+			stream.offset(address1d, numCycles).simWatch("readAddress1d_"+numCalls);
+			numCalls++;
 			return buffers[index].read(address1d, buffer);
 		}
 
 		ConstDivModResult[] newAddress = new ConstDivModResult[address.length];
-		for (int j = 0; j < address.length; j++) {
-			newAddress[j] = address[j];
+		for (int j = 0; j < address.length; j++) {//TODO: make copy constructor
+			newAddress[j] = new ConstDivModResult(address[j].m_quot, address[j].m_rem);
 		}
 
 		List<DFEVector<T>> bufferOutput = new ArrayList<DFEVector<T>>();
-		for (int j = 0; j < m_numOutputItems[dimension]; j++) {
-			newAddress[dimension] = add(address[dimension], j, m_numOutputItems[dimension]);
-			bufferOutput.add(read(newAddress, buffer, dimension + 1, index + j * m_skipBuffers[dimension]));
+		for (int j = 0; j < m_numOutputItems[dimension]; j++) {//TODO: optimise
+			futureWatch(address[dimension].m_quot, "oldAddress_"+dimension+"d_"+j);
+			newAddress[dimension].m_quot = address[dimension].m_rem > j ? address[dimension].m_quot + 1 : address[dimension].m_quot;//add(address[dimension], j, m_numOutputItems[dimension]);
+			futureWatch(newAddress[dimension].m_quot, "newerAddress_"+dimension+"d_"+j);
+			futureWatch(address[dimension].m_rem > j, "useNextBuf_"+dimension+"d_"+j);
+			bufferOutput.add(read(newAddress, buffer, dimension + 1, index + j * m_skipBuffers[dimension + 1]));
 		}
 
 		if (bufferOutput.size() > 1) {
 			DFEVectorType<T> outputType = bufferOutput[0].getType();
 			DFEVectorType<DFEVar> rotateType = new DFEVectorType<DFEVar>(dfeRawBits(outputType.getTotalBits()), bufferOutput.size());
 			DFEVector<DFEVar> rotated = rotateType.newInstance(this);
-			for (DFEVector<T> member: bufferOutput) {
-				rotated <== member.pack();
+			for (int i = 0; i < rotated.getSize(); i++) {
+				rotated[i] <== bufferOutput[i].pack();
 			}
 			rotated = rotated.rotateElementsRight(address[dimension].m_rem);
 			bufferOutput.clear();
@@ -280,25 +297,11 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	}
 
 
-	private ConstDivModResult add(ConstDivModResult x, int y, int modulus) {
-		if (y > modulus) {
-			throw new RuntimeException("This method only supports adding a value less than the modulus.");
-		}
-		//TODO: optimise power of 2 case
-		DFEVar invRem = modulus - x.m_rem;
-		DFEVar wrap = y >= invRem;
-		DFEVar quot = wrap ? x.m_quot + 1 : x.m_quot;
-		DFEVar rem  = wrap ? x.m_rem - (modulus - y) : x.m_rem + y;
-		return new ConstDivModResult(quot, rem);
-	}
-
-
 	//Slice bits out of a DFEVar and reinterpret as an unsigned integer (rather than raw bits).
 	private DFEVar slice(DFEVar input, int base, int width) {
 		DFEVar output = input.slice(base, width);
 		return output.cast(dfeUInt(width));
 	}
-
 
 	private DFEVar get1dAddress(ConstDivModResult[] address) {
 		optimization.pushEnableBitGrowth(true);
@@ -312,6 +315,11 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		return output.cast(dfeUInt(MathUtils.bitsToAddress(m_1dParams.maxItems)));
 	}
 
+	private DFEVar futureWatch(DFEVar input, String name) {
+		int numCycles = BoxBufferTest.product(m_maxItems);
+		stream.offset(input, numCycles).simWatch(name);
+		return input;
+	}
 
 	private DFEVar adderTree(List<DFEVar> input) {
 		if (input.size() == 1) {
