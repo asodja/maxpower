@@ -43,7 +43,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * thus saving resources.
  *
  * N.B. The addition will be performed in a binary tree, which may slightly effect the final result, due
- * to the altered order of the additions (floating-point addition is not strictly commutative).
+ * to the altered order of the additions (floating-point addition is not strictly associative).
  */
 public class FloatingPointMultiAdder {
 	public static final int DEFAULT_NUM_GUARD_BITS = 1;
