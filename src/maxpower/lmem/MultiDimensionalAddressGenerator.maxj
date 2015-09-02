@@ -1,4 +1,4 @@
-package maxpower.lmem.addressgenerators;
+package maxpower.lmem;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;

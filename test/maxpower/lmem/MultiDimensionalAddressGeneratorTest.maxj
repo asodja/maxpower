@@ -1,18 +1,20 @@
-package maxpower.lmem.addressgenerators;
+package maxpower.lmem;
 
-import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.getSizeNdName;
-import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.getSkipNdName;
-import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.numBlocksName;
-import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.numBurstsName;
-import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.numRepeatsName;
-import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.outputName;
-import static maxpower.lmem.addressgenerators.MultiDimensionalAddressGenerator.startAddressName;
+import static maxpower.lmem.MultiDimensionalAddressGenerator.getSizeNdName;
+import static maxpower.lmem.MultiDimensionalAddressGenerator.getSkipNdName;
+import static maxpower.lmem.MultiDimensionalAddressGenerator.numBlocksName;
+import static maxpower.lmem.MultiDimensionalAddressGenerator.numBurstsName;
+import static maxpower.lmem.MultiDimensionalAddressGenerator.numRepeatsName;
+import static maxpower.lmem.MultiDimensionalAddressGenerator.outputName;
+import static maxpower.lmem.MultiDimensionalAddressGenerator.startAddressName;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+
+import maxpower.lmem.MultiDimensionalAddressGenerator;
 
 import org.junit.Test;
 
