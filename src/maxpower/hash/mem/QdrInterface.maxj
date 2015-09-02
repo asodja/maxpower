@@ -8,12 +8,12 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;
 import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
 
-public class QDRInterface extends BurstMemInterface {
+public class QdrInterface extends BurstMemInterface {
 
 	private final static int ADDR_SIZE_BITS = 21;
 	private final static int BURST_SIZE_BITS = 144;
 
-	public QDRInterface(MaxHash<?> owner, String name, DFEStructType structType,
+	public QdrInterface(MaxHash<?> owner, String name, DFEStructType structType,
 			int numEntries, boolean isDoubleBuffered, int baseAddressBursts) {
 		super(owner, name, structType, numEntries, isDoubleBuffered, BURST_SIZE_BITS, baseAddressBursts);
 

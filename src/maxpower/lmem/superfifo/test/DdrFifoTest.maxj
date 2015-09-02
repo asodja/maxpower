@@ -1,6 +1,6 @@
 package maxpower.lmem.superfifo.test;
 
-import maxpower.lmem.superfifo.DDRFifo;
+import maxpower.lmem.superfifo.DdrFifo;
 import maxpower.lmem.superfifo.SimpleWire;
 
 import com.maxeler.maxcompiler.v2.build.EngineParameters;
@@ -11,9 +11,9 @@ import com.maxeler.maxcompiler.v2.managers.custom.blocks.StateMachineBlock;
 import com.maxeler.maxcompiler.v2.managers.custom.stdlib.DebugLevel;
 import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MemoryControlGroup;
 
-public class DDRFifoTest extends CustomManager {
+public class DdrFifoTest extends CustomManager {
 
-	public DDRFifoTest(boolean sim) {
+	public DdrFifoTest(boolean sim) {
 		super(new EngineParameters("DDRFifoTest_" + (sim ? "SIM" : "HW"), DFEModel.VECTIS,
 				sim ? com.maxeler.maxcompiler.v2.build.EngineParameters.Target.DFE_SIM :
 					com.maxeler.maxcompiler.v2.build.EngineParameters.Target.DFE));
@@ -31,23 +31,23 @@ public class DDRFifoTest extends CustomManager {
 		DFELink readMemStream = addStreamFromOnCardMemory("readMemStream", ctrlGroup);
 		ctrlGroup.finalise();
 
-		StateMachineBlock ddrFifo = addStateMachine("ddrFifo", new DDRFifo(this, 1000000, 16 * 1024 * 1024,
+		StateMachineBlock ddrFifo = addStateMachine("ddrFifo", new DdrFifo(this, 1000000, 16 * 1024 * 1024,
 				ctrlGroup.getStreamIndexIdWithinGroup("writeMemStream"),
 				ctrlGroup.getStreamIndexIdWithinGroup("readMemStream"),
 				0, 1));
 
-		wire.getInput(SimpleWire.INPUT) <== ddrFifo.getOutput(DDRFifo.OUTPUT_MEM_COMMAND);
+		wire.getInput(SimpleWire.INPUT) <== ddrFifo.getOutput(DdrFifo.OUTPUT_MEM_COMMAND);
 
-		writeMemStream <== ddrFifo.getOutput(DDRFifo.OUTPUT_MEM_DATA);
-		ddrFifo.getInput(DDRFifo.INPUT_MEM_DATA) <== readMemStream;
+		writeMemStream <== ddrFifo.getOutput(DdrFifo.OUTPUT_MEM_DATA);
+		ddrFifo.getInput(DdrFifo.INPUT_MEM_DATA) <== readMemStream;
 
-		ddrFifo.getInput(DDRFifo.INPUT_DATA) <== addStreamFromCPU("write_fifo");
-		addStreamToCPU("read_fifo") <== ddrFifo.getOutput(DDRFifo.OUTPUT_DATA);
+		ddrFifo.getInput(DdrFifo.INPUT_DATA) <== addStreamFromCPU("write_fifo");
+		addStreamToCPU("read_fifo") <== ddrFifo.getOutput(DdrFifo.OUTPUT_DATA);
 	}
 
 	public static void main(String [] args) {
 		boolean isSim = true;
-		DDRFifoTest m = new DDRFifoTest(isSim);
+		DdrFifoTest m = new DdrFifoTest(isSim);
 		m.build();
 	}
 

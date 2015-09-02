@@ -27,7 +27,7 @@ import com.maxeler.networking.v1.managers.netlib.TCPStreamManyConnections;
 import com.maxeler.photon.hw.HWHierarchyMode;
 import com.maxeler.utils.MemoryManager;
 
-public class TCPFramer {
+public class TcpFramer {
 	private static DFEType slotType = DFETypeFactory.dfeUInt(32);
 
 	public static DFELink create(
@@ -64,33 +64,33 @@ public class TCPFramer {
 		ManagerClock clk = owner.getNetworkClock(conn);
 		owner.pushDefaultClock(clk);
 
-		TCPFramerSM framerSM = new TCPFramerSM(owner, tcpManyConn.getTypes(), specFactories);
+		TcpFramerSM framerSM = new TcpFramerSM(owner, tcpManyConn.getTypes(), specFactories);
 		_ManagerStateMachine.Configuration.setHWHierarchy(framerSM, HWHierarchyMode.SOFT);
 		StateMachineBlock framer = owner.addStateMachine("tcpFramer_" + name, framerSM);
 
-		framer.getInput(TCPFramerSM.INPUT_RX_DATA_EVENTS) <== tcpManyConn.getReceiveEventStream();
-		framer.getInput(TCPFramerSM.INPUT_RX_CONN_STATE_EVENTS) <== stateEventStream;
+		framer.getInput(TcpFramerSM.INPUT_RX_DATA_EVENTS) <== tcpManyConn.getReceiveEventStream();
+		framer.getInput(TcpFramerSM.INPUT_RX_CONN_STATE_EVENTS) <== stateEventStream;
 
 		if (hasSuperFifo(fifoDepth)) {
 			FifoIO superFifo = SuperFIFO.create(owner, name, slotType, fifoDepth, lmemOrganizer);
-			superFifo.write <== framer.getOutput(TCPFramerSM.OUTPUT_RX_EVENTS);
-			framer.getInput(TCPFramerSM.INPUT_RX_EVENTS) <== superFifo.read;
+			superFifo.write <== framer.getOutput(TcpFramerSM.OUTPUT_RX_EVENTS);
+			framer.getInput(TcpFramerSM.INPUT_RX_EVENTS) <== superFifo.read;
 		} else {
-			framer.getInput(TCPFramerSM.INPUT_RX_EVENTS) <== framer.getOutput(TCPFramerSM.OUTPUT_RX_EVENTS);
+			framer.getInput(TcpFramerSM.INPUT_RX_EVENTS) <== framer.getOutput(TcpFramerSM.OUTPUT_RX_EVENTS);
 		}
-		framer.getInput(TCPFramerSM.INPUT_RX_RESPONSE).connect(tcpManyConn.getReceiveDataStream());
+		framer.getInput(TcpFramerSM.INPUT_RX_RESPONSE).connect(tcpManyConn.getReceiveDataStream());
 
-		if (TCPFramerConstants.enableDebugStreams) {
+		if (TcpFramerConstants.enableDebugStreams) {
 			owner.addStreamToCPU("debugStream") <== framer.getOutput("debugStream");
 		}
 
-		if (TCPFramerConstants.enableFramerDebugger) {
+		if (TcpFramerConstants.enableFramerDebugger) {
 			owner.addStreamToCPU("framerDebug") <== framer.getOutput("debugOutput");
 		}
 
-		tcpManyConn.getReceiveRequestStream() <== framer.getOutput(TCPFramerSM.OUTPUT_RX_REQUEST);
+		tcpManyConn.getReceiveRequestStream() <== framer.getOutput(TcpFramerSM.OUTPUT_RX_REQUEST);
 
-		DFELink output = framer.getOutput(TCPFramerSM.OUTPUT_FRAMED);
+		DFELink output = framer.getOutput(TcpFramerSM.OUTPUT_FRAMED);
 		owner.popDefaultClock();
 		return output;
 	}

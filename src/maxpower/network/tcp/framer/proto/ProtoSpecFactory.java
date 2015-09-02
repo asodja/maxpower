@@ -8,8 +8,8 @@
 
 package maxpower.network.tcp.framer.proto;
 
-import maxpower.network.tcp.framer.TCPFramerSM;
+import maxpower.network.tcp.framer.TcpFramerSM;
 
 public interface ProtoSpecFactory {
-	public FramerProtocolSpec create(TCPFramerSM owner);
+	public FramerProtocolSpec create(TcpFramerSM owner);
 }

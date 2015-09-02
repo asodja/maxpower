@@ -10,13 +10,13 @@ package maxpower.network.tcp.framer;
 
 import java.util.List;
 
-import maxpower.network.tcp.framer.TCPFramerSM.FramerStates;
+import maxpower.network.tcp.framer.TcpFramerSM.FramerStates;
 import maxpower.network.tcp.framer.proto.FramerProtocolSpec;
 
 import com.maxeler.maxcompiler.v2.managers.DFEManager;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
-public class TCPFramerConstants {
+public class TcpFramerConstants {
 	public static boolean enableDebug = false;
 	public static boolean enableDebugPrints = false;
 	public static boolean enableDebugStreams = false;
@@ -37,23 +37,23 @@ public class TCPFramerConstants {
 	}
 
 	public static final int maxSupportedMessageLength = 16 * 1024;
-	public static final int modWidth = MathUtils.bitsToAddress(TCPInterfaceTypes.dataWordSizeBytes);
-	public static final int outputBufferDepth = MathUtils.nextPowerOfTwo(2 * TCPFramerConstants.maxSupportedMessageLength / TCPInterfaceTypes.dataWordSizeBytes);
-	public static final int outputBufferProgrammableFull = outputBufferDepth - (TCPFramerConstants.maxSupportedMessageLength / TCPInterfaceTypes.dataWordSizeBytes + 64 /* fudge factor */);
+	public static final int modWidth = MathUtils.bitsToAddress(TcpInterfaceTypes.dataWordSizeBytes);
+	public static final int outputBufferDepth = MathUtils.nextPowerOfTwo(2 * TcpFramerConstants.maxSupportedMessageLength / TcpInterfaceTypes.dataWordSizeBytes);
+	public static final int outputBufferProgrammableFull = outputBufferDepth - (TcpFramerConstants.maxSupportedMessageLength / TcpInterfaceTypes.dataWordSizeBytes + 64 /* fudge factor */);
 	public static final int outputEmptyLatency = 16;
 
 	public static void addMaxfileConstants(DFEManager owner, List<FramerProtocolSpec> protoSpecs) {
-		owner.addMaxFileConstant("framer_maxSupportedMessageLength", TCPFramerConstants.maxSupportedMessageLength);
-		owner.addMaxFileConstant("framer_maxWindowMemorySizeBytes", TCPInterfaceTypes.maxWindowMemorySizeBytes);
-		owner.addMaxFileConstant("framer_dataWordSizeBytes", TCPInterfaceTypes.dataWordSizeBytes);
-		owner.addMaxFileConstant("framer_outputBufferDepth", TCPFramerConstants.outputBufferDepth);
-		owner.addMaxFileConstant("framer_outputBufferProgrammableFull", TCPFramerConstants.outputBufferProgrammableFull);
-		owner.addMaxFileConstant("framer_outputEmptyLatency", TCPFramerConstants.outputEmptyLatency);
+		owner.addMaxFileConstant("framer_maxSupportedMessageLength", TcpFramerConstants.maxSupportedMessageLength);
+		owner.addMaxFileConstant("framer_maxWindowMemorySizeBytes", TcpInterfaceTypes.maxWindowMemorySizeBytes);
+		owner.addMaxFileConstant("framer_dataWordSizeBytes", TcpInterfaceTypes.dataWordSizeBytes);
+		owner.addMaxFileConstant("framer_outputBufferDepth", TcpFramerConstants.outputBufferDepth);
+		owner.addMaxFileConstant("framer_outputBufferProgrammableFull", TcpFramerConstants.outputBufferProgrammableFull);
+		owner.addMaxFileConstant("framer_outputEmptyLatency", TcpFramerConstants.outputEmptyLatency);
 
-		owner.addMaxFileConstant("framer_FixFramerConstants_enableDebugStreams", TCPFramerConstants.enableDebugStreams ? 1 : 0);
+		owner.addMaxFileConstant("framer_FixFramerConstants_enableDebugStreams", TcpFramerConstants.enableDebugStreams ? 1 : 0);
 
-		owner.addMaxFileConstant("framer_FixFramerConstants_enableDebug", TCPFramerConstants.enableDebug ? 1 : 0);
-		owner.addMaxFileConstant("framer_FixFramerConstants_enableFramerDebugger", TCPFramerConstants.enableFramerDebugger ? 1 : 0);
+		owner.addMaxFileConstant("framer_FixFramerConstants_enableDebug", TcpFramerConstants.enableDebug ? 1 : 0);
+		owner.addMaxFileConstant("framer_FixFramerConstants_enableFramerDebugger", TcpFramerConstants.enableFramerDebugger ? 1 : 0);
 
 		for (FramerStates state : FramerStates.values()) {
 			owner.addMaxFileConstant("framer_FramerStates_" + state.name(), state.ordinal());

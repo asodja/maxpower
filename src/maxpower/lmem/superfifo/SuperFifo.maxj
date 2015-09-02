@@ -29,7 +29,7 @@ import com.maxeler.maxeleros.managercompiler.core.WrapperNode.IODesc;
 import com.maxeler.statemachine.utils.SMUtils;
 import com.maxeler.utils.MemoryManager;
 
-public class SuperFIFO extends ManagerStateMachine {
+public class SuperFifo extends ManagerStateMachine {
 	public static final String INPUT_FIFO = "fifo_in";
 	public static final String OUTPUT_FIFO = "fifo_out";
 	public static final String OUTPUT_EXTERNAL_WRITE = "external_write";
@@ -48,7 +48,7 @@ public class SuperFIFO extends ManagerStateMachine {
 		manager.addMaxFileConstant(name + "_superFifo_baseAddress", (int)memoryBaseAddress);
 
 		StateMachineBlock superFifo = manager.addStateMachine(name + "_superFifo",
-				new SuperFIFO(manager, name,
+				new SuperFifo(manager, name,
 					slotType.getTotalBits(),
 					depth,
 					memoryBaseAddress));
@@ -73,39 +73,39 @@ public class SuperFIFO extends ManagerStateMachine {
 		manager.logInfo("Super FIFO: Base @ 0x%x, Size: %d bursts\n", memoryBaseAddress, burstsNeeded);
 
 		StateMachineBlock ddrFifo = manager.addStateMachine(name + "_ddrFifo",
-				new DDRFifo(manager,
+				new DdrFifo(manager,
 					memoryBaseAddress,
 					burstsNeeded,
 					ctrlGroup.getStreamIndexIdWithinGroup(name + "_writeMemStream"),
 					ctrlGroup.getStreamIndexIdWithinGroup(name + "_readMemStream"),
 					memoryMgr.allocMemoryFlag(name + "_ddrFifo_flag1"), memoryMgr.allocMemoryFlag(name + "_ddrFifo_flag2")));
 
-		wire.getInput(SimpleWire.INPUT) <== ddrFifo.getOutput(DDRFifo.OUTPUT_MEM_COMMAND);
-		writeMemStream <== ddrFifo.getOutput(DDRFifo.OUTPUT_MEM_DATA);
+		wire.getInput(SimpleWire.INPUT) <== ddrFifo.getOutput(DdrFifo.OUTPUT_MEM_COMMAND);
+		writeMemStream <== ddrFifo.getOutput(DdrFifo.OUTPUT_MEM_DATA);
 
 		IODesc src_desc = _CustomManagers.streamToImp(readMemStream).getSource();
 		int src_width = src_desc.getWidth();
 
-		IODesc dst_desc = _CustomManagers.streamToImp(ddrFifo.getInput(DDRFifo.INPUT_MEM_DATA)).getSink();
+		IODesc dst_desc = _CustomManagers.streamToImp(ddrFifo.getInput(DdrFifo.INPUT_MEM_DATA)).getSink();
 		int dst_width = dst_desc.getWidth();
 
 		if (src_width < dst_width) {
 			StateMachineBlock dap = manager.addStateMachine(name + "_dualAspectPush_ddrFifoRead",
-					new DualAspectPush(manager, readMemStream, ddrFifo.getInput(DDRFifo.INPUT_MEM_DATA), 10));
+					new DualAspectPush(manager, readMemStream, ddrFifo.getInput(DdrFifo.INPUT_MEM_DATA), 10));
 			dap.getInput("src") <== readMemStream;
-			ddrFifo.getInput(DDRFifo.INPUT_MEM_DATA) <== dap.getOutput("dst");
+			ddrFifo.getInput(DdrFifo.INPUT_MEM_DATA) <== dap.getOutput("dst");
 		} else {
-			ddrFifo.getInput(DDRFifo.INPUT_MEM_DATA) <== readMemStream;
+			ddrFifo.getInput(DdrFifo.INPUT_MEM_DATA) <== readMemStream;
 		}
 
 
 
-		superFifo.getInput(SuperFIFO.INPUT_EXTERNAL_READ) <== ddrFifo.getOutput(DDRFifo.OUTPUT_DATA);
-		ddrFifo.getInput(DDRFifo.INPUT_DATA) <== superFifo.getOutput(SuperFIFO.OUTPUT_EXTERNAL_WRITE);
+		superFifo.getInput(SuperFifo.INPUT_EXTERNAL_READ) <== ddrFifo.getOutput(DdrFifo.OUTPUT_DATA);
+		ddrFifo.getInput(DdrFifo.INPUT_DATA) <== superFifo.getOutput(SuperFifo.OUTPUT_EXTERNAL_WRITE);
 
 		FifoIO fifoIO = new FifoIO();
-		fifoIO.write = superFifo.getInput(SuperFIFO.INPUT_FIFO);
-		fifoIO.read = superFifo.getOutput(SuperFIFO.OUTPUT_FIFO);
+		fifoIO.write = superFifo.getInput(SuperFifo.INPUT_FIFO);
+		fifoIO.read = superFifo.getOutput(SuperFifo.OUTPUT_FIFO);
 
 		return fifoIO;
 	}
@@ -186,7 +186,7 @@ public class SuperFIFO extends ManagerStateMachine {
 
 
 
-	private SuperFIFO(DFEManager owner, String name, int width, long depth, long memoryBaseAddress) {
+	private SuperFifo(DFEManager owner, String name, int width, long depth, long memoryBaseAddress) {
 		super(owner);
 
 		superFifoName = name;
@@ -206,7 +206,7 @@ public class SuperFIFO extends ManagerStateMachine {
 					superFifoWidth, burstSizeBits);
 		}
 
-		long memoryAvailableBits = (DDRFifo.memorySizeBits - burstSizeBits*superFifoMemoryBaseAddress);
+		long memoryAvailableBits = (DdrFifo.memorySizeBits - burstSizeBits*superFifoMemoryBaseAddress);
 		if (superFifoWidth * superFifoDepth >  memoryAvailableBits) {
 			throw new MaxCompilerAPIError("Requested FIFO depth (%d) is too large. Max possible (given base address of %d) is %d\n",
 					superFifoDepth, superFifoMemoryBaseAddress, memoryAvailableBits / superFifoWidth);

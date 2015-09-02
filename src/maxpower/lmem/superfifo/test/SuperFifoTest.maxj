@@ -1,7 +1,7 @@
 package maxpower.lmem.superfifo.test;
 
-import maxpower.lmem.superfifo.SuperFIFO;
-import maxpower.lmem.superfifo.SuperFIFO.FifoIO;
+import maxpower.lmem.superfifo.SuperFifo;
+import maxpower.lmem.superfifo.SuperFifo.FifoIO;
 
 import com.maxeler.maxcompiler.v2.build.EngineParameters;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
@@ -98,7 +98,7 @@ class SuperFifoTest extends NetworkManager {
 
 		MemoryManager lmemOrganizer = new MemoryManager(this);
 
-		FifoIO io = SuperFIFO.create(this, "superFifo", DFETypeFactory.dfeUInt(192), 1024*1024*1024L, lmemOrganizer);
+		FifoIO io = SuperFifo.create(this, "superFifo", DFETypeFactory.dfeUInt(192), 1024*1024*1024L, lmemOrganizer);
 
 		KernelBlock dataGen = addKernel(new DataGen(makeKernelParameters("dataGenKernel"), fifoWidth));
 

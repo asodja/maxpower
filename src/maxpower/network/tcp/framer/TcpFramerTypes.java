@@ -8,8 +8,8 @@
 
 package maxpower.network.tcp.framer;
 
-import maxpower.network.tcp.framer.TCPFramerConstants.FramerErrorCodes;
-import maxpower.network.tcp.framer.TCPFramerSM.FramerStates;
+import maxpower.network.tcp.framer.TcpFramerConstants.FramerErrorCodes;
+import maxpower.network.tcp.framer.TcpFramerSM.FramerStates;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;
@@ -19,10 +19,10 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 import com.maxeler.networking.types.TCPManyConnectionsTypes;
 import com.maxeler.networking.v1.framed_kernels.FramedLinkType;
 
-public class TCPFramerTypes {
+public class TcpFramerTypes {
 	public static final DFEsmValueType lengthType = StateMachineLib.dfeUInt(MathUtils.bitsToRepresentUnsigned(100000));
-	public final static DFEsmValueType maxMessageLengthType = StateMachineLib.dfeUInt(MathUtils.bitsToAddress(TCPFramerConstants.maxSupportedMessageLength));
-	public final static DFEsmValueType levelRegType = StateMachineLib.dfeInt(MathUtils.bitsToRepresentSigned(TCPInterfaceTypes.maxWindowMemorySizeBytes));
+	public final static DFEsmValueType maxMessageLengthType = StateMachineLib.dfeUInt(MathUtils.bitsToAddress(TcpFramerConstants.maxSupportedMessageLength));
+	public final static DFEsmValueType levelRegType = StateMachineLib.dfeInt(MathUtils.bitsToRepresentSigned(TcpInterfaceTypes.maxWindowMemorySizeBytes));
 
 	public static class ConnectionRecordType extends DFEStructType {
 		public static final String HEADER = "header";
@@ -38,7 +38,7 @@ public class TCPFramerTypes {
 					sft(HEADER, DFETypeFactory.dfeRawBits(8*maxHeaderSizeBytes)),
 					sft(HEADER_SIZE, DFETypeFactory.dfeUInt(MathUtils.bitsToRepresent(maxHeaderSizeBytes))),
 					sft(LEVEL, DFETypeFactory.dfeInt(levelRegType.getTotalBits())),
-					sft(BYTES_NEEDED_AFTER_HEADER, TCPInterfaceTypes.windowLevelBytesType),
+					sft(BYTES_NEEDED_AFTER_HEADER, TcpInterfaceTypes.windowLevelBytesType),
 					sft(LAST_RX_POS, DFETypeFactory.dfeUInt(3)),
 					sft(CONNECTION_ERROR, DFETypeFactory.dfeBool()),
 					sft(HEADER_SEEN, DFETypeFactory.dfeBool())
@@ -112,10 +112,10 @@ public class TCPFramerTypes {
 					sft(SOCKET, DFETypeFactory.dfeUInt(tcpRawType.getSocketSize())),
 					sft(CONTAINS_DATA, DFETypeFactory.dfeBool()),
 					sft(CONNECTION_STATE_VALID, DFETypeFactory.dfeBool()),
-					sft(CONNECTION_STATE, DFETypeFactory.dfeUInt(MathUtils.bitsToAddress(TCPInterfaceTypes.ConnectionStates.values().length))),
+					sft(CONNECTION_STATE, DFETypeFactory.dfeUInt(MathUtils.bitsToAddress(TcpInterfaceTypes.ConnectionStates.values().length))),
 					sft(ERROR_CODE, DFETypeFactory.dfeUInt(MathUtils.bitsToAddress(FramerErrorCodes.values().length))),
 					sft(CURRENT_STATE, DFETypeFactory.dfeUInt(MathUtils.bitsToAddress(FramerStates.values().length))),
-					sft(LEVEL, DFETypeFactory.dfeInt(MathUtils.bitsToRepresentSigned(TCPInterfaceTypes.maxWindowMemorySizeBytes))),
+					sft(LEVEL, DFETypeFactory.dfeInt(MathUtils.bitsToRepresentSigned(TcpInterfaceTypes.maxWindowMemorySizeBytes))),
 					sft(PROTOCOL_ID, DFETypeFactory.dfeBool()),
 					sft(IS_PASS_THROUGH, DFETypeFactory.dfeBool())
 				);

@@ -8,10 +8,10 @@
 
 package maxpower.network.tcp.framer.debug;
 
-import maxpower.network.tcp.framer.TCPFramerConstants;
-import maxpower.network.tcp.framer.TCPFramerSM;
-import maxpower.network.tcp.framer.TCPFramerTypes;
-import maxpower.network.tcp.framer.TCPInterfaceTypes;
+import maxpower.network.tcp.framer.TcpFramerConstants;
+import maxpower.network.tcp.framer.TcpFramerSM;
+import maxpower.network.tcp.framer.TcpFramerTypes;
+import maxpower.network.tcp.framer.TcpInterfaceTypes;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;
@@ -48,13 +48,13 @@ public class FramerDebugger extends StateMachineLib {
 		public DebugDataType() {
 			super(
 					sft(CYCLE, DFETypeFactory.dfeUInt(64)),
-					sft(FRAMER_STATE, DFETypeFactory.dfeUInt(MathUtils.bitsToAddress(TCPFramerSM.FramerStates.values().length))),
-					sft(ERROR_CODE, DFETypeFactory.dfeUInt(MathUtils.bitsToAddress(TCPFramerConstants.FramerErrorCodes.values().length))),
-					sft(LEVEL_REG, DFETypeFactory.dfeInt(TCPFramerTypes.levelRegType.getTotalBits())),
+					sft(FRAMER_STATE, DFETypeFactory.dfeUInt(MathUtils.bitsToAddress(TcpFramerSM.FramerStates.values().length))),
+					sft(ERROR_CODE, DFETypeFactory.dfeUInt(MathUtils.bitsToAddress(TcpFramerConstants.FramerErrorCodes.values().length))),
+					sft(LEVEL_REG, DFETypeFactory.dfeInt(TcpFramerTypes.levelRegType.getTotalBits())),
 					sft(PADDING1, DFETypeFactory.dfeUInt(6)),
-					sft(BYTES_NEEDED_AFTER_HEADER, TCPInterfaceTypes.windowLevelBytesType),
+					sft(BYTES_NEEDED_AFTER_HEADER, TcpInterfaceTypes.windowLevelBytesType),
 					sft(PADDING2, DFETypeFactory.dfeUInt(7)),
-					sft(DATA_SOURCE_SELECT, DFETypeFactory.dfeUInt(MathUtils.bitsToAddress(TCPFramerSM.DataSourceSelect.values().length))),
+					sft(DATA_SOURCE_SELECT, DFETypeFactory.dfeUInt(MathUtils.bitsToAddress(TcpFramerSM.DataSourceSelect.values().length))),
 					sft(ERROR_NEED_SOF, DFETypeFactory.dfeBool()),
 					sft(TIMEOUT, DFETypeFactory.dfeBool()),
 					sft(RX_LAST_DATA, DFETypeFactory.dfeBool()),
@@ -77,7 +77,7 @@ public class FramerDebugger extends StateMachineLib {
 		debugRegValid = _State.value(state, dfeBool(), false, "debugRegValid");
 		debugRegStall = _State.value(state, dfeBool(), true, "debugRegStall");
 
-		if (TCPFramerConstants.enableFramerDebugger) {
+		if (TcpFramerConstants.enableFramerDebugger) {
 			debugOutput = io.pushOutput("debugOutput", dfeUInt(128), 64);
 		} else {
 			debugOutput = null;
@@ -137,7 +137,7 @@ public class FramerDebugger extends StateMachineLib {
 	}
 
 	public void next() {
-		if (TCPFramerConstants.enableFramerDebugger) {
+		if (TcpFramerConstants.enableFramerDebugger) {
 			debugRegStall.next <== debugOutput.stall;
 		} else {
 			debugRegStall.next <== false;
@@ -147,7 +147,7 @@ public class FramerDebugger extends StateMachineLib {
 	}
 
 	public void output() {
-		if (TCPFramerConstants.enableFramerDebugger) {
+		if (TcpFramerConstants.enableFramerDebugger) {
 			debugOutput <== debugReg;
 			debugOutput.valid <== debugRegValid;
 		}

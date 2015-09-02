@@ -22,7 +22,7 @@ import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
  *
  * @author Chris Jones
  */
-public class ZLIPassthroughTest {
+public class ZliPassthroughTest {
 	private static final int N = 100000; // length of test input data
 
 	static class ZLIPassthroughTestKernel extends Kernel {

@@ -12,12 +12,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 import maxpower.network.tcp.framer.ByteLevelShift.ShiftDirection;
-import maxpower.network.tcp.framer.TCPFramerConstants.FramerErrorCodes;
-import maxpower.network.tcp.framer.TCPFramerTypes.ConnectionRecordType;
-import maxpower.network.tcp.framer.TCPFramerTypes.DebugStructType;
-import maxpower.network.tcp.framer.TCPFramerTypes.EventStruct;
-import maxpower.network.tcp.framer.TCPFramerTypes.TCPFramerLinkType;
-import maxpower.network.tcp.framer.TCPInterfaceTypes.ConnectionStates;
+import maxpower.network.tcp.framer.TcpFramerConstants.FramerErrorCodes;
+import maxpower.network.tcp.framer.TcpFramerTypes.ConnectionRecordType;
+import maxpower.network.tcp.framer.TcpFramerTypes.DebugStructType;
+import maxpower.network.tcp.framer.TcpFramerTypes.EventStruct;
+import maxpower.network.tcp.framer.TcpFramerTypes.TCPFramerLinkType;
+import maxpower.network.tcp.framer.TcpInterfaceTypes.ConnectionStates;
 import maxpower.network.tcp.framer.debug.FramerDebugger;
 import maxpower.network.tcp.framer.proto.FramerProtocolSpec;
 import maxpower.network.tcp.framer.proto.ProtoSpecFactory;
@@ -53,7 +53,7 @@ import com.maxeler.networking.types.TCPManyConnectionsTypes.RxDataRespType;
 import com.maxeler.networking.types.TCPManyConnectionsTypes.RxRequestType;
 import com.maxeler.statemachine.utils.SMUtils;
 
-public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
+public class TcpFramerSM extends ManagerStateMachine implements SMPrinting {
 	public static final String INPUT_RX_EVENTS = "rxEventsInput";
 	public static final String OUTPUT_RX_EVENTS = "rxEventsOutput";
 
@@ -218,7 +218,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 		owner.addMaxFileConstant("framer_maxHeaderSizeBytes", maxHeaderSizeBytes);
 	}
 
-	public TCPFramerSM(DFEManager owner, TCPManyConnectionsTypes _tcpRawType, List<ProtoSpecFactory> protoSpecFactories) {
+	public TcpFramerSM(DFEManager owner, TCPManyConnectionsTypes _tcpRawType, List<ProtoSpecFactory> protoSpecFactories) {
 		super(owner);
 		if (protoSpecFactories.size() < 1) {
 			throw new MaxCompilerAPIError("Framer needs at least 1 protocol specification.");
@@ -232,7 +232,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 			minHeaderSizeBytes = Math.max(minHeaderSizeBytes, protoSpec.getMinimumHeaderSizeBytes());
 		}
 
-		maxHeaderSizeBytes = MathUtils.nextMultiple(minHeaderSizeBytes, TCPInterfaceTypes.dataWordSizeBytes);
+		maxHeaderSizeBytes = MathUtils.nextMultiple(minHeaderSizeBytes, TcpInterfaceTypes.dataWordSizeBytes);
 
 		headerSizeBytesType = dfeUInt(MathUtils.bitsToRepresent(maxHeaderSizeBytes));
 
@@ -243,7 +243,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 		eventStruct = new EventStruct(tcpRawType);
 
 		addMaxfileConstants(owner);
-		TCPFramerConstants.addMaxfileConstants(owner, protoSpecs);
+		TcpFramerConstants.addMaxfileConstants(owner, protoSpecs);
 
 
 		rxConnStateEvents = io.pushInput(INPUT_RX_CONN_STATE_EVENTS, dfeUInt(tcpRawType.getConnStateEventType().getTotalBits()), 16);
@@ -259,7 +259,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 
 		rxEventsOutput = io.pushOutput(OUTPUT_RX_EVENTS, dfeUInt(eventStruct.getTotalBits()), 16);
 		rxEvents = io.pullInput(INPUT_RX_EVENTS, dfeUInt(eventStruct.getTotalBits()));
-		if (TCPFramerConstants.enableDebugStreams) {
+		if (TcpFramerConstants.enableDebugStreams) {
 			debugStream = io.pushOutput("debugStream", dfeUInt(128), 64);
 			debugReg = _State.value(state, dfeUInt(debugStructType.getTotalBits()), "debugReg");
 			debugRegValid = _State.value(state, dfeBool(), "debugRegValid");
@@ -277,7 +277,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 		rxRequest = io.pushOutput(OUTPUT_RX_REQUEST, dfeUInt(tcpRawType.getRxRequestType().getTotalBits()), 4);
 		rxDataInput = io.pushInput(INPUT_RX_RESPONSE, dfeUInt(tcpRawType.getRxDataRespType().getTotalBits()), 64);
 
-		output = io.pullOutput(OUTPUT_FRAMED, dfeUInt(fixFramerLinkType.getTotalBits()), TCPFramerConstants.outputEmptyLatency);
+		output = io.pullOutput(OUTPUT_FRAMED, dfeUInt(fixFramerLinkType.getTotalBits()), TcpFramerConstants.outputEmptyLatency);
 
 		currentState = _State.enumerated(state, FramerStates.class, FramerStates.Reset, "currentState");
 
@@ -317,10 +317,10 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 		connectionRecordWriteBack = _State.value(state, dfeUInt(connectionRecordType.getTotalBits()), "connectionRecordWriteBack");
 		connectionRecordWriteBackEnable  = _State.value(state, dfeBool(), "connectionRecordWriteBack");
 		//wordsNeeded = _State.value(state, dfeUInt(TCPInterfaceTypes.windowLevelWordsType.getTotalBits()), "wordsNeeded");
-		bytesNeeded = _State.value(state, dfeUInt(TCPInterfaceTypes.windowLevelBytesType.getTotalBits()), "bytesNeeded");
-		requestedBytesCounter = _State.value(state, dfeUInt(TCPInterfaceTypes.windowLevelBytesType.getTotalBits()), "bytesCounter");
+		bytesNeeded = _State.value(state, dfeUInt(TcpInterfaceTypes.windowLevelBytesType.getTotalBits()), "bytesNeeded");
+		requestedBytesCounter = _State.value(state, dfeUInt(TcpInterfaceTypes.windowLevelBytesType.getTotalBits()), "bytesCounter");
 		//rxWordsCounter = _State.value(state, dfeUInt(TCPInterfaceTypes.windowLevelWordsType.getTotalBits()), "rxWordsCounter");
-		rxBytesCounter = _State.value(state, dfeUInt(TCPInterfaceTypes.windowLevelBytesType.getTotalBits()), "rxBytesCounter");
+		rxBytesCounter = _State.value(state, dfeUInt(TcpInterfaceTypes.windowLevelBytesType.getTotalBits()), "rxBytesCounter");
 
 		/*
 		 * Request Interface
@@ -331,26 +331,26 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 
 		headerStagingRegister = _State.value(state, dfeUInt(SMUtils.B(maxHeaderSizeBytes)), "headerStagingRegister");
 		headerStagingPosition = _State.value(state, dfeUInt(MathUtils.bitsToRepresent(maxHeaderSizeBytes)), "headerStagingPosition");
-		payloadPosition = _State.value(state, dfeUInt(TCPInterfaceTypes.windowLevelBytesType.getTotalBits()), "payloadPosition");
-		leftoverBytes = _State.value(state, dfeUInt(TCPInterfaceTypes.windowLevelBytesType.getTotalBits()), "leftoverBytes");
-		rightShiftAmount = _State.value(state, dfeUInt(TCPFramerConstants.modWidth), "rightShiftAmount");
+		payloadPosition = _State.value(state, dfeUInt(TcpInterfaceTypes.windowLevelBytesType.getTotalBits()), "payloadPosition");
+		leftoverBytes = _State.value(state, dfeUInt(TcpInterfaceTypes.windowLevelBytesType.getTotalBits()), "leftoverBytes");
+		rightShiftAmount = _State.value(state, dfeUInt(TcpFramerConstants.modWidth), "rightShiftAmount");
 		receivedEnoughHeaderData = _State.value(state, dfeBool(), "receivedEnoughHeaderData");
 
 		lengthSanityGood = _State.value(state, dfeBool(), false, "lengthGood");
 		headerSigGood = _State.value(state, dfeBool(), false, "headerSigGood");
 
 
-		levelReg = _State.value(state, TCPFramerTypes.levelRegType, 0, "levelReg");
+		levelReg = _State.value(state, TcpFramerTypes.levelRegType, 0, "levelReg");
 
-		decodedMessageLength = _State.value(state, TCPFramerTypes.lengthType, "decodedMessageLength");
-		totalMessageLength = _State.value(state, dfeUInt(TCPInterfaceTypes.windowLevelBytesType.getTotalBits()), 0, "totalMessageStringLength");
+		decodedMessageLength = _State.value(state, TcpFramerTypes.lengthType, "decodedMessageLength");
+		totalMessageLength = _State.value(state, dfeUInt(TcpInterfaceTypes.windowLevelBytesType.getTotalBits()), 0, "totalMessageStringLength");
 
 		outputReg = _State.value(state, dfeUInt(fixFramerLinkType.getTotalBits()), "outputReg");
 		outputRegValid = _State.value(state, dfeBool(), false, "outputRegValid");
 
 		dataSourceSelect = _State.enumerated(state, DataSourceSelect.class, "dataSourceSelect");
 
-		rightShift = new ByteLevelShift(this, "shifter", ShiftDirection.Right, TCPInterfaceTypes.dataWordSizeBytes);
+		rightShift = new ByteLevelShift(this, "shifter", ShiftDirection.Right, TcpInterfaceTypes.dataWordSizeBytes);
 		connectionAddress = _State.value(state, dfeUInt(MathUtils.bitsToAddress(tcpRawType.getMaxNumConnections())), 0, "connectionAddress");
 
 		recordAddress = _State.value(state, dfeUInt(MathUtils.bitsToAddress(tcpRawType.getMaxNumConnections())), 0, "recordAddress");
@@ -365,9 +365,9 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 				"eventSize");
 
 		headerSeen =  _State.value(state, dfeBool(), false, "headerSeen");
-		headerSize = _State.value(state, dfeUInt(connectionRecordType.getTypeForField(TCPFramerTypes.ConnectionRecordType.HEADER_SIZE).getTotalBits()), "headerSize");
-		header = _State.value(state, dfeUInt(connectionRecordType.getTypeForField(TCPFramerTypes.ConnectionRecordType.HEADER).getTotalBits()), "header");
-		bytesNeededAfterHeader = _State.value(state, dfeUInt(connectionRecordType.getTypeForField(TCPFramerTypes.ConnectionRecordType.BYTES_NEEDED_AFTER_HEADER).getTotalBits()), "bytesNeededAfterHeader");
+		headerSize = _State.value(state, dfeUInt(connectionRecordType.getTypeForField(TcpFramerTypes.ConnectionRecordType.HEADER_SIZE).getTotalBits()), "headerSize");
+		header = _State.value(state, dfeUInt(connectionRecordType.getTypeForField(TcpFramerTypes.ConnectionRecordType.HEADER).getTotalBits()), "header");
+		bytesNeededAfterHeader = _State.value(state, dfeUInt(connectionRecordType.getTypeForField(TcpFramerTypes.ConnectionRecordType.BYTES_NEEDED_AFTER_HEADER).getTotalBits()), "bytesNeededAfterHeader");
 
 		errorCode = _State.value(state, dfeUInt(fixFramerLinkType.getTypeForField(TCPFramerLinkType.ERROR_CODE).getTotalBits()),
 				FramerErrorCodes.NoError.ordinal(), "errorCode");
@@ -388,17 +388,17 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 		rxEventsReg = _State.value(state,  dfeUInt(eventStruct.getTotalBits()), "rxEventsReg");
 		countTimeouts = _State.value(state, dfeUInt(32), 0, "countTimeouts");
 		timeoutThreshold = _State.value(state, timeoutType, 1024, "timeoutThreshold");
-		maxMessageSize = _State.value(state, TCPFramerTypes.maxMessageLengthType, "maxMessageSize");
+		maxMessageSize = _State.value(state, TcpFramerTypes.maxMessageLengthType, "maxMessageSize");
 
 		scalar_timeoutThreshold = io.scalarInput("timeoutThreshold", timeoutType);
 		scalar_countTimeouts = io.scalarOutput("countTimeouts", dfeUInt(32));
-		scalar_maxMessageSize = io.scalarInput("maxMessageSize", TCPFramerTypes.maxMessageLengthType);
+		scalar_maxMessageSize = io.scalarInput("maxMessageSize", TcpFramerTypes.maxMessageLengthType);
 
 
 		coalescingBuffer = new CoalescingBuffer(this, fixFramerLinkType);
 
 		scalar_currentState = io.scalarOutput("currentState", dfeUInt(MathUtils.bitsToAddress(FramerStates.values().length)));
-		if (TCPFramerConstants.enableDebug) {
+		if (TcpFramerConstants.enableDebug) {
 			scalar_bytesNeeded = io.scalarOutput("bytesNeeded", bytesNeeded.getType());
 			scalar_rxBytesCounter = io.scalarOutput("rxBytesCounter", rxBytesCounter.getType());
 			scalar_recordAddress = io.scalarOutput("recordAddress", recordAddress.getType());
@@ -420,11 +420,11 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 		frameCounter = _State.value(state, dfeUInt(64), 0, "frameCounter");
 
 		DFEsmFifoConfig outputBufferConfig = new DFEsmFifoConfig();
-		outputBufferConfig.setProgrammableFull(TCPFramerConstants.outputBufferProgrammableFull);
-		outputBufferConfig.setProgrammableEmpty(TCPFramerConstants.outputEmptyLatency);
+		outputBufferConfig.setProgrammableFull(TcpFramerConstants.outputBufferProgrammableFull);
+		outputBufferConfig.setProgrammableEmpty(TcpFramerConstants.outputEmptyLatency);
 		outputBufferConfig.setBufferSpec(BufferSpec.UseBlockRam);
 		outputBufferConfig.setHasDataCount();
-		outputBuffer = buffer.fifo(dfeUInt(fixFramerLinkType.getTotalBits()), TCPFramerConstants.outputBufferDepth, outputBufferConfig);
+		outputBuffer = buffer.fifo(dfeUInt(fixFramerLinkType.getTotalBits()), TcpFramerConstants.outputBufferDepth, outputBufferConfig);
 		stalling = _State.value(state, dfeBool(), true, "stalling");
 	}
 
@@ -450,7 +450,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 		SMUtils.assignField(requestCmd.next, tcpRawType.getRxRequestType(), RxRequestType.READ, true);
 		SMUtils.assignField(requestCmd.next, tcpRawType.getRxRequestType(), RxRequestType.DISCARD, true);
 
-		if (TCPFramerConstants.enableDebugStreams) {
+		if (TcpFramerConstants.enableDebugStreams) {
 			rxDebugEventRegValid.next <== false;
 			SMUtils.assignField(debugReg.next, debugStructType, DebugStructType.EV_DATA,
 					SMUtils.extractField(rxEventsReg, eventStruct, EventStruct.DATA).cast(dfeUInt(16)));
@@ -572,7 +572,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 		debugger.setTimeout(timeout);
 		debugger.setRxLastData(receivingLastData);
 		debugger.setRxAllReqData(receivedAllRequestedData);
-		if (TCPFramerConstants.enableDebugStreams) {
+		if (TcpFramerConstants.enableDebugStreams) {
 			stalling.next <== outputBuffer.input.progFull | debugStream.stall | debugger.shouldStall();
 		} else {
 			stalling.next <== outputBuffer.input.progFull | debugger.shouldStall();
@@ -591,7 +591,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 				recordAddressFirst.next <== 0;
 				recordAddressLast.next <== tcpRawType.getMaxNumConnections() - 1;
 				IF (scalar_maxMessageSize === 0)
-					maxMessageSize.next <== TCPFramerConstants.maxSupportedMessageLength - 1;
+					maxMessageSize.next <== TcpFramerConstants.maxSupportedMessageLength - 1;
 				ELSE
 					maxMessageSize.next <== scalar_maxMessageSize;
 
@@ -634,7 +634,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 
 			CASE (FramerStates.ReadEventPipe) {
 				IF (~stalling) {
-					if (TCPFramerConstants.enableDebugStreams) rxDebugEventRegValid.next <== true;
+					if (TcpFramerConstants.enableDebugStreams) rxDebugEventRegValid.next <== true;
 					currentState.next <== FramerStates.EventPipe;
 					printf("currentState: %s -> %s\n", currentState, currentState.next);
 				}
@@ -754,7 +754,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 
 			CASE (FramerStates.MessageLengthDecoded) {
 				totalMessageLength.next <== decodedMessageLength;
-				DFEsmValue messageLengthGood = decodedMessageLength <= maxMessageSize.cast(TCPFramerTypes.lengthType);
+				DFEsmValue messageLengthGood = decodedMessageLength <= maxMessageSize.cast(TcpFramerTypes.lengthType);
 
 				IF (receivedEnoughHeaderData) {
 					IF (headerSigGood & lengthSanityGood & messageLengthGood) {
@@ -956,7 +956,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 
 				DFEsmValue leftOver = payloadPosition - bytesNeededAfterHeader;
 				leftoverBytes.next <== leftOver;
-				rightShiftAmount.next <== (constant.value(dfeUInt(4), 8) - leftOver.cast(dfeUInt(4))).slice(0, TCPFramerConstants.modWidth);
+				rightShiftAmount.next <== (constant.value(dfeUInt(4), 8) - leftOver.cast(dfeUInt(4))).slice(0, TcpFramerConstants.modWidth);
 
 				/*
 				 * True 1 cycle after getting the last data word!
@@ -1221,7 +1221,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 		rxEventsOutput.valid <== rxDataEvents.valid | rxConnStateEvents_valid | rxSimulatneousEvent_r;
 		rxEventsOutput <== eoData # eoIsConnEvent # eoSocketID;
 
-		if (TCPFramerConstants.enableDebugStreams) {
+		if (TcpFramerConstants.enableDebugStreams) {
 			debugStream.valid <== debugRegValid;
 			debugStream <== debugReg;
 		}
@@ -1266,7 +1266,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 
 		scalar_countTimeouts <== countTimeouts;
 
-		if (TCPFramerConstants.enableDebug) {
+		if (TcpFramerConstants.enableDebug) {
 			scalar_bytesNeeded <== bytesNeeded;
 			scalar_rxBytesCounter <== rxBytesCounter;
 			scalar_recordAddress <== recordAddress;
@@ -1284,7 +1284,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 
 	@Override
 	public void printString(DFEsmValue v) {
-		if (TCPFramerConstants.enableDebugPrints) {
+		if (TcpFramerConstants.enableDebugPrints) {
 			for (int i=0; i < v.getType().getTotalBits() / 8; i++) {
 				for (char c=43; c < 127; c ++) {
 					IF (SMUtils.extractByte(v, i) === c) debug.simPrintf(String.valueOf(c));
@@ -1303,7 +1303,7 @@ public class TCPFramerSM extends ManagerStateMachine implements SMPrinting {
 	}
 
 	public void printf(String format, Object ... args) {
-		if (TCPFramerConstants.enableDebugPrints) {
+		if (TcpFramerConstants.enableDebugPrints) {
 			debug.simPrintf("%StateMachine%: [cycle %d] [timer %d] [%s] [frame %d]: ", cycleCounter, rxDataTimeout, currentState, frameCounter);
 			debug.simPrintf(format, args);
 		}

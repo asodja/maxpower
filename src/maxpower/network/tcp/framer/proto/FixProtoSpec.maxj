@@ -8,9 +8,9 @@
 
 package maxpower.network.tcp.framer.proto;
 
-import maxpower.network.tcp.framer.TCPFramerSM;
-import maxpower.network.tcp.framer.TCPFramerTypes;
-import maxpower.network.tcp.framer.TCPFramerSM.FramerStates;
+import maxpower.network.tcp.framer.TcpFramerSM;
+import maxpower.network.tcp.framer.TcpFramerTypes;
+import maxpower.network.tcp.framer.TcpFramerSM.FramerStates;
 
 import com.maxeler.maxcompiler.v2.managers.DFEManager;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmAssignableValue;
@@ -22,7 +22,7 @@ import com.maxeler.maxcompiler.v2.statemachine.types.DFEsmValueType;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 import com.maxeler.statemachine.utils.SMUtils;
 
-public class FIXProtoSpec extends FramerProtocolSpec {
+public class FixProtoSpec extends FramerProtocolSpec {
 	private static final int mostSignificantDigitPower = 4;
 	private static final int maxNumBodyLengthDigits = 8;
 	private static final int minHeaderSizeBytes = "8=FIX.4.2\19=\1".length() + maxNumBodyLengthDigits;
@@ -31,12 +31,12 @@ public class FIXProtoSpec extends FramerProtocolSpec {
 	private static final int lengthOffset = "8=FIX.4.2\19=".length();
 	private static final DFEsmValueType numBodyLengthDigitsType = dfeUInt(MathUtils.bitsToRepresent(maxNumBodyLengthDigits));
 
-	private final TCPFramerSM owner;
+	private final TcpFramerSM owner;
 	private final DFEsmStateValue lengthSize;
 
 
 
-	protected FIXProtoSpec(TCPFramerSM owner) {
+	protected FixProtoSpec(TcpFramerSM owner) {
 		super(owner);
 		this.owner = owner;
 		lengthSize = _State.value(owner.state, numBodyLengthDigitsType, 0, "lengthSize");
@@ -61,8 +61,8 @@ public class FIXProtoSpec extends FramerProtocolSpec {
 	@Override
 	public DFEsmValue decodeMessageLength(DFEsmValue stagingReg) {
 		DFEsmValue decodedLength = decodeLengthString(stagingReg);
-		DFEsmValue totalMessageLen = decodedLength + lengthSize.cast(TCPFramerTypes.lengthType) +
-				constant.value(TCPFramerTypes.lengthType, checksumLength + lengthOffset + 1);
+		DFEsmValue totalMessageLen = decodedLength + lengthSize.cast(TcpFramerTypes.lengthType) +
+				constant.value(TcpFramerTypes.lengthType, checksumLength + lengthOffset + 1);
 
 		IF (owner.getCurrentState() === FramerStates.PipeMessageLengthDecode) {
 			owner.printf("decodedFIXLength: %d, lengthSize: %d, " +
@@ -112,7 +112,7 @@ public class FIXProtoSpec extends FramerProtocolSpec {
 			owner.printString(s);
 		}
 
-		DFEsmAssignableValue sum = assignable.value(TCPFramerTypes.lengthType);
+		DFEsmAssignableValue sum = assignable.value(TcpFramerTypes.lengthType);
 		for (int power=0; power < maxNumBodyLengthDigits; power++) {
 			DFEsmAssignableValue byteOfInterest = assignable.value(dfeUInt(4));
 			byteOfInterest <== 0;
@@ -146,21 +146,21 @@ public class FIXProtoSpec extends FramerProtocolSpec {
 	}
 
 	private DFEsmValue lookupContribution(int power, DFEsmValue index) {
-		if (power > mostSignificantDigitPower) return constant.value(TCPFramerTypes.lengthType, 0);
-		if (power == 0) return index.cast(TCPFramerTypes.lengthType);
+		if (power > mostSignificantDigitPower) return constant.value(TcpFramerTypes.lengthType, 0);
+		if (power == 0) return index.cast(TcpFramerTypes.lengthType);
 
-		DFEsmAssignableValue contrib = assignable.value(TCPFramerTypes.lengthType);
-		contrib <== constant.value(TCPFramerTypes.lengthType, 0);
+		DFEsmAssignableValue contrib = assignable.value(TcpFramerTypes.lengthType);
+		contrib <== constant.value(TcpFramerTypes.lengthType, 0);
 
 		int factor = (int)Math.pow(10, power);
 		_SWITCH (index); {
 			for (int i=1; i < 10; i++) {
 				_CASE(i); {
-					contrib <== constant.value(TCPFramerTypes.lengthType, i * factor);
+					contrib <== constant.value(TcpFramerTypes.lengthType, i * factor);
 				}
 			}
 			_OTHERWISE(); {
-				contrib <== constant.value(TCPFramerTypes.lengthType, 0);
+				contrib <== constant.value(TcpFramerTypes.lengthType, 0);
 			}
 		}
 		_END_SWITCH();

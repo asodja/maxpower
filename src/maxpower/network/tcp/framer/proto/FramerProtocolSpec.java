@@ -8,14 +8,14 @@
 
 package maxpower.network.tcp.framer.proto;
 
-import maxpower.network.tcp.framer.TCPFramerSM;
+import maxpower.network.tcp.framer.TcpFramerSM;
 
 import com.maxeler.maxcompiler.v2.managers.DFEManager;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmValue;
 import com.maxeler.maxcompiler.v2.statemachine.StateMachineLib;
 
 public abstract class FramerProtocolSpec extends StateMachineLib {
-	protected FramerProtocolSpec(TCPFramerSM owner) {
+	protected FramerProtocolSpec(TcpFramerSM owner) {
 		super(owner);
 	}
 

@@ -28,7 +28,7 @@ import com.maxeler.maxcompiler.v2.utils.Bits;
  *
  * @author Chris Jones
  */
-public class ZLIRunLengthDecoderTest {
+public class ZliRunLengthDecoderTest {
 	private static final int N = 100000; // number of data items
 
 	private static final DFEType intType = DFETypeFactory.dfeInt(32);

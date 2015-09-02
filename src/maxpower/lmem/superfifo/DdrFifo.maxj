@@ -17,7 +17,7 @@ import com.maxeler.maxcompiler.v2.statemachine.stdlib._State;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 import com.maxeler.statemachine.utils.SMUtils;
 
-public class DDRFifo extends ManagerStateMachine {
+public class DdrFifo extends ManagerStateMachine {
 	public final int burstSizeBits ;
 	public static final long memorySizeBits = (24L*1024L*1024L*1024L*8);
 	public final long maxNumBursts;
@@ -101,7 +101,7 @@ public class DDRFifo extends ManagerStateMachine {
 	public static final String OUTPUT_DATA = "output";
 	public static final String INPUT_DATA = "input";
 
-	public DDRFifo(DFEManager owner,
+	public DdrFifo(DFEManager owner,
 			long basAddressBursts, long depthBursts,
 			int writeStreamID, int readStreamID, int flag1, int flag2) {
 		super(owner);
