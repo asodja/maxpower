@@ -6,11 +6,11 @@
  *                                                                   *
  *********************************************************************/
 
-package maxpower.network.tcp.manyconn.framer;
+package maxpower.network.tcp.framer;
 
 import java.util.List;
 
-import maxpower.network.tcp.manyconn.framer.proto.ProtoSpecFactory;
+import maxpower.network.tcp.framer.proto.ProtoSpecFactory;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;

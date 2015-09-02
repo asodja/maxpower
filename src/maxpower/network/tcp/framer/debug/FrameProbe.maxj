@@ -6,7 +6,7 @@
  *                                                                   *
  *********************************************************************/
 
-package maxpower.network.tcp.manyconn.framer.debug;
+package maxpower.network.tcp.framer.debug;
 
 import com.maxeler.maxcompiler.v2.managers.DFEManager;
 import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;

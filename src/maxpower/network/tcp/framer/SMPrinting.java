@@ -6,7 +6,7 @@
  *                                                                   *
  *********************************************************************/
 
-package maxpower.network.tcp.manyconn.framer;
+package maxpower.network.tcp.framer;
 
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmStateEnum;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmValue;

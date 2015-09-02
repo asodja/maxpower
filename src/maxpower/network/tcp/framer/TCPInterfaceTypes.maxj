@@ -6,7 +6,7 @@
  *                                                                   *
  *********************************************************************/
 
-package maxpower.network.tcp.manyconn.framer;
+package maxpower.network.tcp.framer;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;

@@ -1,4 +1,4 @@
-package maxpower.lmem.cpu_access;
+package maxpower.lmem.cpuaccess;
 
 import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
 import com.maxeler.maxcompiler.v2.managers.custom.DFELink;

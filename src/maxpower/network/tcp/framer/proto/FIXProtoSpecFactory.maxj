@@ -6,9 +6,9 @@
  *                                                                   *
  *********************************************************************/
 
-package maxpower.network.tcp.manyconn.framer.proto;
+package maxpower.network.tcp.framer.proto;
 
-import maxpower.network.tcp.manyconn.framer.TCPFramerSM;
+import maxpower.network.tcp.framer.TCPFramerSM;
 
 public class FIXProtoSpecFactory implements ProtoSpecFactory {
 

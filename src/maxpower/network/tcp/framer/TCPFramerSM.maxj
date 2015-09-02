@@ -6,21 +6,21 @@
  *                                                                   *
  *********************************************************************/
 
-package maxpower.network.tcp.manyconn.framer;
+package maxpower.network.tcp.framer;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import maxpower.network.tcp.manyconn.framer.ByteLevelShift.ShiftDirection;
-import maxpower.network.tcp.manyconn.framer.TCPFramerConstants.FramerErrorCodes;
-import maxpower.network.tcp.manyconn.framer.TCPFramerTypes.ConnectionRecordType;
-import maxpower.network.tcp.manyconn.framer.TCPFramerTypes.DebugStructType;
-import maxpower.network.tcp.manyconn.framer.TCPFramerTypes.EventStruct;
-import maxpower.network.tcp.manyconn.framer.TCPFramerTypes.TCPFramerLinkType;
-import maxpower.network.tcp.manyconn.framer.TCPInterfaceTypes.ConnectionStates;
-import maxpower.network.tcp.manyconn.framer.debug.FramerDebugger;
-import maxpower.network.tcp.manyconn.framer.proto.FramerProtocolSpec;
-import maxpower.network.tcp.manyconn.framer.proto.ProtoSpecFactory;
+import maxpower.network.tcp.framer.ByteLevelShift.ShiftDirection;
+import maxpower.network.tcp.framer.TCPFramerConstants.FramerErrorCodes;
+import maxpower.network.tcp.framer.TCPFramerTypes.ConnectionRecordType;
+import maxpower.network.tcp.framer.TCPFramerTypes.DebugStructType;
+import maxpower.network.tcp.framer.TCPFramerTypes.EventStruct;
+import maxpower.network.tcp.framer.TCPFramerTypes.TCPFramerLinkType;
+import maxpower.network.tcp.framer.TCPInterfaceTypes.ConnectionStates;
+import maxpower.network.tcp.framer.debug.FramerDebugger;
+import maxpower.network.tcp.framer.proto.FramerProtocolSpec;
+import maxpower.network.tcp.framer.proto.ProtoSpecFactory;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
 import com.maxeler.maxcompiler.v2.managers.DFEManager;

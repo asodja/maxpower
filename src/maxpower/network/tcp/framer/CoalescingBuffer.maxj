@@ -6,7 +6,7 @@
  *                                                                   *
  *********************************************************************/
 
-package maxpower.network.tcp.manyconn.framer;
+package maxpower.network.tcp.framer;
 
 import java.util.HashSet;
 import java.util.Set;

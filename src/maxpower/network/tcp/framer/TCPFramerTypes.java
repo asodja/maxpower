@@ -6,10 +6,10 @@
  *                                                                   *
  *********************************************************************/
 
-package maxpower.network.tcp.manyconn.framer;
+package maxpower.network.tcp.framer;
 
-import maxpower.network.tcp.manyconn.framer.TCPFramerConstants.FramerErrorCodes;
-import maxpower.network.tcp.manyconn.framer.TCPFramerSM.FramerStates;
+import maxpower.network.tcp.framer.TCPFramerConstants.FramerErrorCodes;
+import maxpower.network.tcp.framer.TCPFramerSM.FramerStates;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;

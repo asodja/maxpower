@@ -6,12 +6,12 @@
  *                                                                   *
  *********************************************************************/
 
-package maxpower.network.tcp.manyconn.framer.debug;
+package maxpower.network.tcp.framer.debug;
 
-import maxpower.network.tcp.manyconn.framer.TCPFramerConstants;
-import maxpower.network.tcp.manyconn.framer.TCPFramerSM;
-import maxpower.network.tcp.manyconn.framer.TCPFramerTypes;
-import maxpower.network.tcp.manyconn.framer.TCPInterfaceTypes;
+import maxpower.network.tcp.framer.TCPFramerConstants;
+import maxpower.network.tcp.framer.TCPFramerSM;
+import maxpower.network.tcp.framer.TCPFramerTypes;
+import maxpower.network.tcp.framer.TCPInterfaceTypes;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;

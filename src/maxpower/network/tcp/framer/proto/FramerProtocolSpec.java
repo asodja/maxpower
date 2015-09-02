@@ -6,9 +6,9 @@
  *                                                                   *
  *********************************************************************/
 
-package maxpower.network.tcp.manyconn.framer.proto;
+package maxpower.network.tcp.framer.proto;
 
-import maxpower.network.tcp.manyconn.framer.TCPFramerSM;
+import maxpower.network.tcp.framer.TCPFramerSM;
 
 import com.maxeler.maxcompiler.v2.managers.DFEManager;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmValue;
