@@ -1,4 +1,4 @@
-package maxpower.lmem.superfifo;
+package maxpower.manager.superfifo;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.LMemCommandStream;
