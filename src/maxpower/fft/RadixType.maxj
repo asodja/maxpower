@@ -1,0 +1,40 @@
+package maxpower.fft;
+
+/**
+ * Class to provide available radix implementations ({@link RadixType#RADIX_2
+ * radix-2} and {@link RadixType#RADIX_4 radix-4} at present) and associated
+ * constant values.
+ *
+ * @author simon
+ */
+public final class RadixType {
+	/** Radix-2 FFT, i.e. 2 input/output streams, data size 2 ^ exponent. */
+	public static RadixType RADIX_2 = new RadixType(2, 1);
+	/** Radix-4 FFT, i.e. 4 input/output streams, data size 4 ^ exponent. */
+	public static RadixType RADIX_4 = new RadixType(4, 2);
+
+	/** Radix of FFT. */
+	private final int m_radix;
+	/** Binary shift to convert exponent of radix to binary. */
+	private final int m_binaryShift;
+
+	private RadixType(final int radix, final int binaryShift) {
+		this.m_radix = radix;
+		this.m_binaryShift = binaryShift;
+	}
+
+	/**
+	 * @return Integer value of radix.
+	 */
+	public int getRadix() {
+		return this.m_radix;
+	}
+
+	/**
+	 * @return Binary shift multiple to convert exponent of radix to binary
+	 * exponent (i.e. log2(radix)).
+	 */
+	public int getBinaryShift() {
+		return this.m_binaryShift;
+	}
+}

@@ -1,0 +1,41 @@
+package maxpower.fft.utils;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+
+
+public class Encoder{
+
+	/*
+	 * Rearrange the data for the FFTFactory structure.
+	 * Not actually tested for nFFT > 1. beware!
+	 */
+
+
+	public static List<DFEVector<DFEComplex>> encodeFftInput(DFEVector<DFEComplex> input, int nFFT, int nPipes) {
+		List<DFEVector<DFEComplex>> list = new ArrayList<DFEVector<DFEComplex>>();
+		DFEVectorType<DFEComplex> fftType = new DFEVectorType<DFEComplex>(input[0].getType(), nFFT);
+
+		int bitsPerPipe = fftType.getTotalBits();
+		for(int i = 0; i < nPipes; i++){
+			list.add(fftType.unpack(input.pack().slice(i*bitsPerPipe, bitsPerPipe)));
+		}
+		return list;
+	}
+
+	public static DFEVector<DFEComplex> decodeFftOutput(KernelLib lib, List<DFEVector<DFEComplex>> input, int nFFT, int nPipes) {
+		DFEVector<DFEComplex> result = new DFEVectorType<DFEComplex>(input.get(0).getType().getContainedType(), nPipes*nFFT).newInstance(lib);
+
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < nFFT; j++){
+				result.connect(i*nFFT+j, input[i][j]);
+			}
+		}
+		return result;
+	}
+}

@@ -1,0 +1,216 @@
+package maxpower.fft.buffer;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import maxpower.fft.RadixType;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+
+/**
+ * Factory which can provide {@link CyclicAddress cyclic address} pattern
+ * generators.
+ *
+ * @author simon
+ */
+public class CyclicAddressFactory extends KernelLib {
+	/**
+	 * Interface defining a type that can generate cyclic address patterns for
+	 * FFTs using up to two buffers.
+	 *
+	 * @author simon
+	 */
+	public interface CyclicAddress {
+		/**
+		 * @return Current address pattern for streams.
+		 */
+		public List<DFEVar> getAddress();
+
+		/**
+		 * @return Indication of whether buffer should be inverted.
+		 */
+		public DFEVar isBufferInverted();
+
+		/**
+		 * @return Indication of whether output is available.
+		 */
+		public DFEVar isOutputAvailable();
+
+		/**
+		 * @return Size of each buffer.
+		 */
+		public int getBufferSize();
+
+		/**
+		 * @return Which buffer to use if we are double buffering.
+		 */
+		public DFEVar getWriteBuffer();
+
+		/**
+		 * @return Which buffer to use if we are double buffering.
+		 */
+		public boolean getOffsetAddresses();
+	}
+
+	/** {@link RadixType Radix type} of FFT. */
+	private final RadixType m_radixType;
+	/** Binary shift to convert exponent of radix to binary. */
+	private final int m_radixShift;
+	/** Exponent of the radix representing the number of data points (N). */
+	private final int m_exponent;
+	/** Number of butterfly phases of FFT. */
+	private final int m_phases;
+	/** Number of RAM buffers. */
+	private final int m_noBuffers;
+	/** Set to true if ordered output needed. */
+	private final boolean m_bitReverse;
+	/** Enable processing. */
+	private final DFEVar m_enable;
+	/** Set to true if you want all addresses to start from cycle 0. */
+	private final boolean m_offsetAddresses;
+
+	/** Map to hold address pattern for each phase. */
+	private final Map<Integer, CyclicAddress> m_addresses;
+	/** Boolean indication of when output is available. */
+	private final DFEVar m_outputAvailable;
+	/** Offset to apply to output to allow for buffering. */
+	private int m_outputOffset;
+
+	/**
+	 * Constructor for creating a {@link CyclicAddressFactory cyclic address
+	 * factory}.
+	 *
+	 * @param kernel {@link KernelLib Kernel} object that uses the factory.
+	 * @param radixType {@link RadixType Radix} of FFT.
+	 * @param exponent Exponent of radix.
+	 * @param noBuffers Number of RAM buffers required. With dual-port RAMs,
+	 * 			this should be half the radix (i.e. two values per buffer).
+	 * @param bitReverse If <code>true</code>, creates an address pattern for
+	 * 			bit-reversed order on the final FFT phase.
+	 * @param startAddressing Indication of whether to start addressing.
+	 */
+	public CyclicAddressFactory(final RadixType radixType,
+			final int exponent, final int noBuffers,
+			final boolean bitReverse, final DFEVar startAddressing) {
+		this(radixType, exponent, noBuffers, bitReverse, startAddressing, true);
+	}
+
+
+	/**
+	 * Constructor for creating a {@link CyclicAddressFactory cyclic address
+	 * factory}.
+	 *
+	 * @param kernel {@link KernelLib Kernel} object that uses the factory.
+	 * @param radixType {@link RadixType Radix} of FFT.
+	 * @param exponent Exponent of radix.
+	 * @param noBuffers Number of RAM buffers required. With dual-port RAMs,
+	 * 			this should be half the radix (i.e. two values per buffer).
+	 * @param bitReverse If <code>true</code>, creates an address pattern for
+	 * 			bit-reversed order on the final FFT phase.
+	 * @param startAddressing Indication of whether to start addressing.
+	 * @param offsetAddresses Is this the first stage of the FFT?
+	 */
+	public CyclicAddressFactory(final RadixType radixType,
+			final int exponent, final int noBuffers,
+			final boolean bitReverse, final DFEVar startAddressing,
+			final boolean offsetAddresses) {
+		super(startAddressing.getKernel());
+		m_radixType = radixType;
+		m_exponent = exponent;
+		m_noBuffers = noBuffers;
+		m_bitReverse = bitReverse;
+		m_enable = Reductions.streamHold(constant.var(true), startAddressing);
+		m_offsetAddresses = offsetAddresses;
+
+		m_radixShift = m_radixType.getBinaryShift();
+		m_phases = m_exponent;
+
+		m_addresses = new HashMap<Integer, CyclicAddress>(m_phases + 1);
+		m_outputAvailable = calculateAddressForAllPhases();
+	}
+
+	/**
+	 * Get the address pattern for a given phase.
+	 *
+	 * @param phase FFT phase (including phase 0 for input buffer).
+	 * @return {@link CyclicAddress Cyclic address} for specified phase.
+	 */
+	public CyclicAddress getAddressForPhase(final int phase) {
+		return m_addresses.get(phase);
+	}
+
+	/**
+	 * @return Indication of whether output is available.
+	 */
+	public DFEVar isOutputAvailable() {
+		return m_outputAvailable;
+	}
+
+	/**
+	 * Get the output offset. This is calculated based on the data size at
+	 * each phase, and is to allow RAM buffers time to fill. An additional
+	 * offset is applied to allow further buffering for bit reversal if
+	 * configured.
+	 *
+	 * @return Offset to apply to output.
+	 */
+	public int getOutputOffset() {
+		return m_outputOffset;
+	}
+
+	/**
+	 * Calculate the {@link CyclicAddress address patterns} for all FFT
+	 * phases.
+	 *
+	 * @return Sum of output offset for all phases.
+	 */
+	private DFEVar calculateAddressForAllPhases() {
+		int outputOffset;
+		DFEVar startNextPhase;
+		// Always have an input buffer for phase 0.
+		final CyclicAddress inputAddress = new InputAddress(m_radixType, m_exponent, m_noBuffers, m_enable, m_offsetAddresses);
+		m_addresses.put(0, inputAddress);
+		if (m_offsetAddresses) {
+			outputOffset = 1 << ((m_exponent - 1) * m_radixShift);
+			startNextPhase = inputAddress.isOutputAvailable();
+		} else {
+			outputOffset = 0;
+			startNextPhase = constant.var(true);
+		}
+
+		for (int phase = 1; phase < m_phases; phase++) {
+			final int bufferExponent = m_exponent - (phase - 1);
+			final CyclicAddress commutateAddress = new CommutateAddress(m_radixType, bufferExponent, m_noBuffers, startNextPhase, m_offsetAddresses);
+			m_addresses.put(phase, commutateAddress);
+			if (m_offsetAddresses) {
+				startNextPhase = commutateAddress.isOutputAvailable();
+				// Update output offset.
+				final int noDataSets = 1 << ((bufferExponent - 1) * m_radixShift);
+				outputOffset += noDataSets;
+			} else {
+				outputOffset = 0;
+				startNextPhase = constant.var(true);
+			}
+		}
+
+		// Only need cyclic address for final phase if doing a bit reversal.
+		if (m_bitReverse) {
+			final CyclicAddress reverseAddress = new ReverseAddress(m_radixType, m_exponent, m_noBuffers, startNextPhase, m_offsetAddresses);
+			m_addresses.put(m_phases, reverseAddress);
+			if (m_offsetAddresses) {
+				startNextPhase = reverseAddress.isOutputAvailable();
+				// Update output offset.
+				final int noDataSets = 1 << ((m_exponent - 1) * m_radixShift);
+				outputOffset += noDataSets;
+			} else {
+				outputOffset = 0;
+				startNextPhase = constant.var(true);
+			}
+		}
+		m_outputOffset = outputOffset;
+		return startNextPhase;
+	}
+}

@@ -1,0 +1,104 @@
+package maxpower.fft.twiddle;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.errors.MaxConstantEncodingException;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.DualPortMemOutputs;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+public class TwiddleLib {
+
+	private static final int NUM_RDX5_PIPES = 5;
+	private static final int NUM_RDX4_PIPES = 4;
+
+	/**
+	 * Generate twiddle-factor streams for commutation, to be shared between
+	 * all parallel FFTs.
+	 * See comments for applyTwiddles to learn about the ordering produced here.
+	 */
+	public static List<DFEComplex> r5Twiddles(final KernelLib owner, final DFEType type, int fftSize) {
+		final DFEComplexType complexType = new DFEComplexType(type);
+
+		final DFEVar addr = owner.control.count.makeCounter(
+				owner.control.count.makeParams(MathUtils.bitsToAddress(fftSize / NUM_RDX4_PIPES))
+				.withMax(fftSize / NUM_RDX4_PIPES)).getCount();
+
+		final List<DFEComplex> outputs = new ArrayList<DFEComplex>(NUM_RDX4_PIPES);
+
+		for (int i = 0; i < NUM_RDX4_PIPES; i++) {
+			final Bits[] contents = new Bits[fftSize / NUM_RDX4_PIPES];
+
+			for (int j = 0; j < NUM_RDX5_PIPES; j++) {
+				for (int k = 0; k < fftSize / (NUM_RDX5_PIPES * NUM_RDX4_PIPES); k++) {
+					final int index = (i * fftSize / (NUM_RDX5_PIPES * NUM_RDX4_PIPES)) + k;
+					final double angle = -(2 * Math.PI * index * j) / fftSize;
+
+					try {
+						contents[j * fftSize / (NUM_RDX5_PIPES * NUM_RDX4_PIPES) + k] =
+							complexType.encodeConstant(Math.cos(angle), Math.sin(angle));
+					}
+					catch (MaxConstantEncodingException e) {
+						if (e.isCompleteFixedPointUnderflow())
+							contents[j * fftSize / (NUM_RDX5_PIPES * NUM_RDX4_PIPES) + k] = e.getPackedValue();
+						else
+							throw e;
+					}
+				}
+			}
+			outputs.add(owner.mem.rom(addr, complexType, contents));
+		}
+		return outputs;
+	}
+
+	/**
+	 * Generate the twiddles for the radix-2 butterfly stage.
+	 *
+	 * @param dataCount Current dataset count.
+	 * @return {@link List} of twiddle factors.
+	 */
+	public static List<DFEComplex> r2Twiddles(final DFEVar dataCount, DFEType type, int fftSize) {
+		final KernelLib owner = dataCount.getKernel();
+		final List<DFEComplex> twiddles = new ArrayList<DFEComplex>(NUM_RDX4_PIPES);
+
+		final int numTwiddles = fftSize / 2;
+		final DFEType addressType = KernelLib.dfeUInt(MathUtils.bitsToAddress(numTwiddles));
+		final Bits[] twiddleFactors = new Bits[numTwiddles];
+		final DFEComplexType twiddleType = new DFEComplexType(type);
+		final double precision;
+		if (type instanceof DFEFix) {
+			precision = 1.0/ (1<<((DFEFix)type).getFractionBits());
+		} else {
+			precision = 0.0;
+		}
+
+		for (int i = 0; i < numTwiddles; i++) {
+			final double angle = -i * 2 * Math.PI / fftSize;
+			final double real = Math.cos(angle);
+			final double img = Math.sin(angle);
+
+			final double realTw = (Math.abs(real) > precision) ? real : 0.0;
+			final double imgTw = (Math.abs(img) > precision) ? img : 0.0;
+
+			final Bits twiddle = twiddleType.encodeConstant(realTw, imgTw);
+			twiddleFactors[i] = twiddle;
+		}
+
+		final DFEVar addressA = dataCount.cast(addressType);
+		final DFEVar addressB = (dataCount + (numTwiddles / 2)).cast(addressType);
+		final DualPortMemOutputs<DFEComplex> twiddleRom = owner.mem.romDualPort(
+				addressA, addressB, twiddleType, twiddleFactors);
+
+		twiddles.add(twiddleRom.getOutputA());
+		twiddles.add(twiddleRom.getOutputB());
+
+		return twiddles;
+	}
+}

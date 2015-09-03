@@ -1,0 +1,214 @@
+package maxpower.fft;
+
+import java.util.List;
+
+import maxpower.fft.buffer.FftBuffer;
+import maxpower.fft.buffer.MixedRadixBuffer;
+import maxpower.fft.buffer.R4InputBuffer;
+import maxpower.fft.buffer.R5InputBuffer;
+import maxpower.fft.buffer.R5OutputBuffer;
+import maxpower.fft.butterfly.ButterflyLib;
+import maxpower.fft.twiddle.TwiddleFactory;
+import maxpower.fft.twiddle.TwiddleLib;
+import maxpower.fft.utils.Encoder;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+/**
+ * KernelLib for a mixed-radix implementation of a size 2^N or 5*2^N FFT.
+ *
+ * This factory uses cyclic addressing in order to process multiple inputs at
+ * a time (number dependent on radix), and will output continuously (after an
+ * offset to allow the first values go through all FFT stages). The input is
+ * expected as for a radix-4 FFT, i.e. 4 values per cycle.
+ *
+ * Multiple parallel FFTs can performed from a single factory assuming they
+ * are running in phase.
+ *
+ * @author stephen
+ */
+public class FftFactory4pipes extends KernelLib {
+
+	// Expose useful parameters
+	public static final int NUM_FFT_PIPES	= 4;
+	public static final int NUM_RDX5_PIPES	= 5;
+
+	/** Number of butterfly phases of FFT. */
+	private final int m_radix4phases;
+	private final int m_radix2phases;
+	/** Exponent 2 representing the number of input data points (N). */
+	private final int m_exponent;
+	private final int m_fftSize;
+	private final int m_padding;
+	private final boolean m_is5xPower2;
+	/** {@link DFEType Type} of twiddle factors. */
+	private final DFEType m_twiddleType;
+
+	/** {@link TwiddleFactory Twiddle factory}. */
+	private final TwiddleFactory m_twiddleFactory;
+	/** {@link List} of twiddle factors for Radix-2 stage. */
+	private final List<DFEComplex> m_r2Twiddles;
+	/** {@link List} of twiddle factors for Radix-5 stage. */
+	private final List<DFEComplex> m_r5twiddles;
+	/** @link MixedRadixBuffer Mixed-radix buffer}. */
+	private final MixedRadixBuffer m_mixedBuffer;
+
+	private final R5InputBuffer  m_r5InputBuffer;
+	private final R4InputBuffer  m_r4InputBuffer;
+	private final R5OutputBuffer m_r5outputBuffer;
+
+
+	/**
+	 * Default constructor creating an {@link FftFactory4pipes FFT factory}.
+	 *
+	 * @param kernel {@link KernelLib Kernel} object that uses the factory.
+	 * @param twiddleType Generic {@link DFEType type} of real and imaginary
+	 * values for the twiddle factors (Twiddle factors are generated between
+	 * -1 and +1.
+	 * @param N The size of the FFT (Must be a power of two or a power of
+	 * 2 multiplied by 5 and be greater than 512).
+	 * @param padding Padding to flush the FFT.  Only required when N is a
+	 * multiple of 5.  Generally equal to N/5.
+	 */
+	public FftFactory4pipes(KernelLib kernel, final DFEType twiddleType, int N, int padding) {
+		super(kernel);
+
+		stream.suppressOffsetVectorWarnings();
+
+		m_fftSize = N;
+		m_padding = padding;
+		if (!validFftSize(m_fftSize)) {
+			throw new RuntimeException("4 pipe FFT currently only supports sizes that are 5 * 2^N for N > 5.");
+		}
+		m_is5xPower2 = m_fftSize % 5 == 0;
+		if (m_is5xPower2) {
+			if (padding < m_fftSize / 5) {
+				throw new RuntimeException("FFT currently only supports radix5 if final (size / 5) elements are all 0.");
+			}
+			m_r5InputBuffer  = new R5InputBuffer(this, m_fftSize - m_padding, m_padding);
+			m_r4InputBuffer  = null;
+			m_r5outputBuffer = new R5OutputBuffer(this, m_fftSize);
+			m_exponent       = MathUtils.bitsToAddress(N / 5);
+			m_r5twiddles     = TwiddleLib.r5Twiddles(this, twiddleType, m_fftSize);
+		} else {
+			m_r5InputBuffer  = null;
+			m_r4InputBuffer  = new R4InputBuffer(this, m_fftSize - m_padding, m_padding);
+			m_r5outputBuffer = null;
+			m_exponent       = MathUtils.bitsToAddress(N);
+			m_r5twiddles     = null;
+		}
+
+		m_radix4phases = m_exponent / 2;
+		m_radix2phases = m_exponent % 2;
+		m_twiddleType = twiddleType;
+
+		m_twiddleFactory = new TwiddleFactory(RadixType.RADIX_4, m_radix4phases, m_twiddleType, constant.var(true));
+
+		/*
+		 * Enable write all the time we are processing data to make sure all
+		 * buffer phases get completed. Note that we may be processing data
+		 * when neither input not output is enabled.
+		 */
+		if (m_radix2phases == 1) {
+			m_mixedBuffer    = new MixedRadixBuffer(m_exponent, constant.var(true));
+			m_r2Twiddles     = TwiddleLib.r2Twiddles(m_mixedBuffer.getDataCount(), twiddleType, (int)Math.pow(2, m_exponent));
+		} else {
+			m_mixedBuffer    = null;
+			m_r2Twiddles     = null;
+		}
+	}
+
+	/**
+	 * This method is a wrapper for transform(final List<DFEVector<DFEComplex>>).
+	 * It calls functions to rearrange the input into the correct format, pass it into the
+	 * other transform function, then rearrange the output.
+	 *
+	 * @param input contains stream of FFT inputs
+	 * @param numFFTs indicates the number of simultaneous FFTs
+	 * @return a DFEVector contianing the FFT outputs.
+	 */
+	public DFEVector<DFEComplex> transform(final DFEVector<DFEComplex> input, int numFFTs) {
+		List<DFEVector<DFEComplex>> codedOutput = transform(Encoder.encodeFftInput(input, numFFTs, 4));
+		return Encoder.decodeFftOutput(this, codedOutput, numFFTs, 4);
+	}
+
+	/**
+	 * This method implements the FFT solver. The decimation used is a
+	 * decimation in frequency as the twiddle factor is multiplied after the
+	 * linear combination of the inputs.
+	 *
+	 * The input is expected in the order ready for the radix-2 butterfly,
+	 * e.g. values 0/128/256/384 then 1/129/257/385 and so on. The output will
+	 * be in bit-reversed order.
+	 *
+	 * @param input {@link List} containing complex streams of FFT inputs.
+	 * @return {@link List} containing complex streams of FFT outputs
+	 */
+	public List<DFEVector<DFEComplex>> transform(final List<DFEVector<DFEComplex>> input) {
+		int depth = m_fftSize;
+		final List<DFEVector<DFEComplex>> rdx4input;
+		if (m_is5xPower2) {
+			final List<DFEVector<DFEComplex>> rdx5In = m_r5InputBuffer.transpose(input);
+			final List<DFEVector<DFEComplex>> rdx5Out = ButterflyLib.radix5butterfly(rdx5In, m_twiddleType);
+			final List<DFEVector<DFEComplex>> rdx5Transposed = m_r5outputBuffer.transposeOut(rdx5Out);
+			final List<DFEVector<DFEComplex>> postTwiddle = ButterflyLib.radix5twiddle(rdx5Transposed, m_r5twiddles);
+			rdx4input = postTwiddle;
+			depth /= 5;
+		} else {
+			rdx4input = m_r4InputBuffer.transpose(input);
+		}
+
+		List<DFEVector<DFEComplex>> fftOut;
+		// Start with the dual radix 2 stage (if needed).
+		if (m_radix2phases == 1) {
+			fftOut = ButterflyLib.radix2DualButterfly(rdx4input, m_r2Twiddles);
+			fftOut = m_mixedBuffer.transpose(fftOut);
+			depth /= 2;
+		} else if (m_radix2phases == 0) {
+			fftOut = rdx4input;
+		} else {
+			throw new RuntimeException("Number of radix 2 stages must be either 0 or 1 (negative is impossible, and 2 should be a radix 4 stage).");
+		}
+
+		for (int phase = 1; phase <= m_radix4phases; phase++) {
+			final List<DFEComplex> twiddles = m_twiddleFactory.getTwiddles(phase);
+
+			fftOut = ButterflyLib.radix4butterfly(fftOut, twiddles);
+
+			if(phase < m_radix4phases) {
+				fftOut = FftBuffer.buffer(fftOut, constant.var(true), depth, 4, 0, 4, 4, 1, true);
+				depth /= 4;
+			}
+		}
+
+		return fftOut;
+	}
+
+
+
+	private boolean validFftSize(int fftSize) {
+		int minFftSize = fftSize % 5 == 0 ? 640 : 32;
+		if (fftSize < minFftSize) {
+			return false;
+		}
+		if (fftSize == minFftSize) {
+			return true;
+		}
+		if (fftSize % 2 == 0) {
+			return validFftSize(fftSize / 2);
+		} else {
+			return false;
+		}
+	}
+
+	public DFEVar acceptingInput() {
+		return m_is5xPower2 ? m_r5InputBuffer.acceptingInput() : constant.var(true);
+	}
+
+
+}

@@ -1,0 +1,141 @@
+package maxpower.fft.buffer;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.DualPortMemOutputs;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortParams;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamWriteMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Stream.OffsetExpr;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+/**
+ * Use single buffer to transpose matrices.
+ */
+public class Transposer extends KernelLib {
+
+	private final WatchList watchList = new WatchList();
+
+	private final DFEVar output;
+
+	private static int offset_counter = 0;
+
+	/**
+	 * For minimal resource usage, choose width and height such that
+	 * (width*height-1) is an exact power of two.
+	 *
+	 * Note that you must have width*height>=17
+	 *
+	 * Example:
+	 * Assume width of 4 and height of 3, with values
+	 *
+	 *	0	|	1	|	2	|	3
+	 *	4	|	5	|	6	|	7
+	 *	8	|	9	|	10	|	11
+	 *
+	 *	Then the output will return (after 12 cycles since the output does not hide the latency)
+	 *		0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11
+	 *
+	 * width     fast dimension
+	 * height    slow dimension
+	 **/
+	public Transposer(KernelLib owner, DFEVar in, int width, int height, DFEVar enable) {
+		this(owner, in, width, 1, height, enable);
+	}
+
+	public Transposer watch(String prefix) {
+		watchList.watch(prefix);
+		return this;
+	}
+
+	/**
+	 * This one differs from constructor Transposer(KernelLib owner, HWVar in, int width, int height, HWVar enable) in that
+	 * movement in the horizontal directions, when transposing, are not by one column but by a user defined amount.
+	 *
+	 * Example:
+	 * Assume width (fast) of 5 and height (medium) of 3 and depth (slow) of 2, with values
+	 *
+	 *	0	|	1	|	2	|	3	|	4
+	 *	10	|	11	|	12	|	13	|	14
+	 *	20	|	21	|	22	|	23	|	24
+	 *
+	 *  5	|	6	|	7	|	8	|	9
+	 *  15	|	16	|	17	|	18	|	19
+	 *  25	|	26	|	27	|	28	|	29
+	 *
+	 *	Then the output will return
+	 *		0, 5, 10, 15, 20, 25, 1, 6, 11, 16, ...
+	 *
+	 * width     fast dimension
+	 * height    medium dimension
+	 * depth     slow dimension
+	 **/
+	public Transposer(KernelLib owner, DFEVar in, int width, int height, int depth, DFEVar enable) {
+		super(owner);
+		if (height == 1) {
+
+			final int N = width * depth;
+
+			final int Nm = N - 1;
+			final int nBits = MathUtils.bitsToAddress(N);
+
+			DFEVar isFirst = control.count.pulse(1);
+
+			DFEVar i = control.count.makeCounter(control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
+			DFEVar mul = dfeUInt(nBits).newInstance(this);
+			optimization.pushEnableBitGrowth(true);
+			DFEVar address = i === Nm ? Nm : KernelMath.modulo(i*mul, Nm).cast(dfeUInt(nBits));
+			DFEVar nextMul = mul*dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(this, width);
+			optimization.popEnableBitGrowth();
+			nextMul = KernelMath.modulo(nextMul, Nm).cast(dfeUInt(nBits));
+			OffsetExpr offset = stream.makeOffsetAutoLoop("transposerOffset" + offset_counter++, 0, N);
+			mul <== control.mux(isFirst#i===0, stream.offset(mul, -1), stream.offset(nextMul, -offset), constant.var(1), constant.var(1));
+			if(owner.getManager().getEngineParameters().getDFEModel().getBoardCapabilities().getMajorVersion()==4){
+				RamPortParams<DFEVar> readPort  = mem.makeRamPortParams(RamPortMode.READ_ONLY,  address, in.getType());
+				RamPortParams<DFEVar> writePort = mem.makeRamPortParams(RamPortMode.WRITE_ONLY, address, in).withWriteEnable(enable);
+				DualPortMemOutputs<DFEVar> ram = mem.ramDualPort(N, RamWriteMode.READ_FIRST, readPort, writePort);
+				output = ram.getOutputA();
+				getManager().logInfo("Depth of RAM in Transposer = " + N);
+			} else {
+				output = mem.ram(N, RamWriteMode.READ_FIRST, mem.makeRamPortParams(RamPortMode.READ_WRITE, address, in).withWriteEnable(enable));
+				getManager().logInfo("Depth of RAM in Transposer (xilinx) = " + N);
+			}
+
+			watchList.add(isFirst,"tr_isFirst");
+			watchList.add(i,"tr_i");
+			watchList.add(mul,"tr_mul");
+			watchList.add(address,"tr_address");
+		} else {
+			// double buffered implementation
+			final int N = width * height * depth;
+
+			DFEType addressType = dfeUInt(MathUtils.bitsToAddress(2 * N));
+			CounterChain readCounter = control.count.makeCounterChain(enable);
+			CounterChain writeCounter = control.count.makeCounterChain(enable);
+
+			DFEVar rdBuff = readCounter.addCounter(2,      1);
+			DFEVar slow   = readCounter.addCounter(width,  1).cast(addressType);
+			DFEVar medium = readCounter.addCounter(height, 1).cast(addressType);
+			DFEVar fast   = readCounter.addCounter(depth,  1).cast(addressType);
+
+			DFEVar readAddress  = fast * width * height + medium * width + slow;
+			DFEVar writeAddress = writeCounter.addCounter(N, 1).cast(addressType);
+
+			writeAddress = rdBuff ? writeAddress    : writeAddress + N;
+			readAddress  = rdBuff ? readAddress + N : readAddress;
+
+			RamPortParams<DFEVar> writePort   = mem.makeRamPortParams(RamPortMode.WRITE_ONLY, writeAddress, in).withWriteEnable(enable);
+			RamPortParams<DFEVar> readPort    = mem.makeRamPortParams(RamPortMode.READ_ONLY,  readAddress,  in.getType());
+			DualPortMemOutputs<DFEVar> buffer = mem.ramDualPort(2 * N, RamWriteMode.READ_FIRST, writePort, readPort);
+
+			output = buffer.getOutputB();
+		}
+	}
+
+	public DFEVar getOutput() {
+		return output;
+	}
+}

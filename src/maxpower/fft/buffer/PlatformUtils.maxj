@@ -1,0 +1,48 @@
+package maxpower.fft.buffer;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.managers.DFEModel;
+
+public class PlatformUtils {
+	/**
+	 * Returns false if the platform supports dual port read first RAMs, and therefore
+	 * can re-use the same buffer. Returns true if double buffering is required.
+	 */
+	public static boolean isDoubleBufferingRequired(KernelLib kernel) {
+		String chipManufacturer = getChipManufacturer(kernel);
+
+		if (chipManufacturer.equalsIgnoreCase("Xilinx"))
+			return false;
+		if (chipManufacturer.equalsIgnoreCase("Altera"))
+			return true;
+
+		throw new MaxCompilerAPIError(
+				"Unable to say whether or not double buffering is required for '" +
+				kernel.getManager().getEngineParameters().getDFEModel() + "'"
+		);
+	}
+
+	/**
+	 * Returns a String containing the name of the chip manufacturer or an empty String
+	 * if the chip manufacturer is not known.
+	 * @return Typically either "Xilinx" or "Altera"
+	 */
+	public static String getChipManufacturer(KernelLib kernel) {
+		DFEModel model = kernel.getManager().getEngineParameters().getDFEModel();
+
+		switch (model) {
+		case MAX2B:
+		case MAX2C:
+		case VECTIS:
+			return "Xilinx";
+		case CORIA:
+		case MAIA:
+		case ISCA:
+			return "Altera";
+		default:
+			return "";
+		}
+	}
+
+}

@@ -1,0 +1,124 @@
+package maxpower.fft.buffer;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.DualPortMemOutputs;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortParams;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamWriteMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+public class NonPowerTwoDepthMem extends KernelLib {
+
+	//TODO: these BRAM sizes are for Altera M20Ks, so if we ever use anything other than that
+	//      that doesn't do tiling for us (like Xilinx) then we will need to modify this.
+	private static final int RAM_WIDTH = 40;
+	private static final int RAM_DEPTH = 512;
+	private static final int[] RAM_DEPTHS = { 	16384,
+												8192,
+												4096, 4096, 4096,
+												2048, 2048, 2048, 2048, 2048,
+												1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+												512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512 };
+
+
+	/** Xilinx tile things for us, so we don't have to. **/
+	private final boolean m_isXilinx;
+
+	public NonPowerTwoDepthMem(KernelLib owner) {
+		super(owner);
+		m_isXilinx = PlatformUtils.getChipManufacturer(this).equalsIgnoreCase("Xilinx");
+	}
+	public DFEVector<DFEVar> simpleDualPortRam(DFEVector<DFEVar> input, DFEVar readAddress, DFEVar writeAddress, int depth) {
+		DFEVectorType<DFEVar> arrayType = input.getType();
+
+		if (depth <= RAM_DEPTH * 2 || m_isXilinx) {
+			// We don't need to do any tiling
+			return arrayType.unpack(powerOfTwoDualPortRam(input.pack(), readAddress, writeAddress, depth));
+		} else {
+			return arrayType.unpack(splitWidthDualPortRam(input.pack(), readAddress, writeAddress, depth));
+		}
+	}
+
+	private DFEVar splitWidthDualPortRam(DFEVar input, DFEVar readAddress, DFEVar writeAddress, int depth) {
+		final int width = input.getType().getTotalBits();
+		final int leftWidth;
+		if (width < RAM_WIDTH) {
+			int minCost = MathUtils.ceilDivide(depth, RAM_DEPTHS[width - 1]);
+			int optimumWidth = width;
+			for (int i = width - 1; i > width / 2; i--) {
+				final int cost = MathUtils.ceilDivide(depth, RAM_DEPTHS[i - 1]) + MathUtils.ceilDivide(depth, RAM_DEPTHS[width - i]);
+				if (cost < minCost) {
+					minCost = cost;
+					optimumWidth = i;
+				}
+			}
+			leftWidth = optimumWidth;
+		} else {
+			leftWidth = Math.min((MathUtils.nextMultiple(width, RAM_WIDTH / 2) / RAM_WIDTH) * RAM_WIDTH, width);
+		}
+
+		final DFEVar leftInput = input.slice(0, leftWidth);
+		final DFEVar leftOutput = splitDepthDualPortRam(leftInput, readAddress, writeAddress, depth);
+
+		final int rightWidth = width - leftWidth;
+		if (rightWidth > 0) {
+			final DFEVar rightInput = input.slice(leftWidth, rightWidth);
+			final DFEVar rightOutput = splitWidthDualPortRam(rightInput, readAddress, writeAddress, depth);
+			return rightOutput # leftOutput;
+		}
+		return leftOutput;
+	}
+
+	private DFEVar splitDepthDualPortRam(DFEVar input, DFEVar readAddress, DFEVar writeAddress, int depth) {
+		return splitDepthDualPortRam(input, readAddress, writeAddress, depth, constant.var(true));
+	}
+
+	private DFEVar splitDepthDualPortRam(DFEVar input, DFEVar readAddress, DFEVar writeAddress, int depth, DFEVar enable) {
+		final int width = input.getType().getTotalBits();
+		final int minDepth = RAM_DEPTHS[Math.min(RAM_WIDTH, width) - 1];
+		if (MathUtils.isPowerOf2(MathUtils.nextMultiple(depth, minDepth))) {
+			return powerOfTwoDualPortRam(input, readAddress, writeAddress, depth, enable);
+		} else {
+			final int bottomDepth = MathUtils.nextPowerOfTwo(depth) / 2; //previous power of 2
+			final int topDepth    = depth - bottomDepth;
+			final int bottomBits  = MathUtils.bitsToAddress(bottomDepth);
+			final int topBits     = MathUtils.bitsToAddress(topDepth);
+			final DFEVar bottomReadAddress  = readAddress.slice(0, bottomBits);
+			final DFEVar bottomWriteAddress = writeAddress.slice(0, bottomBits);
+			final DFEVar topReadAddress     = readAddress.slice(0, topBits);
+			final DFEVar topWriteAddress    = writeAddress.slice(0, topBits);
+
+			final DFEVar writeInBottom = writeAddress < bottomDepth;
+			final DFEVar readFromBottom = readAddress < bottomDepth;
+
+			final DFEVar bottomOutput = powerOfTwoDualPortRam(input, bottomReadAddress, bottomWriteAddress, bottomDepth, enable & writeInBottom);
+			final DFEVar topOutput    = splitDepthDualPortRam(input, topReadAddress,    topWriteAddress,    topDepth,    enable & ~writeInBottom);
+
+			return readFromBottom ? bottomOutput : topOutput;
+		}
+	}
+
+	private DFEVar powerOfTwoDualPortRam(DFEVar input, DFEVar readAddress, DFEVar writeAddress, int depth) {
+		return powerOfTwoDualPortRam(input, readAddress, writeAddress, depth, constant.var(true));
+	}
+
+	private DFEVar powerOfTwoDualPortRam(DFEVar input, DFEVar readAddress, DFEVar writeAddress, int depth, DFEVar enable) {
+		DFEType type = input.getType();
+		final RamPortParams<DFEVar> writeParams = mem.makeRamPortParams(
+				RamPortMode.WRITE_ONLY, writeAddress, type)
+				.withDataIn(input)
+				.withWriteEnable(enable);
+
+		final RamPortParams<DFEVar> readParams = mem.makeRamPortParams(
+				RamPortMode.READ_ONLY, readAddress, type);
+
+		final DualPortMemOutputs<DFEVar> ram = mem.ramDualPort(
+				depth, RamWriteMode.READ_FIRST,	writeParams, readParams);
+
+		return ram.getOutputB();
+	}
+}

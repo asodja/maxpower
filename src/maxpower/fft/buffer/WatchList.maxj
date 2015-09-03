@@ -1,0 +1,56 @@
+package maxpower.fft.buffer;
+
+import java.util.ArrayList;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+
+/**
+ * Use this class to record a whole lot of KernelObjects that you might want to watch.
+ * Useful when you don't want to delete all the watches in your code but don't want them
+ * to be displayed by other users who might invoke your class.
+ *
+ * @author sebastien
+ *
+ */
+public class WatchList {
+	private final ArrayList<WatchObject> m_list = new ArrayList<WatchObject>();
+
+	public WatchList() {}
+
+	/**
+	 * Register an object with this list.
+	 *
+	 * @param x
+	 * @param watch_name
+	 */
+	public void add(KernelObject<?> x, String watch_name) {
+		m_list.add(new WatchObject(x, watch_name));
+	}
+
+	/**
+	 * Actually call .watch(...) on all the KernelObjects registered with this list.
+	 */
+	public void watch(String prefix) {
+		for(WatchObject o : m_list) {
+			o.getKernelObject().simWatch(prefix+o.getWatchName());
+		}
+	}
+}
+
+class WatchObject {
+	private final String name;
+	private final KernelObject<?> object;
+
+	public WatchObject(KernelObject<?> x, String watch_name) {
+		name = watch_name;
+		object = x;
+	}
+
+	public String getWatchName() {
+		return name;
+	}
+
+	public KernelObject<?> getKernelObject() {
+		return object;
+	}
+}

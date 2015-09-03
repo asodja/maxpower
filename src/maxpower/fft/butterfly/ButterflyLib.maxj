@@ -1,0 +1,202 @@
+package maxpower.fft.butterfly;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
+import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+/**
+ * This is a collection of all the butterfly functions for different radix FFTs.
+ *
+ * WARNING: Note that the radix 5 FFT is currently special, in that it is assumed to be feeding
+ * in to a radix 4 FFT, so is assumed to need to output 4 pipes rather than 5.
+ * The result of this is that it has a separate function for applying the twiddles. This is done
+ * so that applying the twiddles can be done in 4 pipes, saving both DSPs (for the multiplies)
+ * and BRAMs (for the twiddle ROM).
+ * This also means that the twiddle ROM needs to be 4 pipes wide and store the transpose of the
+ * normal twiddle factors.
+ * This is an optimisation for the most common use case (a 5*2^n FFT). The more general case is not yet implemented.
+ *
+ * @author stephen
+ *
+ */
+public class ButterflyLib {
+	/**
+	 *
+	 * @param in
+	 * @param twiddleType
+	 * @return
+	 */
+
+	// This is a 5 pipe radix-5 butterfly that doesn't apply any twiddles (that is done in the next function)
+	public static List<DFEVector<DFEComplex>> radix5butterfly(List<DFEVector<DFEComplex>> in, DFEType twiddleType) {
+		if (in.size() != 5) {
+			throw new RuntimeException("radix5butterfly expects 5 pipes of input.");
+		}
+		KernelLib k = in[0].getKernel();
+
+		final DFEComplex C1 = k.constant.cplx(twiddleType, Math.sqrt(5)/4,          0.0);
+		final DFEComplex C2 = k.constant.cplx(twiddleType, -Math.sin(2*Math.PI/5),  0.0);
+		final DFEComplex C3 = k.constant.cplx(twiddleType, -Math.sin(2*Math.PI/10), 0.0);
+
+		DFEVector<DFEComplex> t1 = in[1] + in[4];
+		DFEVector<DFEComplex> t3 = in[1] - in[4];
+		DFEVector<DFEComplex> t2 = in[2] + in[3];
+		DFEVector<DFEComplex> t4 = in[2] - in[3];
+		DFEVector<DFEComplex> t5 = t1 + t2;
+		k.optimization.pushEnableBitGrowth(true);
+		DFEVector<DFEComplex> t6 = (C1 * (t1 - t2)).cast(t1.getType());
+		k.optimization.popEnableBitGrowth();
+		DFEVector<DFEComplex> t7 = in[0] - 0.25 * t5;
+		DFEVector<DFEComplex> y1 = t7 + t6;
+		DFEVector<DFEComplex> y2 = t7 - t6;
+		k.optimization.pushEnableBitGrowth(true);
+		DFEVector<DFEComplex> y3 = (C3 * t3 - C2 * t4).cast(t3.getType());
+		DFEVector<DFEComplex> y4 = (C2 * t3 + C3 * t4).cast(t3.getType());
+		k.optimization.popEnableBitGrowth();
+
+		final List<DFEVector<DFEComplex>> out = new ArrayList<DFEVector<DFEComplex>>(5);
+		out.add(in[0] + t5);
+		out.add(y1 + k.constant.cplx(0,1) * y4);
+		out.add(y2 + k.constant.cplx(0,1) * y3);
+		out.add(y2 - k.constant.cplx(0,1) * y3);
+		out.add(y1 - k.constant.cplx(0,1) * y4);
+		return out;
+	}
+
+	/**
+	 * Apply twiddle factors corresponding to radix-5 to radix-512 commutation.
+	 * We apply twiddle factors exp(-j*2*pi*n*k/N) to four pipes, in the
+	 * following sequence, where the values in the table are n*k:
+	 *
+	 *     A        B        C        D
+	 * ------------------------------------
+	 *    0*0    128*0    256*0    384*0
+	 *    1*0    129*0    257*0    385*0
+	 *     .        .        .        .
+	 *     .        .        .        .
+	 *  127*0    255*0    383*0    511*0
+	 *    0*1    128*1    256*1    384*1
+	 *    1*1    129*1    257*1    385*1
+	 *     .        .        .        .
+	 *     .        .        .        .
+	 *    0*2    128*2    256*2    384*2
+	 *     .        .        .        .
+	 *     .        .        .        .
+	 *    0*3    128*3    256*3    384*3
+	 *     .        .        .        .
+	 *     .        .        .        .
+	 *    0*4    128*4    256*4    384*4
+	 *     .        .        .        .
+	 *     .        .        .        .
+	 *  127*4    255*4    383*4    511*4
+	 *
+	 *  TODO: the first 5th of the pattern are all equal to unity, so we could
+	 *  eliminate some BRAM at the expense of muxes
+	 */
+	//This applies the radix-5 twiddles with 4 pipes (this is done after the transpose from 5 pipes back to 4 pipes)
+	public static List<DFEVector<DFEComplex>> radix5twiddle(List<DFEVector<DFEComplex>> input, List<DFEComplex> twiddles) {
+		if (input.size() != 4) {
+			throw new RuntimeException("radix5twiddle expects 4 pipes of input. (twiddles should be applied after transpose back to 4 pipes)");
+		}
+		if (twiddles.size() != 4) {
+			throw new RuntimeException("radix5twiddle requires 4 twiddle factors.");
+		}
+		KernelLib k = input[0].getKernel();
+		final List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(4);
+
+		for (int i = 0; i < 4; i++) {
+			k.optimization.pushEnableBitGrowth(true);
+			output.add((input[i] * twiddles[i]).cast(input[i].getType()));
+			k.optimization.popEnableBitGrowth();
+		}
+		return output;
+	}
+
+
+	public static List<DFEVector<DFEComplex>> radix4butterfly(List<DFEVector<DFEComplex>> input, List<DFEComplex> twiddles) {
+		if (input.size() != 4) {
+			throw new RuntimeException("radix4butterfly expects 4 pipes of input.");
+		}
+		if (twiddles.size() != 3) {
+			throw new RuntimeException("radix4butterfly requires 3 twiddle factors.");
+		}
+		KernelLib k = input[0].getKernel();
+		DFEType type = (DFEType) ((DFEComplexType)input[0].getType().getContainedType()).getRealType();
+		// Optimise if using fixed types.
+		if (type instanceof DFEFix) {
+			final int typeOffset = ((DFEFix)type).getOffset();
+			k.optimization.pushFixOpMode(
+					Optimization.bitSizeLargest(),
+					Optimization.offsetExact(typeOffset),
+					MathOps.ADD_SUB, MathOps.MUL);
+		}
+
+		DFEVector<DFEComplex> a = input[0] + input[2];
+		DFEVector<DFEComplex> b = input[1] + input[3];
+		DFEVector<DFEComplex> c = input[0] - input[2];
+		DFEVector<DFEComplex> d = input[1] - input[3];
+
+		// bit reversing the output, hence using twiddle factor 1 first then 0,
+		// then 2
+		DFEVector<DFEComplex> jd = d * k.constant.cplx(type, 0, 1);
+
+		List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(4);
+		output.add( a + b);
+		output.add((a - b)  * twiddles[1]);
+		output.add((c - jd) * twiddles[0]);
+		output.add((c + jd) * twiddles[2]);
+
+		if (type instanceof DFEFix) {
+			k.optimization.popFixOpMode(MathOps.ADD_SUB, MathOps.MUL);
+		}
+
+		return output;
+	}
+
+	/**
+	 * Perform a dual radix-2 butterfly on the inputs, applying twiddle
+	 * factors to the results. The input is expected such that the first
+	 * butterfly is on values 0 and 2, the second on values 1 and 3. Results
+	 * are output in the same order.
+	 *
+	 * @param input Input values.
+	 * @return Output values.
+	 */
+	public static List<DFEVector<DFEComplex>> radix2DualButterfly(final List<DFEVector<DFEComplex>> input, List<DFEComplex> twiddles) {
+		if (input.size() != 4) {
+			throw new RuntimeException("radix2DualButterfly expects 4 pipes of input.");
+		}
+		if (twiddles.size() != 2) {
+			throw new RuntimeException("radix2DualButterfly requires 2 twiddle factors.");
+		}
+		KernelLib k = input[0].getKernel();
+		DFEType type = (DFEType) ((DFEComplexType)input[0].getType().getContainedType()).getRealType();
+		// Optimise if using fixed types.
+		if (type instanceof DFEFix) {
+			final int typeOffset = ((DFEFix)type).getOffset();
+			k.optimization.pushFixOpMode(
+					Optimization.bitSizeLargest(),
+					Optimization.offsetExact(typeOffset),
+					MathOps.ADD_SUB, MathOps.MUL);
+		}
+		final List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(4);
+		output.add((input[0] + input[2]));
+		output.add((input[1] + input[3]));
+		output.add((input[0] - input[2]) * twiddles[0]);
+		output.add((input[1] - input[3]) * twiddles[1]);
+
+		if (type instanceof DFEFix) {
+			k.optimization.popFixOpMode(
+					MathOps.ADD_SUB, MathOps.MUL);
+		}
+
+		return output;
+	}
+}

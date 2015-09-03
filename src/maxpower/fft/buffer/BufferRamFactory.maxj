@@ -1,0 +1,102 @@
+package maxpower.fft.buffer;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import maxpower.fft.buffer.CyclicAddressFactory.CyclicAddress;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.DualPortMemOutputs;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortParams;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamWriteMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+
+public class BufferRamFactory<T extends KernelObject<S>, S> extends KernelLib {
+	/** Enable processing. */
+	private final DFEVar m_enable;
+	/** Which buffer we are writing to (null if not double buffering). */
+	private final DFEVar m_writeBuffer;
+	private final DFEVar m_readBuffer;
+	/** Size of each buffer. */
+	private final int m_bufferSize;
+	/** Requires double buffering **/
+	private final boolean m_isDoubleBuffered;
+
+	public BufferRamFactory(int bufferSize, DFEVar enable, DFEVar writeBuffer) {
+		super(enable.getKernel());
+		m_enable 		= enable;
+		m_writeBuffer 	= writeBuffer;
+		m_readBuffer 	= writeBuffer == null ? null : ~writeBuffer;
+		m_bufferSize 	= bufferSize;
+		m_isDoubleBuffered = PlatformUtils.isDoubleBufferingRequired(this);
+		if (m_isDoubleBuffered && m_writeBuffer == null) {
+			throw new RuntimeException("FftBuffer must be double buffered on Altera, as dual port read first RAMs are not supported.\n" +
+								"Therefore, writeBuffer must not be null.");
+		}
+	}
+
+	/**
+	 * Creates a dual-port RAM instance. Since {@link CyclicAddress cyclic
+	 * addressing} is used, both ports are read and written on each call, the
+	 * existing value being read out before being overwritten by the new value
+	 * (i.e. {@link RamWriteMode#READ_FIRST read-first} mode).
+	 *
+	 * @param addrA Input address for port A.
+	 * @param inA Input data for port A.
+	 * @param outA Output data for connection to port A.
+	 * @param addrB Input address for port B.
+	 * @param inB Input data for port B.
+	 * @param outB Output data for connection to port B.
+	 */
+	public List<S> dualRam(final List<DFEVar> addr, final List<T> in) {
+		final KernelType<S> typeA = in[0].getType();
+		final KernelType<S> typeB = in[1].getType();
+		final List<S> output = new ArrayList<S>(2);
+
+		if (m_isDoubleBuffered) {
+			final RamPortParams<DFEVar> portA0 = mem.makeRamPortParams(
+					RamPortMode.READ_WRITE, addr[0], in[0].pack())
+					.withWriteEnable(m_enable & m_writeBuffer);
+
+			final RamPortParams<DFEVar> portB0 = mem.makeRamPortParams(
+					RamPortMode.READ_WRITE, addr[1], in[1].pack())
+					.withWriteEnable(m_enable & m_writeBuffer);
+
+			final RamPortParams<DFEVar> portA1 = mem.makeRamPortParams(
+					RamPortMode.READ_WRITE, addr[0], in[0].pack())
+					.withWriteEnable(m_enable & m_readBuffer);
+
+			final RamPortParams<DFEVar> portB1 = mem.makeRamPortParams(
+					RamPortMode.READ_WRITE, addr[1], in[1].pack())
+					.withWriteEnable(m_enable & m_readBuffer);
+
+			final DualPortMemOutputs<DFEVar> ram0 = mem.ramDualPort(
+					m_bufferSize, RamWriteMode.WRITE_FIRST, portA0, portB0);
+
+			final DualPortMemOutputs<DFEVar> ram1 = mem.ramDualPort(
+					m_bufferSize, RamWriteMode.WRITE_FIRST, portA1, portB1);
+
+			output.add(typeA.unpack(m_readBuffer ? ram0.getOutputA() : ram1.getOutputA()));
+			output.add(typeB.unpack(m_readBuffer ? ram0.getOutputB() : ram1.getOutputB()));
+		} else {
+			final RamPortParams<DFEVar> portA0 = mem.makeRamPortParams(
+					RamPortMode.READ_WRITE, addr[0], in[0].pack())
+					.withWriteEnable(m_enable);
+
+			final RamPortParams<DFEVar> portB0 = mem.makeRamPortParams(
+					RamPortMode.READ_WRITE, addr[1], in[1].pack())
+					.withWriteEnable(m_enable);
+
+			final DualPortMemOutputs<DFEVar> ram0 = mem.ramDualPort(
+					m_bufferSize, RamWriteMode.READ_FIRST, portA0, portB0);
+
+			output.add(typeA.unpack(ram0.getOutputA()));
+			output.add(typeB.unpack(ram0.getOutputB()));
+		}
+		return output;
+	}
+
+}
