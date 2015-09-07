@@ -5,7 +5,7 @@ A (non-exhaustive) list of the contents of the MaxPower library.
 
 `maxpower/`
 * `blas/l3/` - building blocks for dense matrix multiplication
-* `hash/` - hash maps backed in FMem, LMem and QMEM
+* `hash/` - hash maps backed in FMem, LMem and QMem
 * `kernel/`
   * `arithmetic/`
     - `ConstDenominator` - efficient division by small, constant denominators
