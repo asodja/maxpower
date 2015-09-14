@@ -31,6 +31,9 @@ public class BoxBufferTest {
 	@Test public void nonFactor_12_8()       { testBoxBuffer(1, 2508, 12,  8); }
 
 	@Test public void simple_2d()            { testBoxBuffer(2, 64, 2, 2, 2); }
+	@Test public void coprime_2d()           { testBoxBuffer(2, 90, 5, 3, 2); }
+	@Test public void coprime_3d()           { testBoxBuffer(3, 90, 5, 3, 2, 5); }
+	@Test public void coprime_4d()           { testBoxBuffer(4, 90, 5, 3, 2, 2, 2); }
 
 
 	private void testBoxBuffer(int numDimensions, int maxItemsPerDim, int numInputItems, int... numOutputItems) {
@@ -66,7 +69,6 @@ public class BoxBufferTest {
 	private class TestKernel extends Kernel {
 		TestKernel(KernelParameters p, int numDimensions, int[] maxItems, int numInputItems, int[] numOutputItems) {
 			super(p);
-			stream.suppressOffsetVectorWarnings();
 			int numCycles = product(maxItems);
 			DFEVectorType<DFEVar> inType  = new DFEVectorType<DFEVar>(dfeUInt(m_itemBitWidth), numInputItems);
 			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(dfeUInt(m_itemBitWidth), product(numOutputItems));
