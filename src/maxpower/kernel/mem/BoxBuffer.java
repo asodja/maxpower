@@ -84,7 +84,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	}
 
 	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
-		this(root, maxItems, numOutputItems, inputType, true, costOfBramInLuts);
+		this(root, maxItems, numOutputItems, inputType, false, costOfBramInLuts);
 	}
 
 	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
@@ -145,6 +145,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		if (m_1dParams.doubleBuffered) {
 			throw new RuntimeException("If the Box Buffer is double buffered, then you must specify which buffer you want to write to.");
 		}
+		write(data, address, enable, null);
 	}
 
 	public void write(DFEVector<T> data, DFEVar[] address, DFEVar enable, DFEVar buffer) {

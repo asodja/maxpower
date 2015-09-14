@@ -51,8 +51,6 @@ public class BoxBufferTest {
 		mgr.setInputDataRaw("wrData", data.m_wrData);
 
 		mgr.setInputData("wrEnable", data.m_wrEnable);
-		mgr.setInputData("wrBuffer", data.m_wrBuffer);
-		mgr.setInputData("rdBuffer", data.m_rdBuffer);
 		for (int i = 0; i < numDimensions; i++) {
 			mgr.setInputData("wrIndex"+i,  data.m_wrIndex[i]);
 			mgr.setInputData("rdIndex"+i,  data.m_rdIndex[i]);
@@ -76,21 +74,17 @@ public class BoxBufferTest {
 			DFEVar[] rdIndex = new DFEVar[numDimensions];
 			for (int i = 0; i < numDimensions; i++) {
 				int idxBits = MathUtils.bitsToAddress(maxItems[i]);
-				wrIndex[i] = io.input("wrIndex"+i,  dfeUInt(idxBits)).simWatch("wrIndex"+i);
-				rdIndex[i] = stream.offset(io.input("rdIndex"+i,  dfeUInt(idxBits)).simWatch("rdIndex"+i), -numCycles);
+				wrIndex[i] = io.input("wrIndex"+i,  dfeUInt(idxBits));
+				rdIndex[i] = stream.offset(io.input("rdIndex"+i,  dfeUInt(idxBits)), -numCycles);
 			}
 
-			DFEVar wrBuffer = io.input("wrBuffer", dfeUInt(1));
 			DFEVar wrEnable = io.input("wrEnable", dfeUInt(1));
 
-			DFEVar rdBuffer = stream.offset(io.input("rdBuffer", dfeUInt(1)), -numCycles);
-
 			DFEVector<DFEVar> wrData = io.input("wrData", inType);
-			wrData.simWatch("wrData");
 
 			BoxBuffer<DFEVar> buffer = new BoxBuffer<DFEVar>(this, maxItems, numOutputItems, inType);
-			buffer.write(wrData, wrIndex, wrEnable, wrBuffer);
-			io.output("rdData", outType) <== stream.offset(buffer.read(rdIndex, rdBuffer), numCycles).simWatch("rdData");
+			buffer.write(wrData, wrIndex, wrEnable);
+			io.output("rdData", outType) <== stream.offset(buffer.read(rdIndex), numCycles);
 		}
 	}
 
@@ -98,8 +92,6 @@ public class BoxBufferTest {
 		final int[] m_data;
 		final Bits[] m_wrData;
 		final double[] m_wrEnable;
-		final double[] m_wrBuffer;
-		final double[] m_rdBuffer;
 		final double[][] m_wrIndex;
 		final double[][] m_rdIndex;
 		final int m_numCycles;
@@ -130,16 +122,12 @@ public class BoxBufferTest {
 
 			m_wrData   = new Bits[m_numCycles];
 			m_wrEnable = new double[m_numCycles];
-			m_wrBuffer = new double[m_numCycles];
-			m_rdBuffer = new double[m_numCycles];
 			m_wrIndex  = new double[m_maxItems.length][m_numCycles];
 			m_rdIndex  = new double[m_maxItems.length][m_numCycles];
 
 			// Build up input data
 			for (int i = 0; i < m_numCycles; i++) {
 				m_wrEnable[i] = 1;
-				m_wrBuffer[i] = 0;
-				m_rdBuffer[i] = 0;
 				int[] input = new int[numInputItems];
 				for (int j = 0; j < numInputItems; j++) {
 					input[j] = m_data[numInputItems * i + j];
