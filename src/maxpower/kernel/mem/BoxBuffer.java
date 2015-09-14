@@ -23,24 +23,25 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * a random location. In this case box is meant in the geometric sense (also
  * called an n-orthotope or hyperectangle), so a contiguous section of an
  * N-dimensional space can be retrieved. In 1D this is a simple interval.
- *
+ * </p>
  * Internally it can be double buffered, so we can write N items a cycle into the
  * buffer and read M items out. Obviously for maximum performance, we need to set-up
  * our kernel so that N*cycles >= items_to_write otherwise we can't read and write
  * at full speed. If it is not double buffered, then it is up to the user to make
- * sure that data has not been overwritten before it is read.
- *
+ * sure that data has not been overwritten before it is read. The default is to not
+ * be double buffered.
+ * </p>
  * If you have a section of data that you need to read chunks from which will then be
  * swapped out for another section then you should use the double buffered version so
  * that the new section can be written while the old section is read, so we can do
  * useful compute on every cycle. If instead you need a sliding window or you only
  * have a single section to read, then use single buffering.
- *
+ * </p>
  * Note that data must be written in linearly with new data on every cycle (when buffer
  * is in use), but can be read out in any order. This is due to a stream offset used
  * to cluster input items together to use FMem more efficiently. To disable this
  * behaviour, set defaultLutCost to zero (this forces it to only optimise for LUTs).
- *
+ * </p>
  * Also note that when using this buffer with more than one dimension, the fast dimension
  * (the one we write in linearly) is the last dimension specified.
  */
@@ -58,35 +59,64 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	private final int[] m_skipBuffers;
 
 	private boolean m_hasWritten = false;
+	private boolean m_hasRead = false;
 
+	/**
+	 * Create a single buffered 1D box buffer (see {@link BoxBuffer}).
+	 */
 	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType) {
 		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType);
 	}
 
+	/**
+	 * Create a 1D box buffer (see {@link BoxBuffer}).
+	 */
 	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
 		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, doubleBuffered);
 	}
 
+	/**
+	 * Create a single buffered 1D box buffer (see {@link BoxBuffer}).
+	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
+	 */
 	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
 		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, costOfBramInLuts);
 	}
 
+	/**
+	 * Create a 1D box buffer (see {@link BoxBuffer}).
+	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
+	 */
 	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
 		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, doubleBuffered, costOfBramInLuts);
 	}
 
+	/**
+	 * Create a single buffered N-dimensional box buffer (see {@link BoxBuffer}).
+	 */
 	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType) {
 		this(root, maxItems, numOutputItems, inputType, defaultLutCost);
 	}
 
+	/**
+	 * Create an N-dimensional box buffer (see {@link BoxBuffer}).
+	 */
 	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
 		this(root, maxItems, numOutputItems, inputType, doubleBuffered, defaultLutCost);
 	}
 
+	/**
+	 * Create a single buffered N-dimensional box buffer (see {@link BoxBuffer}).
+	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
+	 */
 	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
 		this(root, maxItems, numOutputItems, inputType, false, costOfBramInLuts);
 	}
 
+	/**
+	 * Create an N-dimensional box buffer (see {@link BoxBuffer}).
+	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
+	 */
 	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
 		super(root);
 		if (maxItems.length != numOutputItems.length) {
@@ -130,17 +160,28 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	    if (!m_hasWritten) {
 	    	throw new RuntimeException("You must write data into the Box Buffer using the write method to use it.");
 	    }
+	    if (!m_hasRead) {
+	    	throw new RuntimeException("You must read data from the Box Buffer at least once.");
+	    }
 	}
 
-
+	/**
+	 * Write data into the single buffered 1D BoxBuffer. This must only be called once.
+	 */
 	public void write(DFEVector<T> data, DFEVar address, DFEVar enable) {
 		write(data, new DFEVar[] {address}, enable);
 	}
 
+	/**
+	 * Write data into the double buffered 1D BoxBuffer. This must only be called once.
+	 */
 	public void write(DFEVector<T> data, DFEVar address, DFEVar enable, DFEVar buffer) {
 		write(data, new DFEVar[] {address}, enable, buffer);
 	}
 
+	/**
+	 * Write data into the single buffered N-dimensional BoxBuffer. This must only be called once.
+	 */
 	public void write(DFEVector<T> data, DFEVar[] address, DFEVar enable) {
 		if (m_1dParams.doubleBuffered) {
 			throw new RuntimeException("If the Box Buffer is double buffered, then you must specify which buffer you want to write to.");
@@ -148,6 +189,9 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		write(data, address, enable, null);
 	}
 
+	/**
+	 * Write data into the double buffered N-dimensional BoxBuffer. This must only be called once.
+	 */
 	public void write(DFEVector<T> data, DFEVar[] address, DFEVar enable, DFEVar buffer) {
 		if (!data.getType().equals(m_inputType)) {
 			throw new RuntimeException("Type given to write function does not match type passed to the BoxBuffer constructor.");
@@ -237,14 +281,23 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	}
 
 
+	/**
+	 * Read data from the single buffered 1D BoxBuffer. This must only be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
+	 */
 	public DFEVector<T> read(DFEVar address) {
 		return read(new DFEVar[] {address});
 	}
 
+	/**
+	 * Read data from the double buffered 1D BoxBuffer. This must only be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
+	 */
 	public DFEVector<T> read(DFEVar address, DFEVar buffer) {
 		return read(new DFEVar[] {address}, buffer);
 	}
 
+	/**
+	 * Read data from the single buffered N-dimensional BoxBuffer. This must only be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
+	 */
 	public DFEVector<T> read(DFEVar address[]) {
 		if (m_1dParams.doubleBuffered) {
 			throw new RuntimeException("If the Box Buffer is double buffered, then you must specify which buffer you want to read from.");
@@ -252,7 +305,11 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		return read(address, null);
 	}
 
+	/**
+	 * Read data from the double buffered N-dimensional BoxBuffer. This must only be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
+	 */
 	public DFEVector<T> read(DFEVar[] address, DFEVar buffer) {
+		m_hasRead = true;
 		ConstDivModResult[] addressDivMod = new ConstDivModResult[m_numDimensions];
 		addressDivMod[m_numDimensions - 1] = ConstDenominator.divMod(address[m_numDimensions - 1], 1);//We don't calculate DivMod of fast dim address, as we will do something special with that later.
 		for (int i = m_numDimensions - 2; i >= 0; i--) {
