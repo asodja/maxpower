@@ -33,7 +33,7 @@ public class BoxBufferTest {
 	@Test public void simple_2d()            { testBoxBuffer(2, 64, 2, 2, 2); }
 	@Test public void coprime_2d()           { testBoxBuffer(2, 90, 5, 3, 2); }
 	@Test public void coprime_3d()           { testBoxBuffer(3, 90, 5, 3, 2, 5); }
-	@Test public void coprime_4d()           { testBoxBuffer(4, 90, 5, 3, 2, 2, 2); }
+	@Test public void coprime_4d()           { testBoxBuffer(4, 24, 4, 3, 3, 3, 3); }
 
 
 	private void testBoxBuffer(int numDimensions, int maxItemsPerDim, int numInputItems, int... numOutputItems) {

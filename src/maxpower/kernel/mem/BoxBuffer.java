@@ -113,15 +113,10 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			bufferDepth     *= MathUtils.ceilDivide(maxItems[i], numOutputItems[i]);
 			m_skipRows[i]    = MathUtils.ceilDivide(maxItems[i + 1], numOutputItems[i + 1]) * m_skipRows[i + 1];
 			m_skipBuffers[i] = numOutputItems[i] * m_skipBuffers[i + 1];
-			System.out.println("skip rows["+i+"] = " + m_skipRows[i]);
 		}
-		System.out.println("bufferDepth = " + bufferDepth);
 
 		m_1dParams = new BoxBufferParams(bufferDepth, inputType.getSize(), numOutputItems[m_numDimensions - 1], inputType.getContainedType().getTotalBits(), costOfBramInLuts, doubleBuffered);
 
-		for (int i = 0; i < m_numDimensions; i++) {
-			System.out.println("skip["+i+"] = "+m_skipRows[i]);
-		}
 		m_buffers = new ArrayList<Buffer1D>(numBuffers);
 		for (int i = 0; i < numBuffers; i++) {
 			m_buffers.add(new Buffer1D(inputType.getContainedType()));
@@ -162,11 +157,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		if (m_hasWritten) {
 			throw new RuntimeException("The box buffer can only be written to once.");
 		}
-		debug.simPrintf("address = { ");
-		for (int i = 0; i < address.length; i++) {
-			debug.simPrintf("%d, ", address[i]);
-		}
-		debug.simPrintf(" }\n");
 
 		m_hasWritten = true;
 		optimization.pushEnableBitGrowth(false);//Make sure we don't have any weird modes on
@@ -177,7 +167,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			addressDivMod[i] = ConstDenominator.divMod(address[i], m_numOutputItems[i]);
 		}
 
-		debug.simPrintf("address1d = %d\n", get1dAddress_debug(addressDivMod));
 		DFEVar wrRowCol = xyLookup(get1dAddress(addressDivMod), dfeUInt(m_1dParams.rowAddrBits + m_1dParams.colAddrBits));
 
 		DFEVar wrCol = slice(wrRowCol, 0, m_1dParams.colAddrBits);
@@ -318,35 +307,13 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		List<DFEVar> summands = new ArrayList<DFEVar>();
 		summands.add(address[m_numDimensions - 1].m_quot);
 		for (int i = 0; i < m_numDimensions - 1; i++) {
-//			summands.add(address[i].m_quot * m_skipRows[i]);//TODO: create simple test case that shows this breaking
-			summands.add(address[i].m_quot * constant.var(dfeUInt(MathUtils.bitsToRepresent(m_skipRows[i])), m_skipRows[i]));//TODO: create simple test case that shows this breaking
+			summands.add(address[i].m_quot * constant.var(dfeUInt(MathUtils.bitsToRepresent(m_skipRows[i])), m_skipRows[i]));//TODO: simplify (use untyped const) once bug in the compiler is fixed.
 		}
 		DFEVar output = adderTree(summands);
 		optimization.popEnableBitGrowth();
 		return output.cast(dfeUInt(MathUtils.bitsToAddress(m_1dParams.maxItems)));
 	}
 
-	private DFEVar get1dAddress_debug(ConstDivModResult[] address) {
-		optimization.pushEnableBitGrowth(true);
-		List<DFEVar> summands = new ArrayList<DFEVar>();
-		summands.add(address[m_numDimensions - 1].m_quot);
-		debug.simPrintf("summand = %d\n", summands[0]);
-		for (int i = 0; i < m_numDimensions - 1; i++) {
-//			summands.add(address[i].m_quot * m_skipRows[i]);//TODO: create simple test case that shows this breaking
-			summands.add(address[i].m_quot * constant.var(dfeUInt(MathUtils.bitsToRepresent(m_skipRows[i])), m_skipRows[i]));//TODO: create simple test case that shows this breaking
-			debug.simPrintf("summand = %g = %d * %d\n", summands[i+1], address[i].m_quot, m_skipRows[i]);
-			System.out.println("Multiply by " + m_skipRows[i] + ", type is " + summands[i+1].getType() + ", type was " + address[i].m_quot.getType());
-		}
-		DFEVar output = adderTree(summands);
-		optimization.popEnableBitGrowth();
-		return output.cast(dfeUInt(MathUtils.bitsToAddress(m_1dParams.maxItems)));
-	}
-
-//	private DFEVar futureWatch(DFEVar input, String name) {
-//		int numCycles = BoxBufferTest.product(m_maxItems);
-//		stream.offset(input, numCycles).simWatch(name);
-//		return input;
-//	}
 
 	private DFEVar adderTree(List<DFEVar> input) {
 		if (input.size() == 1) {
@@ -472,7 +439,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		public void write(DFEVector<T> alignedInputData, DFEVar[] writeAddress, DFEVar[] writeEn, DFEVar enable) {
 			for (int i = 0; i < m_1dParams.numTiles; i++) {
 				DFEVector<T> tileInputData = slice(alignedInputData, i * m_1dParams.tileItems, m_1dParams.tileItems);
-				debug.simPrintf("address = %d, depth = %d, enable = %d\n", writeAddress[i], m_1dParams.ramDepth, enable);
 				m_rams[i].write(optimization.limitFanout(writeAddress[i], 2), tileInputData, optimization.limitFanout(writeEn[i] & enable, 2));
 			}
 		}
