@@ -16,13 +16,13 @@ A (non-exhaustive) list of the contents of the MaxPower library.
     - `ZeroLatencyInput` - hide latency of input, allowing for data dependent control, e.g. run-length decoding
   * `mem/`
     - `ZeroLatencyMemory` - hide latency of FMem, allowing values to be read back on the next cycle
-  * `LargeStreamOffset` - large, negative stream offset backed by LMem to save FMem
-  * `TreeReduce` - reduce latency and save resources by reducing via a binary tree
+  - `LargeStreamOffset` - large, negative stream offset backed by LMem to save FMem
+  - `TreeReduce` - reduce latency and save resources by reducing via a binary tree
 * `lmem/`
-  * `addressgenerators/` - memory address generators
   * `cpu_access/` - simplified access to LMem from CPU
-  * `superfifo/` - extremely deep FIFO utilising LMem when necessary
+  - `MultiDimensionalAddressGenerator` - memory address generator in N dimensions
 * `manager/`
+  * `superfifo/` - extremely deep FIFO utilising LMem when necessary
   - `RoundRobin` - round robin data between outputs
 * `network/`
   * `tcp/` - TCP framing (turn continuous TCP data into discrete frames)
