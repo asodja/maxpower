@@ -492,35 +492,41 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	 * Creates a 1D buffer where we can read a contiguous section from it. There are 2 ways to do this:</br>
 	 * 1) Write sequential data into different RAMs, thus guaranteeing that the things you want to read
 	 *    can't be in the same one (to avoid clashes). For example, if I want to read 4 values I can
-	 *    write the data into 4 RAMs as follows:</br>
-	 *         | Ram 0 | Ram 1 | Ram 2 | Ram 3 |
-	 *         |   0   |   1   |   2   |   3   |
-	 *         |   4   |   5   |   6   |   7   |
-	 *         |   8   |   9   |   10  |   11  |
-	 *         ...
+	 *    write the data into 4 RAMs as follows:
+	 *     <table border="1">
+	 *         <th> Ram 0 </th><th> Ram 1 </th><th> Ram 2 </th><th> Ram 3 </th>
+	 *     <tr><td>   00  </td><td>   01  </td><td>   02  </td><td>   03  </td></tr>
+	 *     <tr><td>   04  </td><td>   05  </td><td>   06  </td><td>   07  </td></tr>
+	 *     <tr><td>   08  </td><td>   09  </td><td>   10  </td><td>   11  </td></tr>
+	 *     <tr><td>   ... </td><td>   ... </td><td>   ... </td><td>   ... </td></tr>
+	 *     </table>
 	 *    Then if I want to read 4 values starting at 6 then I read from address 1 in Rams 2 and 3, and
 	 *    from address 2 in Rams 0 and 1 (giving me 8,9,6,7) and then rotate the result by 2 (to get
 	 *    6,7,8,9).</br>
 	 *  2) Duplicate the data so that we write 2N-1 elements into each row of a single RAM. The same
-	 *     example again would look like:</br>
-	 *     |        Ram 0         |
-	 *     |  0  1  2  3  4  5  6 |
-	 *     |  4  5  6  7  8  9 10 |
-	 *     |  8  9 10 11 12 13 14 |
-	 *     ...
+	 *     example again would look like:
+	 *     <table border="1">
+	 *         <th>        Ram 0          </th>
+	 *     <tr><td>  00 01 02 03 04 05 06 </td></tr>
+	 *     <tr><td>  04 05 06 07 08 09 10 </td></tr>
+	 *     <tr><td>  08 09 10 11 12 13 14 </td></tr>
+	 *     <tr><td>  ...                  </td></tr>
+	 *     </table>
+	 *
 	 *     Then to read 4 values starting at 6 I read from address 1 and rotate by 2 (giving 5,6,7,8,9,
 	 *     10,4,5) and then slice off the 3 extra values we don't need.
 	 *     </p>
 	 *  The advantage of the first one is that the rotates are smaller (4 vs 7), so it uses fewer LUTs,
 	 *  and there is no duplicated data, so there is less to store. The advantage of the second one is
 	 *  that if the data elements are not very wide, then grouping them together in a single RAM may use
-	 *  fewer BRAMs. In practice we use a combination of both strategies. E.g.</br>
-	 *         |  Ram  0  |  Ram  1  |
-	 *         |  0  1  2 |  2  3  4 |
-	 *         |  4  5  6 |  6  7  8 |
-	 *         |  8  9 10 | 10 11 12 |
-	 *         ...
-	 *
+	 *  fewer BRAMs. In practice we use a combination of both strategies. E.g.:
+	 *     <table border="1">
+	 *         <th>  Ram 0   </th><th>  Ram 1   </th>
+	 *     <tr><td> 00 01 02 </td><td> 02 03 04 </td></tr>
+	 *     <tr><td> 04 05 06 </td><td> 06 07 08 </td></tr>
+	 *     <tr><td> 08 09 10 </td><td> 10 11 12 </td></tr>
+	 *     <tr><td> ...      </td><td> ...      </td></tr>
+	 *     </table>
 	 */
 	private class Buffer1D extends KernelLib {
 		private final List<Memory<DFEVector<T>>> m_rams;
