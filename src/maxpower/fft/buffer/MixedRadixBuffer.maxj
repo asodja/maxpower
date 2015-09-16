@@ -3,7 +3,7 @@ package maxpower.fft.buffer;
 import java.util.ArrayList;
 import java.util.List;
 
-import maxpower.fft.RadixType;
+import maxpower.fft.Radix;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
@@ -28,9 +28,9 @@ public class MixedRadixBuffer extends KernelLib {
 	private static final boolean m_debug_watches = false;
 
 	/** Radix of FFT. */
-	private static final int m_radix = RadixType.RADIX_4.getRadix();
+	private static final int m_radix = Radix.RADIX_4.getRadix();
 	/** Binary shift to convert exponent of radix to binary. */
-	private static final int m_radixShift = RadixType.RADIX_4.getBinaryShift();
+	private static final int m_radixShift = Radix.RADIX_4.getBinaryShift();
 	/** Number of buffers. */
 	private static final int m_numBuffers = m_radix / 2;
 

@@ -3,7 +3,7 @@ package maxpower.fft.buffer;
 import java.util.ArrayList;
 import java.util.List;
 
-import maxpower.fft.RadixType;
+import maxpower.fft.Radix;
 import maxpower.fft.buffer.CyclicAddressFactory.CyclicAddress;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
@@ -58,7 +58,7 @@ public class ReverseAddress extends KernelLib implements CyclicAddress {
 	/** Set to true if you want all addresses to start from cycle 0. */
 	private final boolean m_offsetAddresses;
 
-	public ReverseAddress(final RadixType radixType,
+	public ReverseAddress(final Radix radixType,
 			final int exponent, final int noBuffers, final DFEVar startAddressing) {
 		this(radixType, exponent, noBuffers, startAddressing, true);
 	}
@@ -66,13 +66,13 @@ public class ReverseAddress extends KernelLib implements CyclicAddress {
 	 * Constructor to create {@link ReverseAddress bit reverse address}.
 	 *
 	 * @param kernel {@link KernelLib Kernel} object.
-	 * @param radixType {@link RadixType Radix} of FFT.
+	 * @param radixType {@link Radix Radix} of FFT.
 	 * @param exponent Exponent of radix.
 	 * @param noBuffers Number of RAM buffers to use (max 2 values per buffer
 	 * 		with dual port RAM).
 	 * @param startAddressing Indication of whether to start addressing.
 	 */
-	public ReverseAddress(final RadixType radixType,
+	public ReverseAddress(final Radix radixType,
 			final int exponent, final int noBuffers,
 			final DFEVar startAddressing,
 			final boolean offsetAddresses) {

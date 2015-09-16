@@ -16,9 +16,6 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * Use single buffer to transpose matrices.
  */
 public class Transposer extends KernelLib {
-
-	private final WatchList watchList = new WatchList();
-
 	private final DFEVar output;
 
 	private static int offset_counter = 0;
@@ -44,11 +41,6 @@ public class Transposer extends KernelLib {
 	 **/
 	public Transposer(KernelLib owner, DFEVar in, int width, int height, DFEVar enable) {
 		this(owner, in, width, 1, height, enable);
-	}
-
-	public Transposer watch(String prefix) {
-		watchList.watch(prefix);
-		return this;
 	}
 
 	/**
@@ -103,11 +95,6 @@ public class Transposer extends KernelLib {
 				output = mem.ram(N, RamWriteMode.READ_FIRST, mem.makeRamPortParams(RamPortMode.READ_WRITE, address, in).withWriteEnable(enable));
 				getManager().logInfo("Depth of RAM in Transposer (xilinx) = " + N);
 			}
-
-			watchList.add(isFirst,"tr_isFirst");
-			watchList.add(i,"tr_i");
-			watchList.add(mul,"tr_mul");
-			watchList.add(address,"tr_address");
 		} else {
 			// double buffered implementation
 			final int N = width * height * depth;

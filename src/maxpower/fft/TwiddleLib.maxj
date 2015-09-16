@@ -1,4 +1,4 @@
-package maxpower.fft.twiddle;
+package maxpower.fft;
 
 import java.util.ArrayList;
 import java.util.List;

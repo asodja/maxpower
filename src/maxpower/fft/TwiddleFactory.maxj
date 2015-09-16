@@ -1,11 +1,10 @@
-package maxpower.fft.twiddle;
+package maxpower.fft;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import maxpower.fft.RadixType;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
@@ -28,8 +27,8 @@ public class TwiddleFactory extends KernelLib {
 	/** Disable {@link HWVar#watch(String) watches} by default. */
 	private static final boolean DEBUG_WATCHES = false;
 
-	/** {@link RadixType Radix} of FFT. */
-	private final RadixType m_radixType;
+	/** {@link Radix Radix} of FFT. */
+	private final Radix m_radixType;
 	/** Exponent of the radix representing the number of data points (N). */
 	private final int m_exponent;
 	/** {@link DFEType Type} of twiddle factors. */
@@ -61,12 +60,12 @@ public class TwiddleFactory extends KernelLib {
 	 * Constructor for creating a {@link TwiddleFactory twiddle factory}.
 	 *
 	 * @param kernel {@link KernelLib Kernel} object that uses the factory.
-	 * @param radixType {@link RadixType Radix} of FFT.
+	 * @param radixType {@link Radix Radix} of FFT.
 	 * @param exponent Exponent of radix.
 	 * @param twiddleType {@link DFEType Type} of twiddle factors to generate.
 	 * @param startTwiddling Indication of whether to start twiddling.
 	 */
-	public TwiddleFactory(final RadixType radixType, final int exponent,
+	public TwiddleFactory(final Radix radixType, final int exponent,
 			final DFEType twiddleType, final DFEVar startTwiddling) {
 		super(startTwiddling.getKernel());
 		m_radixType = radixType;

@@ -1,4 +1,4 @@
-package maxpower.fft.butterfly;
+package maxpower.fft;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,6 +11,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+
 /**
  * This is a collection of all the butterfly functions for different radix FFTs.
  *

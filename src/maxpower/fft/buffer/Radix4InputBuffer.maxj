@@ -3,7 +3,7 @@ package maxpower.fft.buffer;
 import java.util.ArrayList;
 import java.util.List;
 
-import maxpower.fft.RadixType;
+import maxpower.fft.Radix;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.CountMode;
@@ -22,13 +22,13 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * be in order [0/1/2/3, 4/5/6/7] and outputs [0/512/1024/1536,
  * 1/513/1025/1537] etc.
  *
- * @author simon
+ * @author Simon Tilbury
  */
-public class R4InputBuffer extends KernelLib {
+public class Radix4InputBuffer extends KernelLib {
 	private static final boolean m_debug_watches = false;
 
-	private static final int m_radix = RadixType.RADIX_4.getRadix();
-	private static final int m_radixShift = RadixType.RADIX_4.getBinaryShift();
+	private static final int m_radix = Radix.RADIX_4.getRadix();
+	private static final int m_radixShift = Radix.RADIX_4.getBinaryShift();
 	private static final int m_valuesPerBuffer = 2;
 	private static final int m_numBuffers = m_radix / m_valuesPerBuffer;
 
@@ -46,12 +46,12 @@ public class R4InputBuffer extends KernelLib {
 	private final DFEVar m_invertBuffer;
 
 	/**
-	 * Constructor to create {@link R4InputBuffer transpose input buffer}.
+	 * Constructor to create {@link Radix4InputBuffer transpose input buffer}.
 	 *
 	 * @param owner {@link KernelLib Kernel} object.
 	 * @param enable Indication of whether to start addressing.
 	 */
-	public R4InputBuffer(final KernelLib owner, int numPoints, int padding) {
+	public Radix4InputBuffer(final KernelLib owner, int numPoints, int padding) {
 		super(owner);
 		m_numDataPoints = numPoints + padding;
 

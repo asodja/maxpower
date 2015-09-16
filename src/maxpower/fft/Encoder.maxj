@@ -1,4 +1,4 @@
-package maxpower.fft.utils;
+package maxpower.fft;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,7 +9,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 
 
-public class Encoder{
+public class Encoder {
 
 	/*
 	 * Rearrange the data for the FFTFactory structure.

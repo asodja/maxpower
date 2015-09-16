@@ -4,13 +4,9 @@ import java.util.List;
 
 import maxpower.fft.buffer.FftBuffer;
 import maxpower.fft.buffer.MixedRadixBuffer;
-import maxpower.fft.buffer.R4InputBuffer;
-import maxpower.fft.buffer.R5InputBuffer;
-import maxpower.fft.buffer.R5OutputBuffer;
-import maxpower.fft.butterfly.ButterflyLib;
-import maxpower.fft.twiddle.TwiddleFactory;
-import maxpower.fft.twiddle.TwiddleLib;
-import maxpower.fft.utils.Encoder;
+import maxpower.fft.buffer.Radix4InputBuffer;
+import maxpower.fft.buffer.Radix5InputBuffer;
+import maxpower.fft.buffer.Radix5OutputBuffer;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
@@ -30,7 +26,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * Multiple parallel FFTs can performed from a single factory assuming they
  * are running in phase.
  *
- * @author stephen
+ * @author Stephen Girdlestone
  */
 public class FftFactory4pipes extends KernelLib {
 
@@ -58,9 +54,9 @@ public class FftFactory4pipes extends KernelLib {
 	/** @link MixedRadixBuffer Mixed-radix buffer}. */
 	private final MixedRadixBuffer m_mixedBuffer;
 
-	private final R5InputBuffer  m_r5InputBuffer;
-	private final R4InputBuffer  m_r4InputBuffer;
-	private final R5OutputBuffer m_r5outputBuffer;
+	private final Radix5InputBuffer  m_r5InputBuffer;
+	private final Radix4InputBuffer  m_r4InputBuffer;
+	private final Radix5OutputBuffer m_r5outputBuffer;
 
 
 	/**
@@ -90,14 +86,14 @@ public class FftFactory4pipes extends KernelLib {
 			if (padding < m_fftSize / 5) {
 				throw new RuntimeException("FFT currently only supports radix5 if final (size / 5) elements are all 0.");
 			}
-			m_r5InputBuffer  = new R5InputBuffer(this, m_fftSize - m_padding, m_padding);
+			m_r5InputBuffer  = new Radix5InputBuffer(this, m_fftSize - m_padding, m_padding);
 			m_r4InputBuffer  = null;
-			m_r5outputBuffer = new R5OutputBuffer(this, m_fftSize);
+			m_r5outputBuffer = new Radix5OutputBuffer(this, m_fftSize);
 			m_exponent       = MathUtils.bitsToAddress(N / 5);
 			m_r5twiddles     = TwiddleLib.r5Twiddles(this, twiddleType, m_fftSize);
 		} else {
 			m_r5InputBuffer  = null;
-			m_r4InputBuffer  = new R4InputBuffer(this, m_fftSize - m_padding, m_padding);
+			m_r4InputBuffer  = new Radix4InputBuffer(this, m_fftSize - m_padding, m_padding);
 			m_r5outputBuffer = null;
 			m_exponent       = MathUtils.bitsToAddress(N);
 			m_r5twiddles     = null;
@@ -107,7 +103,7 @@ public class FftFactory4pipes extends KernelLib {
 		m_radix2phases = m_exponent % 2;
 		m_twiddleType = twiddleType;
 
-		m_twiddleFactory = new TwiddleFactory(RadixType.RADIX_4, m_radix4phases, m_twiddleType, constant.var(true));
+		m_twiddleFactory = new TwiddleFactory(Radix.RADIX_4, m_radix4phases, m_twiddleType, constant.var(true));
 
 		/*
 		 * Enable write all the time we are processing data to make sure all
@@ -192,7 +188,7 @@ public class FftFactory4pipes extends KernelLib {
 
 
 	private boolean validFftSize(int fftSize) {
-		int minFftSize = fftSize % 5 == 0 ? 640 : 32;
+		int minFftSize = (fftSize % 5 == 0) ? 640 : 32;
 		if (fftSize < minFftSize) {
 			return false;
 		}
@@ -209,6 +205,4 @@ public class FftFactory4pipes extends KernelLib {
 	public DFEVar acceptingInput() {
 		return m_is5xPower2 ? m_r5InputBuffer.acceptingInput() : constant.var(true);
 	}
-
-
 }

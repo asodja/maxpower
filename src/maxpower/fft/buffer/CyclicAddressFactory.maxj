@@ -4,7 +4,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import maxpower.fft.RadixType;
+import maxpower.fft.Radix;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
@@ -55,8 +55,8 @@ public class CyclicAddressFactory extends KernelLib {
 		public boolean getOffsetAddresses();
 	}
 
-	/** {@link RadixType Radix type} of FFT. */
-	private final RadixType m_radixType;
+	/** {@link Radix Radix type} of FFT. */
+	private final Radix m_radixType;
 	/** Binary shift to convert exponent of radix to binary. */
 	private final int m_radixShift;
 	/** Exponent of the radix representing the number of data points (N). */
@@ -84,7 +84,7 @@ public class CyclicAddressFactory extends KernelLib {
 	 * factory}.
 	 *
 	 * @param kernel {@link KernelLib Kernel} object that uses the factory.
-	 * @param radixType {@link RadixType Radix} of FFT.
+	 * @param radixType {@link Radix Radix} of FFT.
 	 * @param exponent Exponent of radix.
 	 * @param noBuffers Number of RAM buffers required. With dual-port RAMs,
 	 * 			this should be half the radix (i.e. two values per buffer).
@@ -92,7 +92,7 @@ public class CyclicAddressFactory extends KernelLib {
 	 * 			bit-reversed order on the final FFT phase.
 	 * @param startAddressing Indication of whether to start addressing.
 	 */
-	public CyclicAddressFactory(final RadixType radixType,
+	public CyclicAddressFactory(final Radix radixType,
 			final int exponent, final int noBuffers,
 			final boolean bitReverse, final DFEVar startAddressing) {
 		this(radixType, exponent, noBuffers, bitReverse, startAddressing, true);
@@ -104,7 +104,7 @@ public class CyclicAddressFactory extends KernelLib {
 	 * factory}.
 	 *
 	 * @param kernel {@link KernelLib Kernel} object that uses the factory.
-	 * @param radixType {@link RadixType Radix} of FFT.
+	 * @param radixType {@link Radix Radix} of FFT.
 	 * @param exponent Exponent of radix.
 	 * @param noBuffers Number of RAM buffers required. With dual-port RAMs,
 	 * 			this should be half the radix (i.e. two values per buffer).
@@ -113,7 +113,7 @@ public class CyclicAddressFactory extends KernelLib {
 	 * @param startAddressing Indication of whether to start addressing.
 	 * @param offsetAddresses Is this the first stage of the FFT?
 	 */
-	public CyclicAddressFactory(final RadixType radixType,
+	public CyclicAddressFactory(final Radix radixType,
 			final int exponent, final int noBuffers,
 			final boolean bitReverse, final DFEVar startAddressing,
 			final boolean offsetAddresses) {

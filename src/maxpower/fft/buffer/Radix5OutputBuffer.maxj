@@ -12,7 +12,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
-public class R5OutputBuffer extends KernelLib {
+public class Radix5OutputBuffer extends KernelLib {
 
 	private static final int m_numPipes = 4;
 
@@ -23,7 +23,7 @@ public class R5OutputBuffer extends KernelLib {
 	private final DFEVar m_readIdx;
 	private final NonPowerTwoDepthMem memory;
 
-	public R5OutputBuffer(KernelLib owner, int fftSize) {
+	public Radix5OutputBuffer(KernelLib owner, int fftSize) {
 		super(owner);
 		memory = new NonPowerTwoDepthMem(this);
 		m_fftSize = fftSize;

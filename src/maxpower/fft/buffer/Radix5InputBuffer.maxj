@@ -3,7 +3,7 @@ package maxpower.fft.buffer;
 import java.util.ArrayList;
 import java.util.List;
 
-import maxpower.fft.RadixType;
+import maxpower.fft.Radix;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.CountMode;
@@ -26,11 +26,11 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  *
  * @author simon
  */
-public class R5InputBuffer extends KernelLib {
+public class Radix5InputBuffer extends KernelLib {
 	private static final boolean m_debug_watches = false;
 
-	private static final int m_radix = RadixType.RADIX_4.getRadix();
-	private static final int m_radixShift = RadixType.RADIX_4.getBinaryShift();
+	private static final int m_radix = Radix.RADIX_4.getRadix();
+	private static final int m_radixShift = Radix.RADIX_4.getBinaryShift();
 	private static final int m_valuesPerBuffer = 2;
 	private static final int m_numBuffers = m_radix / m_valuesPerBuffer;
 
@@ -50,12 +50,12 @@ public class R5InputBuffer extends KernelLib {
 
 	/**
 	 *
-	 * Constructor to create {@link R5InputBuffer transpose input buffer}.
+	 * Constructor to create {@link Radix5InputBuffer transpose input buffer}.
 	 *
 	 * @param owner {@link KernelLib Kernel} object.
 	 * @param enable Indication of whether to start addressing.
 	 */
-	public R5InputBuffer(final KernelLib owner, int numPoints, int padding) {
+	public Radix5InputBuffer(final KernelLib owner, int numPoints, int padding) {
 		super(owner);
 		m_enable = control.count.simpleCounter(MathUtils.bitsToAddress(5), 5) < 4;
 		m_exponent = MathUtils.bitsToAddress(numPoints);
