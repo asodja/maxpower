@@ -19,7 +19,7 @@ A (non-exhaustive) list of the contents of the MaxPower library.
   - `LargeStreamOffset` - large, negative stream offset backed by LMem to save FMem
   - `TreeReduce` - reduce latency and save resources by reducing via a binary tree
 * `lmem/`
-  * `cpu_access/` - simplified access to LMem from CPU
+  * `cpuaccess/` - simplified access to LMem from CPU
   - `MultiDimensionalAddressGenerator` - memory address generator in N dimensions
 * `manager/`
   * `superfifo/` - extremely deep FIFO utilising LMem when necessary
