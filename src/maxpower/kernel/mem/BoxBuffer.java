@@ -107,7 +107,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 	/**
 	 * Create a single buffered N-dimensional box buffer (see {@link BoxBuffer}).
-	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
+	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow. The default value is 200.
 	 */
 	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
 		this(root, maxItems, numOutputItems, inputType, false, costOfBramInLuts);
@@ -332,13 +332,14 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		}
 
 		ConstDivModResult[] newAddress = new ConstDivModResult[address.length];
-		for (int j = 0; j < address.length; j++) {//TODO: make copy constructor
-			newAddress[j] = new ConstDivModResult(address[j].m_quot, address[j].m_rem);
+		for (int j = 0; j < address.length; j++) {
+			newAddress[j] = new ConstDivModResult(address[j]);
 		}
 
 		List<DFEVector<T>> bufferOutput = new ArrayList<DFEVector<T>>();
-		for (int j = 0; j < m_numOutputItems[dimension]; j++) {//TODO: optimise
-			newAddress[dimension].m_quot = address[dimension].m_rem > j ? address[dimension].m_quot + 1 : address[dimension].m_quot;//add(address[dimension], j, m_numOutputItems[dimension]);
+		DFEVar addressQuotp1 = address[dimension].m_quot + 1;
+		for (int j = 0; j < m_numOutputItems[dimension]; j++) {
+			newAddress[dimension].m_quot = address[dimension].m_rem > j ? addressQuotp1 : address[dimension].m_quot;
 			bufferOutput.add(read(newAddress, buffer, dimension + 1, index + j * m_skipBuffers[dimension + 1]));
 		}
 
@@ -487,6 +488,40 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		return dmr.m_quot.cat(dmr.m_rem.cast(dfeUInt(m_1dParams.colAddrBits))).cast(addrType);
 	}
 
+	/**
+	 * Creates a 1D buffer where we can read a contiguous section from it. There are 2 ways to do this:</br>
+	 * 1) Write sequential data into different RAMs, thus guaranteeing that the things you want to read
+	 *    can't be in the same one (to avoid clashes). For example, if I want to read 4 values I can
+	 *    write the data into 4 RAMs as follows:</br>
+	 *         | Ram 0 | Ram 1 | Ram 2 | Ram 3 |
+	 *         |   0   |   1   |   2   |   3   |
+	 *         |   4   |   5   |   6   |   7   |
+	 *         |   8   |   9   |   10  |   11  |
+	 *         ...
+	 *    Then if I want to read 4 values starting at 6 then I read from address 1 in Rams 2 and 3, and
+	 *    from address 2 in Rams 0 and 1 (giving me 8,9,6,7) and then rotate the result by 2 (to get
+	 *    6,7,8,9).</br>
+	 *  2) Duplicate the data so that we write 2N-1 elements into each row of a single RAM. The same
+	 *     example again would look like:</br>
+	 *     |        Ram 0         |
+	 *     |  0  1  2  3  4  5  6 |
+	 *     |  4  5  6  7  8  9 10 |
+	 *     |  8  9 10 11 12 13 14 |
+	 *     ...
+	 *     Then to read 4 values starting at 6 I read from address 1 and rotate by 2 (giving 5,6,7,8,9,
+	 *     10,4,5) and then slice off the 3 extra values we don't need.
+	 *     </p>
+	 *  The advantage of the first one is that the rotates are smaller (4 vs 7), so it uses fewer LUTs,
+	 *  and there is no duplicated data, so there is less to store. The advantage of the second one is
+	 *  that if the data elements are not very wide, then grouping them together in a single RAM may use
+	 *  fewer BRAMs. In practice we use a combination of both strategies. E.g.</br>
+	 *         |  Ram  0  |  Ram  1  |
+	 *         |  0  1  2 |  2  3  4 |
+	 *         |  4  5  6 |  6  7  8 |
+	 *         |  8  9 10 | 10 11 12 |
+	 *         ...
+	 *
+	 */
 	private class Buffer1D extends KernelLib {
 		private final List<Memory<DFEVector<T>>> m_rams;
 
@@ -586,7 +621,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		final int numTiles;
 		final int tileItems;
 
-		BoxBufferParams(int maxItems, int numInputItems, int numOutputItems, int itemWidthBits, int bramCostInLuts, boolean doubleBuffered) {
+		public BoxBufferParams(int maxItems, int numInputItems, int numOutputItems, int itemWidthBits, int bramCostInLuts, boolean doubleBuffered) {
 			this.doubleBuffered = doubleBuffered;
 			this.numInputItems  = numInputItems;
 			this.numOutputItems = numOutputItems;
@@ -619,7 +654,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			readAddrBits = rowAddrBits + colAddrBits;
 		}
 
-		int estimateMinRamWidth(long depth, int bramWidth) {
+		private int estimateMinRamWidth(long depth, int bramWidth) {
 			int numOptions = MathUtils.bitsToRepresent(MathUtils.greatestCommonDivisor(bramWidth, MathUtils.nextPowerOfTwo(bramWidth)));
 			for (int i = 0; i < numOptions; i++) {
 				long optionDepth = 512       << (numOptions - 1 - i);
@@ -631,7 +666,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			return bramWidth;
 		}
 
-		int getTotalWidthNeeded(int tileItems, int numInputItems, int numOutputItems) {
+		private int getTotalWidthNeeded(int tileItems, int numInputItems, int numOutputItems) {
 			// What do the input / outputs need?
 			int inputNeeded  = numInputItems  + Math.min(numInputItems  - 1, tileItems - 1);
 			int outputNeeded = numOutputItems + Math.min(numOutputItems - 1, tileItems - 1);
@@ -640,7 +675,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			return Math.max(inputNeeded, outputNeeded);
 		}
 
-		int getTileWidth(int itemWidthBits, int numBuffers, int maxItems, int numInputItems, int numOutputItems, int costOfBramInLuts) {
+		private int getTileWidth(int itemWidthBits, int numBuffers, int maxItems, int numInputItems, int numOutputItems, int costOfBramInLuts) {
 			int bestWidth = -1;
 			int bestScore= Integer.MAX_VALUE;
 
@@ -662,7 +697,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			return bestWidth;
 		}
 
-		int costInBrams(int tileItems, int itemWidthBits, int numBuffers, int maxItems, int numInputItems, int numOutputItems, int bramWidth) {
+		private int costInBrams(int tileItems, int itemWidthBits, int numBuffers, int maxItems, int numInputItems, int numOutputItems, int bramWidth) {
 			int totalWidthNeeded = getTotalWidthNeeded(tileItems, numInputItems, numOutputItems);
 			int depth = MathUtils.nextMultiple(numBuffers * MathUtils.ceilDivide(maxItems, totalWidthNeeded), 512);
 			int optWidth = estimateMinRamWidth(depth, bramWidth);
@@ -674,7 +709,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		}
 
 		//TODO: move everything to the finaliser so that we know how many times it has been read from and multiply the number of LUTs for output by that.
-		int costInLuts(int tileItems, int itemWidthBits, int numInputItems, int numOutputItems, int maxItems) {
+		private int costInLuts(int tileItems, int itemWidthBits, int numInputItems, int numOutputItems, int maxItems) {
 			int totalWidthNeeded = getTotalWidthNeeded(tileItems, numInputItems, numOutputItems);
 			int numTiles = MathUtils.ceilDivide(totalWidthNeeded, tileItems);
 
@@ -693,7 +728,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			return lutsForOutput + lutsForInput;
 		}
 
-		int getLutsForRotate(int size, int bitWidth) {
+		private int getLutsForRotate(int size, int bitWidth) {
 			boolean isAltera = BoxBuffer.this.getManager().getManagerConfiguration().getBoardModel().isAltera();
 			int luts;
 			if (isAltera) {
@@ -705,7 +740,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			return luts * size * bitWidth;
 		}
 
-		int log(int x, int base) {
+		private int log(int x, int base) {
 			return (int)Math.ceil(Math.log(x) / Math.log(base));
 		}
 	}

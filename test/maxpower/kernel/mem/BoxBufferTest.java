@@ -99,7 +99,7 @@ public class BoxBufferTest {
 		final int[] m_maxItems;
 
 
-		TestData(int[] maxItems, int numInputItems, int[] numOutputItems) {
+		public TestData(int[] maxItems, int numInputItems, int[] numOutputItems) {
 			DFEVectorType<DFEVar> inType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(m_itemBitWidth), numInputItems);
 			if (maxItems[maxItems.length - 1] % numInputItems != 0) {
 				throw new RuntimeException("Maximum number of items in the fast dimension needs to be a multiple of the number of input items.");
@@ -158,7 +158,7 @@ public class BoxBufferTest {
 			}
 		}
 
-		int[] getAddress(long index) {
+		private int[] getAddress(long index) {
 			int denom = 1;
 			int[] address = new int[m_maxItems.length];
 			for (int dim = m_maxItems.length - 1; dim >= 0; dim--) {
@@ -168,7 +168,7 @@ public class BoxBufferTest {
 			return address;
 		}
 
-		int getIndex(int[] address) {
+		private int getIndex(int[] address) {
 			int skip = 1;
 			int index = 0;
 			for (int dim = m_maxItems.length - 1; dim >= 0; dim--) {
@@ -178,7 +178,7 @@ public class BoxBufferTest {
 			return index;
 		}
 
-		int[] extractBlock(int[] address) {
+		private int[] extractBlock(int[] address) {
 			int[] output = new int[product(m_numOutputItems)];
 			for (int i = 0; i < output.length; i++) {
 				int[] newAddress = new int[address.length];
@@ -193,7 +193,7 @@ public class BoxBufferTest {
 			return output;
 		}
 
-		int[] getReadAddress(int cycle) {
+		private int[] getReadAddress(int cycle) {
 			int[] address = new int[m_maxItems.length];
 			for (int dim = 0; dim < m_maxItems.length; dim++) {
 				address[dim] = (int)m_rdIndex[dim][cycle];
@@ -201,7 +201,7 @@ public class BoxBufferTest {
 			return address;
 		}
 
-		String printArray(int[] array) {
+		private String printArray(int[] array) {
 			String output = " { ";
 			for (int i = 0; i < array.length - 1; i++) {
 				output += array[i] + ", ";
@@ -210,7 +210,7 @@ public class BoxBufferTest {
 			return output;
 		}
 
-		boolean testOutput(List<Bits> rdData) {
+		public boolean testOutput(List<Bits> rdData) {
 			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(m_itemBitWidth), product(m_numOutputItems));
 			boolean testPassed = true;
 			for (int i = 0; i < m_numCycles; i++) {

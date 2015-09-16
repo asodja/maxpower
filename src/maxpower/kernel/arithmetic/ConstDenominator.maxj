@@ -215,7 +215,7 @@ public class ConstDenominator {
 	}
 
 
-	public static class ConstDivModResult {//TODO: replace with DivModResult if constructor is made public
+	public static class ConstDivModResult {
 		public DFEVar m_quot;
 		public DFEVar m_rem;
 
@@ -224,9 +224,12 @@ public class ConstDenominator {
 			m_rem = rem;
 		}
 
+		public ConstDivModResult(ConstDivModResult dmr) {
+			this(dmr.m_quot, dmr.m_rem);
+		}
+
 		public ConstDivModResult(DivModResult dmr) {
-			m_quot = dmr.getQuotient();
-			m_rem = dmr.getRemainder();
+			this(dmr.getQuotient(), dmr.getRemainder());
 		}
 	}
 }
