@@ -260,15 +260,12 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			inThisBuffer.add(constant.var(true));
 			return inThisBuffer;
 		}
-		List<DFEVar> oneHot = new ArrayList<DFEVar>();
-		for (int i = 0; i < m_numOutputItems[dimension]; i++) {//TODO: can we do a more efficient one-hot encode?
-			oneHot.add(addressDivMod[dimension].m_rem === i);
-		}
+		List<DFEVar> oneHot = oneHotEncode(addressDivMod[dimension].m_rem, m_numOutputItems[dimension]);
 		if (dimension == 0) {
 			return oneHot;
 		}
 
-		optimization.pushPipeliningFactor(0.0);
+		optimization.pushPipeliningFactor(0.0);//Unless the number of dimensions is larger than 6, then we should be fine squashing this.
 		List<DFEVar> slowerDimensions = getIsInThisBuffer(addressDivMod, dimension - 1);
 		for (int j = 0; j < slowerDimensions.size(); j++) {
 			for (int i = 0; i < oneHot.size(); i++) {
@@ -278,6 +275,15 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		optimization.popPipeliningFactor();
 
 		return inThisBuffer;
+	}
+
+	private List<DFEVar> oneHotEncode(DFEVar value, int maxVal) {
+		DFEVar result = constant.var(dfeUInt(maxVal), 1) << value;
+		List<DFEVar> output = new ArrayList<DFEVar>();
+		for (int i = 0; i < maxVal; i++) {
+			output.add(result[i]);
+		}
+		return output;
 	}
 
 
