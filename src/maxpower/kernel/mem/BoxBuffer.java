@@ -126,13 +126,13 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 	@Override
 	protected void finalize() throws Throwable {
-	    super.finalize();
-	    if (!m_hasWritten) {
-	    	throw new RuntimeException("You must write data into the Box Buffer using the write method to use it.");
-	    }
-	    if (!m_hasRead) {
-	    	throw new RuntimeException("You must read data from the Box Buffer at least once.");
-	    }
+		super.finalize();
+		if (!m_hasWritten) {
+			throw new RuntimeException("You must write data into the Box Buffer using the write method to use it.");
+		}
+		if (!m_hasRead) {
+			throw new RuntimeException("You must read data from the Box Buffer at least once.");
+		}
 	}
 
 	/**

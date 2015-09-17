@@ -223,7 +223,7 @@ public class BoxBufferTest {
 			boolean testPassed = true;
 			for (int i = 0; i < m_numCycles; i++) {
 				@SuppressWarnings("unchecked")
-                List<Double> output = outType.decodeConstant(rdData[i]);
+				List<Double> output = outType.decodeConstant(rdData[i]);
 				int[] expected = extractBlock(getReadAddress(i));
 				for (int j = 0; j < expected.length; j++) {
 					if (output[j].intValue() != expected[j]) {
