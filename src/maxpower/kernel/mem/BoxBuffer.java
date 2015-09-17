@@ -62,36 +62,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	private boolean m_hasRead = false;
 
 	/**
-	 * Create a single buffered 1D box buffer (see {@link BoxBuffer}).
-	 */
-	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType) {
-		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType);
-	}
-
-	/**
-	 * Create a 1D box buffer (see {@link BoxBuffer}).
-	 */
-	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
-		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, doubleBuffered);
-	}
-
-	/**
-	 * Create a single buffered 1D box buffer (see {@link BoxBuffer}).
-	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
-	 */
-	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
-		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, costOfBramInLuts);
-	}
-
-	/**
-	 * Create a 1D box buffer (see {@link BoxBuffer}).
-	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
-	 */
-	public BoxBuffer(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
-		this(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, doubleBuffered, costOfBramInLuts);
-	}
-
-	/**
 	 * Create a single buffered N-dimensional box buffer (see {@link BoxBuffer}).
 	 */
 	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType) {
@@ -163,20 +133,6 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	    if (!m_hasRead) {
 	    	throw new RuntimeException("You must read data from the Box Buffer at least once.");
 	    }
-	}
-
-	/**
-	 * Write data into the single buffered 1D BoxBuffer. This must only be called once.
-	 */
-	public void write(DFEVector<T> data, DFEVar address, DFEVar enable) {
-		write(data, new DFEVar[] {address}, enable);
-	}
-
-	/**
-	 * Write data into the double buffered 1D BoxBuffer. This must only be called once.
-	 */
-	public void write(DFEVector<T> data, DFEVar address, DFEVar enable, DFEVar buffer) {
-		write(data, new DFEVar[] {address}, enable, buffer);
 	}
 
 	/**
@@ -291,21 +247,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 
 	/**
-	 * Read data from the single buffered 1D BoxBuffer. This must only be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
-	 */
-	public DFEVector<T> read(DFEVar address) {
-		return read(new DFEVar[] {address});
-	}
-
-	/**
-	 * Read data from the double buffered 1D BoxBuffer. This must only be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
-	 */
-	public DFEVector<T> read(DFEVar address, DFEVar buffer) {
-		return read(new DFEVar[] {address}, buffer);
-	}
-
-	/**
-	 * Read data from the single buffered N-dimensional BoxBuffer. This must only be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
+	 * Read data from the single buffered N-dimensional BoxBuffer. This must be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
 	 */
 	public DFEVector<T> read(DFEVar address[]) {
 		if (m_1dParams.doubleBuffered) {
@@ -315,7 +257,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	}
 
 	/**
-	 * Read data from the double buffered N-dimensional BoxBuffer. This must only be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
+	 * Read data from the double buffered N-dimensional BoxBuffer. This must be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
 	 */
 	public DFEVector<T> read(DFEVar[] address, DFEVar buffer) {
 		m_hasRead = true;

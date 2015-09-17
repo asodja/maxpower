@@ -82,9 +82,17 @@ public class BoxBufferTest {
 
 			DFEVector<DFEVar> wrData = io.input("wrData", inType);
 
-			BoxBuffer<DFEVar> buffer = new BoxBuffer<DFEVar>(this, maxItems, numOutputItems, inType);
-			buffer.write(wrData, wrIndex, wrEnable);
-			io.output("rdData", outType) <== stream.offset(buffer.read(rdIndex), numCycles);
+			DFEVector<DFEVar> output;
+			if (numDimensions == 1) {
+				BoxBuffer1D<DFEVar> buffer = new BoxBuffer1D<DFEVar>(this, maxItems[0], numOutputItems[0], inType);
+				buffer.write(wrData, wrIndex[0], wrEnable);
+				output = buffer.read(rdIndex[0]);
+			} else {
+				BoxBuffer<DFEVar> buffer = new BoxBuffer<DFEVar>(this, maxItems, numOutputItems, inType);
+				buffer.write(wrData, wrIndex, wrEnable);
+				output = buffer.read(rdIndex);
+			}
+			io.output("rdData", outType) <== stream.offset(output, numCycles);
 		}
 	}
 
