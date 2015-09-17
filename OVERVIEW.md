@@ -8,7 +8,7 @@ A (non-exhaustive) list of the contents of the MaxPower library.
 * `hash/` - hash maps backed in FMem, LMem and QMem
 * `kernel/`
   * `arithmetic/`
-    - `ConstDenominator` - efficient division by small, constant denominators
+    - `ConstDenominator` - efficient division and modulus division by small, constant denominators
     - `FloatingPointAccumulator` - several floating point accumulator implementations
     - `FloatingPointMultiAdder` - save resources when adding three or more floating point numbers
   * `io/`
