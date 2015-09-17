@@ -1,0 +1,78 @@
+package maxpower.kernel.mem;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+
+/**
+ * This is a simple wrapper around {@link BoxBuffer} to give a slightly more convenient interface for
+ * the common 1D case.
+ */
+public class BoxBuffer1D<T extends KernelObjectVectorizable<T, ?>> extends KernelLib {
+
+	private final BoxBuffer<T> m_buffer;
+
+	/**
+	 * Create a single buffered 1D box buffer (see {@link BoxBuffer}).
+	 */
+	public BoxBuffer1D(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType) {
+		super(root);
+		m_buffer = new BoxBuffer<T>(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType);
+	}
+
+	/**
+	 * Create a 1D box buffer (see {@link BoxBuffer}).
+	 */
+	public BoxBuffer1D(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
+		super(root);
+		m_buffer = new BoxBuffer<T>(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, doubleBuffered);
+	}
+
+	/**
+	 * Create a single buffered 1D box buffer (see {@link BoxBuffer}).
+	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
+	 */
+	public BoxBuffer1D(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
+		super(root);
+		m_buffer = new BoxBuffer<T>(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, costOfBramInLuts);
+	}
+
+	/**
+	 * Create a 1D box buffer (see {@link BoxBuffer1D}).
+	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
+	 */
+	public BoxBuffer1D(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
+		super(root);
+		m_buffer = new BoxBuffer<T>(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, doubleBuffered, costOfBramInLuts);
+	}
+
+	/**
+	 * Write data into the single buffered 1D BoxBuffer. This must only be called once.
+	 */
+	public void write(DFEVector<T> data, DFEVar address, DFEVar enable) {
+		m_buffer.write(data, new DFEVar[] {address}, enable);
+	}
+
+	/**
+	 * Write data into the double buffered 1D BoxBuffer. This must only be called once.
+	 */
+	public void write(DFEVector<T> data, DFEVar address, DFEVar enable, DFEVar buffer) {
+		m_buffer.write(data, new DFEVar[] {address}, enable, buffer);
+	}
+
+	/**
+	 * Read data from the single buffered 1D BoxBuffer. This must be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
+	 */
+	public DFEVector<T> read(DFEVar address) {
+		return m_buffer.read(new DFEVar[] {address});
+	}
+
+	/**
+	 * Read data from the double buffered 1D BoxBuffer. This must be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
+	 */
+	public DFEVector<T> read(DFEVar address, DFEVar buffer) {
+		return m_buffer.read(new DFEVar[] {address}, buffer);
+	}
+}
