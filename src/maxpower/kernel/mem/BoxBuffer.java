@@ -260,6 +260,9 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	 * Read data from the double buffered N-dimensional BoxBuffer. This must be called at least once, but may also be called multiple times. If called multiple times then BRAM usage will increase.
 	 */
 	public DFEVector<T> read(DFEVar[] address, DFEVar buffer) {
+		if (!m_1dParams.doubleBuffered && buffer != null) {
+			throw new RuntimeException("If the Box Buffer is not double buffered, then you must not specify which buffer you want to read from.");
+		}
 		m_hasRead = true;
 		ConstDivModResult[] addressDivMod = new ConstDivModResult[m_numDimensions];
 		addressDivMod[m_numDimensions - 1] = ConstDenominator.divMod(address[m_numDimensions - 1], 1);//We don't calculate DivMod of fast dim address, as we will do something special with that later.
