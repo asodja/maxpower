@@ -3,6 +3,8 @@ package maxpower.kernel.mem;
 import java.util.ArrayList;
 import java.util.List;
 
+import maxpower.kernel.KernelBinaryOp.Add;
+import maxpower.kernel.TreeReduce;
 import maxpower.kernel.arithmetic.ConstDenominator;
 import maxpower.kernel.arithmetic.ConstDenominator.ConstDivModResult;
 
@@ -236,10 +238,10 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		return inThisBuffer;
 	}
 
-	private List<DFEVar> oneHotEncode(DFEVar value, int maxVal) {
-		DFEVar result = constant.var(dfeUInt(maxVal), 1) << value;
+	private List<DFEVar> oneHotEncode(DFEVar value, int numOutputBits) {
+		DFEVar result = constant.var(dfeUInt(numOutputBits), 1) << value;
 		List<DFEVar> output = new ArrayList<DFEVar>();
-		for (int i = 0; i < maxVal; i++) {
+		for (int i = 0; i < numOutputBits; i++) {
 			output.add(result[i]);
 		}
 		return output;
@@ -323,24 +325,9 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		for (int i = 0; i < m_numDimensions - 1; i++) {
 			summands.add(address[i].getQuotient() * constant.var(dfeUInt(MathUtils.bitsToRepresent(m_skipRows[i])), m_skipRows[i]));//TODO: simplify (use untyped const) once bug in the compiler is fixed.
 		}
-		DFEVar output = adderTree(summands);
+		DFEVar output = TreeReduce.reduce(new Add<DFEVar>(), summands);
 		optimization.popEnableBitGrowth();
 		return output.cast(dfeUInt(MathUtils.bitsToAddress(m_1dParams.maxItems)));
-	}
-
-
-	private DFEVar adderTree(List<DFEVar> input) {
-		if (input.size() == 1) {
-			return input[0];
-		}
-		List<DFEVar> output = new ArrayList<DFEVar>();
-		for (int i = 0; i < input.size() / 2; i++) {
-			output.add(input[2 * i] + input[2 * i + 1]);
-		}
-		if (input.size() % 2 != 0) {
-			output.add(input[input.size() - 1]);
-		}
-		return adderTree(output);
 	}
 
 
