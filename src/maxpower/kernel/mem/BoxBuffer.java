@@ -21,33 +21,33 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * The Box buffer reads in a certain sized stream of data and holds it in a
  * buffer, from which you can query it to retrieve a box of adjacent items at
  * a random location. In this case box is meant in the geometric sense (also
- * called an n-orthotope or hyperectangle), so a contiguous section of an
+ * called an n-orthotope or hyperrectangle), so a contiguous section of an
  * N-dimensional space can be retrieved. In 1D this is a simple interval.
- * </p>
+ * <p>
  * Internally it can be double buffered, so we can write N items a cycle into the
  * buffer and read M items out. Obviously for maximum performance, we need to set-up
  * our kernel so that N*cycles >= items_to_write otherwise we can't read and write
  * at full speed. If it is not double buffered, then it is up to the user to make
  * sure that data has not been overwritten before it is read. The default is to not
  * be double buffered.
- * </p>
+ * <p>
  * If you have a section of data that you need to read chunks from which will then be
  * swapped out for another section then you should use the double buffered version so
  * that the new section can be written while the old section is read, so we can do
  * useful compute on every cycle. If instead you need a sliding window or you only
  * have a single section to read, then use single buffering.
- * </p>
+ * <p>
  * Note that data must be written in linearly with new data on every cycle (when buffer
  * is in use), but can be read out in any order. This is due to a stream offset used
  * to cluster input items together to use FMem more efficiently. To disable this
  * behaviour, set defaultLutCost to zero (this forces it to only optimise for LUTs).
- * </p>
+ * <p>
  * Also note that when using this buffer with more than one dimension, the fast dimension
  * (the one we write in linearly) is the last dimension specified.
  */
 public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelLib {
 
-	private static final int defaultLutCost = 200;
+	private static final int DEFAULT_LUT_COST = 200;
 
 	private final DFEVectorType<T> m_inputType;
 	private final int m_numDimensions;
@@ -95,14 +95,14 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	 * Create a single buffered N-dimensional box buffer (see {@link BoxBuffer}).
 	 */
 	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType) {
-		this(root, maxItems, numOutputItems, inputType, defaultLutCost);
+		this(root, maxItems, numOutputItems, inputType, DEFAULT_LUT_COST);
 	}
 
 	/**
 	 * Create an N-dimensional box buffer (see {@link BoxBuffer}).
 	 */
 	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
-		this(root, maxItems, numOutputItems, inputType, doubleBuffered, defaultLutCost);
+		this(root, maxItems, numOutputItems, inputType, doubleBuffered, DEFAULT_LUT_COST);
 	}
 
 	/**
@@ -202,6 +202,9 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		if (m_hasWritten) {
 			throw new RuntimeException("The box buffer can only be written to once.");
 		}
+		if (!m_1dParams.doubleBuffered && buffer != null) {
+			throw new RuntimeException("If the Box Buffer is not double buffered, then you must not specify which buffer you want to write to.");
+		}
 
 		m_hasWritten = true;
 		optimization.pushEnableBitGrowth(false);//Make sure we don't have any weird modes on
@@ -260,7 +263,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			inThisBuffer.add(constant.var(true));
 			return inThisBuffer;
 		}
-		List<DFEVar> oneHot = oneHotEncode(addressDivMod[dimension].m_rem, m_numOutputItems[dimension]);
+		List<DFEVar> oneHot = oneHotEncode(addressDivMod[dimension].getRemainder(), m_numOutputItems[dimension]);
 		if (dimension == 0) {
 			return oneHot;
 		}
@@ -333,13 +336,14 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 		ConstDivModResult[] newAddress = new ConstDivModResult[address.length];
 		for (int j = 0; j < address.length; j++) {
-			newAddress[j] = new ConstDivModResult(address[j]);
+			newAddress[j] = new ConstDivModResult(address[j].getQuotient(), address[j].getRemainder());
 		}
 
 		List<DFEVector<T>> bufferOutput = new ArrayList<DFEVector<T>>();
-		DFEVar addressQuotp1 = address[dimension].m_quot + 1;
+		DFEVar addressQuotp1 = address[dimension].getQuotient() + 1;
 		for (int j = 0; j < m_numOutputItems[dimension]; j++) {
-			newAddress[dimension].m_quot = address[dimension].m_rem > j ? addressQuotp1 : address[dimension].m_quot;
+			DFEVar newQuotient = address[dimension].getRemainder() > j ? addressQuotp1 : address[dimension].getQuotient();
+			newAddress[dimension] = new ConstDivModResult(newQuotient, address[dimension].getRemainder());
 			bufferOutput.add(read(newAddress, buffer, dimension + 1, index + j * m_skipBuffers[dimension + 1]));
 		}
 
@@ -350,7 +354,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			for (int i = 0; i < rotated.getSize(); i++) {
 				rotated[i] <== bufferOutput[i].pack();
 			}
-			rotated = rotated.rotateElementsRight(address[dimension].m_rem);
+			rotated = rotated.rotateElementsRight(address[dimension].getRemainder());
 			bufferOutput.clear();
 			for (DFEVar member: rotated.getElementsAsList()) {
 				bufferOutput.add(outputType.unpack(member));
@@ -370,9 +374,9 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	private DFEVar get1dAddress(ConstDivModResult[] address) {
 		optimization.pushEnableBitGrowth(true);
 		List<DFEVar> summands = new ArrayList<DFEVar>();
-		summands.add(address[m_numDimensions - 1].m_quot);
+		summands.add(address[m_numDimensions - 1].getQuotient());
 		for (int i = 0; i < m_numDimensions - 1; i++) {
-			summands.add(address[i].m_quot * constant.var(dfeUInt(MathUtils.bitsToRepresent(m_skipRows[i])), m_skipRows[i]));//TODO: simplify (use untyped const) once bug in the compiler is fixed.
+			summands.add(address[i].getQuotient() * constant.var(dfeUInt(MathUtils.bitsToRepresent(m_skipRows[i])), m_skipRows[i]));//TODO: simplify (use untyped const) once bug in the compiler is fixed.
 		}
 		DFEVar output = adderTree(summands);
 		optimization.popEnableBitGrowth();
@@ -424,7 +428,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			int chunks = m_1dParams.numCols / gcd;
 
 			DFEVector<DFEVector<T>> chunkedInputData = as2dDFEVector(input, gcd, chunks);
-			DFEVar rotate = ConstDenominator.divMod(ramWriteCol, gcd, MathUtils.bitsToAddress(chunks)).m_quot;
+			DFEVar rotate = ConstDenominator.divMod(ramWriteCol, gcd, MathUtils.bitsToAddress(chunks)).getQuotient();
 			output = asSingleDFEVector(chunkedInputData.rotateElementsLeft(rotate));
 		} else {
 			output = input;
@@ -485,16 +489,16 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	private DFEVar xyLookup(DFEVar index, DFEType addrType) {
 		/* If numcols is a power of two we can slice */
 		ConstDivModResult dmr = ConstDenominator.divMod(index, m_1dParams.numCols, addrType.getTotalBits() - m_1dParams.colAddrBits);
-		return dmr.m_quot.cat(dmr.m_rem.cast(dfeUInt(m_1dParams.colAddrBits))).cast(addrType);
+		return dmr.getQuotient().cat(dmr.getRemainder().cast(dfeUInt(m_1dParams.colAddrBits))).cast(addrType);
 	}
 
 	/**
-	 * Creates a 1D buffer where we can read a contiguous section from it. There are 2 ways to do this:</br>
+	 * Creates a 1D buffer where we can read a contiguous section from it. There are 2 ways to do this:<br>
 	 * 1) Write sequential data into different RAMs, thus guaranteeing that the things you want to read
 	 *    can't be in the same one (to avoid clashes). For example, if I want to read 4 values I can
 	 *    write the data into 4 RAMs as follows:
 	 *     <table border="1">
-	 *         <th> Ram 0 </th><th> Ram 1 </th><th> Ram 2 </th><th> Ram 3 </th>
+	 *     <tr><th> Ram 0 </th><th> Ram 1 </th><th> Ram 2 </th><th> Ram 3 </th></tr>
 	 *     <tr><td>   00  </td><td>   01  </td><td>   02  </td><td>   03  </td></tr>
 	 *     <tr><td>   04  </td><td>   05  </td><td>   06  </td><td>   07  </td></tr>
 	 *     <tr><td>   08  </td><td>   09  </td><td>   10  </td><td>   11  </td></tr>
@@ -502,11 +506,11 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	 *     </table>
 	 *    Then if I want to read 4 values starting at 6 then I read from address 1 in Rams 2 and 3, and
 	 *    from address 2 in Rams 0 and 1 (giving me 8,9,6,7) and then rotate the result by 2 (to get
-	 *    6,7,8,9).</br>
+	 *    6,7,8,9).<br>
 	 *  2) Duplicate the data so that we write 2N-1 elements into each row of a single RAM. The same
 	 *     example again would look like:
 	 *     <table border="1">
-	 *         <th>        Ram 0          </th>
+	 *     <tr><th>        Ram 0          </th></tr>
 	 *     <tr><td>  00 01 02 03 04 05 06 </td></tr>
 	 *     <tr><td>  04 05 06 07 08 09 10 </td></tr>
 	 *     <tr><td>  08 09 10 11 12 13 14 </td></tr>
@@ -515,13 +519,13 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	 *
 	 *     Then to read 4 values starting at 6 I read from address 1 and rotate by 2 (giving 5,6,7,8,9,
 	 *     10,4,5) and then slice off the 3 extra values we don't need.
-	 *     </p>
+	 *     <p>
 	 *  The advantage of the first one is that the rotates are smaller (4 vs 7), so it uses fewer LUTs,
 	 *  and there is no duplicated data, so there is less to store. The advantage of the second one is
 	 *  that if the data elements are not very wide, then grouping them together in a single RAM may use
 	 *  fewer BRAMs. In practice we use a combination of both strategies. E.g.:
 	 *     <table border="1">
-	 *         <th>  Ram 0   </th><th>  Ram 1   </th>
+	 *     <tr><th>  Ram 0   </th><th>  Ram 1   </th></tr>
 	 *     <tr><td> 00 01 02 </td><td> 02 03 04 </td></tr>
 	 *     <tr><td> 04 05 06 </td><td> 06 07 08 </td></tr>
 	 *     <tr><td> 08 09 10 </td><td> 10 11 12 </td></tr>

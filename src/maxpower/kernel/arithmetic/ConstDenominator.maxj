@@ -73,7 +73,7 @@ public class ConstDenominator {
 		}
 
 		ConstDivModResult result = internalDivide(lhs);
-		return result.m_quot.cast(lhsType);
+		return result.getQuotient().cast(lhsType);
 	}
 
 
@@ -97,6 +97,9 @@ public class ConstDenominator {
 	 * of resource as 3.
 	 * <p>
 	 * Usage is the same as KernelMath.divMod.
+	 * @param quotBits The number of bits the returned quotient should have. If unspecified this
+	 *                 is equal to the numerator bits (as with KernelMath.divMod), but this is
+	 *                 more than is really required as the maximum value will be smaller.
 	 */
 	public static ConstDivModResult divMod(DFEVar numerator, int denominator, int quotBits) {
 		ConstDenominator denom = new ConstDenominator(denominator);
@@ -132,23 +135,23 @@ public class ConstDenominator {
 			ConstDenominator newDenom = new ConstDenominator(m_denom / 2);
 			ConstDivModResult result = newDenom.divModAsRHS(newLhs, resultBits);
 			//add the remained bit back on
-			result.m_rem = result.m_rem # numerator[0];
-			result.m_rem = result.m_rem.cast(Kernel.dfeUInt(result.m_rem.getType().getTotalBits()));
-			return result;
+			DFEVar remainder = result.getRemainder() # numerator[0];
+			remainder = remainder.cast(Kernel.dfeUInt(remainder.getType().getTotalBits()));
+			return new ConstDivModResult(result.getQuotient(), remainder);
 		}
 
 		// if denom too big for this method - revert to standard division
 		if (m_carryBits >= LUTBITS) {
 			DivModResult dmr = KernelMath.divMod(numerator, numerator.getKernel().constant.var(m_denom), outType.getTotalBits());
-			return new ConstDivModResult(dmr);
+			return new ConstDivModResult(dmr.getQuotient(), dmr.getRemainder());
 		}
 
 		ConstDivModResult result = internalDivide(numerator);
-		result.m_quot = result.m_quot.cast(Kernel.dfeUInt(result.m_quot.getType().getTotalBits()));//reinterpret as UInt
-		result.m_quot = result.m_quot.cast(outType);//cast requested output type
-		result.m_rem  = result.m_rem.cast(Kernel.dfeUInt(result.m_rem.getType().getTotalBits()));//reinterpret as UInt
+		DFEVar quotient = result.getQuotient().cast(Kernel.dfeUInt(result.getQuotient().getType().getTotalBits()));//reinterpret as UInt
+		quotient = quotient.cast(outType);//cast requested output type
+		DFEVar remainder  = result.getRemainder().cast(Kernel.dfeUInt(result.getRemainder().getType().getTotalBits()));//reinterpret as UInt
 
-		return result;
+		return new ConstDivModResult(quotient, remainder);
 	}
 
 
@@ -165,7 +168,7 @@ public class ConstDenominator {
 				throw new MaxCompilerAPIError("Only supports integer division / modulo.");
 			}
 		} else {
-		KernelLib owner = lhs.getKernel();
+			KernelLib owner = lhs.getKernel();
 			if (owner.optimization.getRoundingMode() != RoundingMode.TRUNCATE) {
 				throw new MaxCompilerAPIError("Only truncate rounding mode supported.");
 			}
@@ -215,21 +218,19 @@ public class ConstDenominator {
 	}
 
 
+	/**
+	 *  A copy of KernelMath.DivModResult as that doesn't have a public constructor.
+	 */
 	public static class ConstDivModResult {
-		public DFEVar m_quot;
-		public DFEVar m_rem;
+		private final DFEVar m_quot;
+		private final DFEVar m_rem;
 
 		public ConstDivModResult(DFEVar quot, DFEVar rem) {
 			m_quot = quot;
 			m_rem = rem;
 		}
 
-		public ConstDivModResult(ConstDivModResult dmr) {
-			this(dmr.m_quot, dmr.m_rem);
-		}
-
-		public ConstDivModResult(DivModResult dmr) {
-			this(dmr.getQuotient(), dmr.getRemainder());
-		}
+		public DFEVar getQuotient() { return m_quot; }
+		public DFEVar getRemainder() { return m_rem; }
 	}
 }

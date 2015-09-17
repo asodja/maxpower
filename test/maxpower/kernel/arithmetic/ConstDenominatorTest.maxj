@@ -47,8 +47,8 @@ public class ConstDenominatorTest {
 				divResult = divResult + ((inDenom === denom) ? (input / (new ConstDenominator(denom))) : 0);
 				optimization.popRoundingMode();
 				ConstDivModResult dmr = ConstDenominator.divMod(input, denom);
-				quotResult = quotResult + ((inDenom === denom) ? dmr.m_quot : 0);
-				remResult  = remResult  + ((inDenom === denom) ? dmr.m_rem.cast(uintType) : 0);
+				quotResult = quotResult + ((inDenom === denom) ? dmr.getQuotient() : 0);
+				remResult  = remResult  + ((inDenom === denom) ? dmr.getRemainder().cast(uintType) : 0);
 			}
 
 			io.output("divResult",  divResult, uintType);
