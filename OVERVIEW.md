@@ -15,6 +15,8 @@ A (non-exhaustive) list of the contents of the MaxPower library.
     - `AspectChangeIO` - save manager FIFOs by performing aspect change inside Kernels
     - `ZeroLatencyInput` - hide latency of input, allowing for data dependent control, e.g. run-length decoding
   * `mem/`
+    - `BoxBuffer` - Buffer an N-dimensional stream of data in FMem and then read contiguous blocks out of it
+    - `BoxBuffer1D` - Buffer a stream of data in FMem and read contiguous sections out of it
     - `ZeroLatencyMemory` - hide latency of FMem, allowing values to be read back on the next cycle
   * `LargeStreamOffset` - large, negative stream offset backed by LMem to save FMem
   * `TreeReduce` - reduce latency and save resources by reducing via a binary tree
