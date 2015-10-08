@@ -16,7 +16,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 *
 *  A class to provide an input similar to {@link com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.IO IO} with a variable number of inputs per cycle up to some build time maximum.
 */
-class FlexibleWidthInput extends KernelLib{
+public class FlexibleWidthInput extends KernelLib{
 
 	int maxWidth;
 	DFEType shiftType;
@@ -27,7 +27,7 @@ class FlexibleWidthInput extends KernelLib{
 	 * @param owner The Kernel or KernelLib the object is being used in.
 	 * @param maxWidthIn The width of the input port (128,1536,3078)
 	 */
-	FlexibleWidthInput(KernelLib owner, int maxWidthIn){
+	public FlexibleWidthInput(KernelLib owner, int maxWidthIn){
 
 		super (owner);
 		maxWidth =  maxWidthIn;
