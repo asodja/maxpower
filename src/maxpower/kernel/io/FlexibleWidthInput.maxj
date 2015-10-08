@@ -31,8 +31,9 @@ public class FlexibleWidthInput extends KernelLib{
 
 		super (owner);
 		maxWidth =  maxWidthIn;
-		shiftType = dfeUInt(MathUtils.bitsToRepresent(maxWidth));
-		doubleShiftType = dfeUInt(MathUtils.bitsToRepresent(maxWidth)+1);
+		int shiftBits = MathUtils.bitsToRepresent(maxWidth-1);
+		shiftType = dfeUInt(shiftBits);
+		doubleShiftType = dfeUInt(shiftBits+1);
 
 	}
 
