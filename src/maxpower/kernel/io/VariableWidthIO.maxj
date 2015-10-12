@@ -28,8 +28,8 @@ public class VariableWidthIO extends KernelLib {
 
 		super (owner);
 		maxWidth =  maxWidthIn;
-		int shiftBits = MathUtils.bitsToRepresent(maxWidth-1);
-		doubleShiftType = dfeUInt(shiftBits+1);
+		int shiftBits = MathUtils.bitsToRepresent(maxWidth - 1);
+		doubleShiftType = dfeUInt(shiftBits + 1);
 	}
 
 	/**
@@ -41,8 +41,8 @@ public class VariableWidthIO extends KernelLib {
 	 */
 	public <T extends KernelObjectVectorizable<T,?>> DFEVector<T> input(String name, KernelType<T> inputType, DFEVar numToRead) {
 		optimization.pushPipeliningFactor(0);
-		DFEVectorType<T> wideInputType = new DFEVectorType<T>(inputType,maxWidth);
-		DFEVectorType<T> doubleWideInputType = new DFEVectorType<T>(inputType,maxWidth*2);
+		DFEVectorType<T> wideInputType = new DFEVectorType<T>(inputType, maxWidth);
+		DFEVectorType<T> doubleWideInputType = new DFEVectorType<T>(inputType, maxWidth*2);
 
 		DFEVar isFirstTick = control.count.pulse(1);
 		DFEVar carried = doubleShiftType.newInstance(this);
@@ -59,7 +59,7 @@ public class VariableWidthIO extends KernelLib {
 		DFEVar inputFlipper = needToGet & carried.eq(0);
 		for (int i = 0; i < maxWidth; i++) {
 			twoCycleInput[i] <== inputFlipper ? wideInput[i] : stream.offset(wideInput, -1)[i];
-			twoCycleInput[i + maxWidth] <== inputFlipper ? stream.offset(wideInput,-1)[i] : wideInput[i];
+			twoCycleInput[i + maxWidth] <== inputFlipper ? stream.offset(wideInput, -1)[i] : wideInput[i];
 		}
 
 		DFEVector<T> output = wideInputType.newInstance(this);
@@ -71,7 +71,6 @@ public class VariableWidthIO extends KernelLib {
 		carried <== (lastWidth < maxWidth) ?  lastWidth : lastWidth - maxWidth;
 
 		optimization.popPipeliningFactor();
-		optimization.pipeline(output);
-		return output;
+		return optimization.pipeline(output);
 	}
 }
