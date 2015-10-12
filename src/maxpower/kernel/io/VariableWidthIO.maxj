@@ -65,6 +65,6 @@ public class VariableWidthIO extends KernelLib {
 		for (int i = 0; i < maxWidth; i++) {
 			output[i] <== twoCycleShifted[i];
 		}
-		return optimization.pipeline(output);
+		return output;
 	}
 }
