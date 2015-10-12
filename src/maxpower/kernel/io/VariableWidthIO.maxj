@@ -20,7 +20,6 @@ public class VariableWidthIO extends KernelLib {
 	/**
 	 * Create an io port of a given maximum width so that a variable width input can be created.
 	 * @param owner The Kernel or KernelLib the object is being used in.
-	 * @param maxWidthIn The width of the input port (number of words).
 	 */
 	public VariableWidthIO(KernelLib owner) {
 		super (owner);
@@ -29,7 +28,7 @@ public class VariableWidthIO extends KernelLib {
 	/**
 	 * Create an input of a given maximum width which can return a variable number of valid data (up to the maximum width) each cycle from the input.
 	 * @param name The name of the input as referenced in the manager
-	 * @param inputType The type of the input data
+	 * @param wideInputType A DFEVectorType representing the input port
 	 * @param numToRead A stream giving the number of valid number of inputs needed on a given cycle (each value must be leq the maximum width for defined behaviour)
 	 * @return A DFEVector of size maximum width, the first <code> needIn </code> elements of which are read linearly from the input.
 	 */
