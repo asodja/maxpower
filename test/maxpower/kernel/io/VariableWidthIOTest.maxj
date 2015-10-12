@@ -77,7 +77,7 @@ public class VariableWidthIOTest {
 			return output;
 		}
 
-		protected double [][] getExpectedOutput() { return expectedOutput; }
+		protected double[][] getExpectedOutput() { return expectedOutput; }
 	}
 
 	private class VariableWidthIOTestKernel extends Kernel {
