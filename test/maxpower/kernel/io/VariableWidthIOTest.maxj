@@ -120,7 +120,10 @@ public class VariableWidthIOTest {
 	}
 
 	@Test public void testAsPassThrough() { testFlexibleWidthInput(2, 2, new int[]{2}); }
+	@Test public void testReadingNothing() { testFlexibleWidthInput(2, 6, new int[]{0,2,2,0,0,2,0}); }
 	@Test public void testExactAspectChange() { testFlexibleWidthInput(10, 20, new int[]{5,5,5,5}); }
 	@Test public void testInExactAspectChange() { testFlexibleWidthInput(10, 20, new int[]{4,4,4,4,4}); }
 	@Test public void testWithSomeUnpleasantNumbers() { testFlexibleWidthInput(7, 21, new int[]{2,3,5,7,2,1,1}); }
+	@Test public void testWithSomeUnpleasantNumbersAndReadingNothing() { testFlexibleWidthInput(7, 21, new int[]{2,0,3,5,0,7,2,1,1,0}); }
 }
+

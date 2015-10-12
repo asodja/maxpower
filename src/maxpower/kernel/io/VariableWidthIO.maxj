@@ -49,29 +49,22 @@ public class VariableWidthIO extends KernelLib {
 		DFEVar used = isFirstTick ?  0 : carried;
 
 		DFEVar need = numToRead.cast(doubleShiftType);
-
 		DFEVar neededWidth = used + need;
+		DFEVar lastWidth = stream.offset(neededWidth, -1);
+		carried <== (lastWidth < maxWidth) ?  lastWidth : lastWidth - maxWidth;
+		optimization.popPipeliningFactor();
 
-		DFEVar needToGet = (neededWidth > maxWidth) | (used === 0);
+		DFEVar needToGet = (neededWidth > maxWidth) | ((used === 0) & ~(need === 0));
 		DFEVector<T> wideInput = io.input(name, wideInputType, needToGet);
 
-		DFEVector<T> twoCycleInput = doubleWideInputType.newInstance(this);
-		DFEVar inputFlipper = needToGet & carried.eq(0);
-		for (int i = 0; i < maxWidth; i++) {
-			twoCycleInput[i] <== inputFlipper ? wideInput[i] : stream.offset(wideInput, -1)[i];
-			twoCycleInput[i + maxWidth] <== inputFlipper ? stream.offset(wideInput, -1)[i] : wideInput[i];
-		}
+		DFEVector<T> twoCycleInput = doubleWideInputType.unpack(wideInput.pack() # stream.offset(wideInput, -1).pack());
+		DFEVar shift = (needToGet & (carried === 0)) ? maxWidth : used;
+		DFEVector<T> twoCycleShifted = twoCycleInput.shiftElementsRight(shift);
 
 		DFEVector<T> output = wideInputType.newInstance(this);
-		DFEVector<T> twoCycleShifted = twoCycleInput.shiftElementsRight(used);
 		for (int i = 0; i < maxWidth; i++) {
 			output[i] <== twoCycleShifted[i];
 		}
-
-		DFEVar lastWidth = stream.offset(neededWidth, -1);
-		carried <== (lastWidth < maxWidth) ?  lastWidth : lastWidth - maxWidth;
-
-		optimization.popPipeliningFactor();
 		return optimization.pipeline(output);
 	}
 }
