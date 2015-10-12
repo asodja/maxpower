@@ -63,8 +63,9 @@ public class VariableWidthIO extends KernelLib {
 		}
 
 		DFEVector<T> output = wideInputType.newInstance(this);
+		DFEVector<T> twoCycleShifted = twoCycleInput.shiftElementsRight(used);
 		for (int i = 0; i < maxWidth; i++) {
-			output[i] <== twoCycleInput.shiftElementsRight(used)[i];
+			output[i] <== twoCycleShifted[i];
 		}
 
 		DFEVar lastWidth = stream.offset(neededWidth, -1);
