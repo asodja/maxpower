@@ -2,7 +2,6 @@ package maxpower.kernel.io;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
@@ -16,20 +15,15 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * @author David Packwood
  */
 public class VariableWidthIO extends KernelLib {
-	private final int maxWidth;
-	private final DFEType doubleShiftType;
+
 
 	/**
 	 * Create an io port of a given maximum width so that a variable width input can be created.
 	 * @param owner The Kernel or KernelLib the object is being used in.
 	 * @param maxWidthIn The width of the input port (number of words).
 	 */
-	public VariableWidthIO(KernelLib owner, int maxWidthIn) {
-
+	public VariableWidthIO(KernelLib owner) {
 		super (owner);
-		maxWidth =  maxWidthIn;
-		int shiftBits = MathUtils.bitsToRepresent(maxWidth - 1);
-		doubleShiftType = dfeUInt(shiftBits + 1);
 	}
 
 	/**
@@ -39,10 +33,12 @@ public class VariableWidthIO extends KernelLib {
 	 * @param numToRead A stream giving the number of valid number of inputs needed on a given cycle (each value must be leq the maximum width for defined behaviour)
 	 * @return A DFEVector of size maximum width, the first <code> needIn </code> elements of which are read linearly from the input.
 	 */
-	public <T extends KernelObjectVectorizable<T,?>> DFEVector<T> input(String name, KernelType<T> inputType, DFEVar numToRead) {
+	public <T extends KernelObjectVectorizable<T,?>> DFEVector<T> input(String name, DFEVectorType<T> wideInputType, DFEVar numToRead) {
 		optimization.pushPipeliningFactor(0);
-		DFEVectorType<T> wideInputType = new DFEVectorType<T>(inputType, maxWidth);
-		DFEVectorType<T> doubleWideInputType = new DFEVectorType<T>(inputType, maxWidth*2);
+		int maxWidth = wideInputType.getSize();
+		int shiftBits = MathUtils.bitsToRepresent(maxWidth - 1);
+		DFEType doubleShiftType = dfeUInt(shiftBits + 1);
+		DFEVectorType<T> doubleWideInputType = new DFEVectorType<T>(wideInputType.getContainedType(), maxWidth*2);
 
 		DFEVar isFirstTick = control.count.pulse(1);
 		DFEVar carried = doubleShiftType.newInstance(this);
