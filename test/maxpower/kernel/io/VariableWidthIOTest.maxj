@@ -18,34 +18,30 @@ import com.maxeler.maxcompiler.v2.managers.standard._SimulationManager;
 import com.maxeler.maxcompiler.v2.utils.Bits;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
-public class FlexibleWidthInputTest{
+public class VariableWidthIOTest {
 
-	private class TestData{
-
+	private class TestData {
 		private final int inputWidth;
-
 		private final int dataLength;
+		private final int[] getCounts;
+		private final double[] data;
+		private final double[][] expectedOutput;
 
-		private final int [] getCounts;
-		private final double [] data;
-		private final double [][] expectedOutput;
-
-		protected TestData(int inputWidthIn, int dataLengthIn, int [] getCountsIn){
-
+		protected TestData(int inputWidthIn, int dataLengthIn, int[] getCountsIn) {
 			inputWidth = inputWidthIn;
 			dataLength = dataLengthIn;
 			getCounts = getCountsIn;
-			data = new double [dataLength];
-			expectedOutput = new double [getCounts.length][];
+			data = new double[dataLength];
+			expectedOutput = new double[getCounts.length][];
 
-			for (int i = 0; i < dataLength; i++){
-				data[i] = i;
+			for (int i = 0; i < dataLength; i++) {
+				data[i] = i+1;
 			}
 
 			int dataitr = 0;
-			for (int i = 0; i < getCounts.length; i++){
+			for (int i = 0; i < getCounts.length; i++) {
 				expectedOutput[i] = new double[getCounts[i]];
-				for (int j = 0; j < getCounts[i]; j++){
+				for (int j = 0; j < getCounts[i]; j++) {
 					expectedOutput[i][j] = data[dataitr];
 					dataitr++;
 				}
@@ -53,7 +49,6 @@ public class FlexibleWidthInputTest{
 		}
 
 		protected List<Bits> encodeInput(DFEType dataType) {
-
 			final List<Bits> encodedData = new ArrayList<Bits>(MathUtils.ceilDivide(data.length, inputWidth));
 			for (int i = 0; i < dataLength; i++) {
 				encodedData.add(dataType.encodeConstant(data[i]));
@@ -62,7 +57,6 @@ public class FlexibleWidthInputTest{
 		}
 
 		protected List<Bits> encodeCounts(DFEType indexType) {
-
 			final List<Bits> encodedCounts = new ArrayList<Bits>(getCounts.length);
 			for (int i = 0; i < getCounts.length; i++) {
 				encodedCounts.add(indexType.encodeConstant(getCounts[i]));
@@ -70,70 +64,63 @@ public class FlexibleWidthInputTest{
 			return encodedCounts;
 		}
 
+		protected double[][] decodeOutput(List<Bits> input, DFEType dataType) {
+			double[][] output = new double [getCounts.length][];
 
-		protected double [][] decodeOutput(List<Bits> input, DFEType dataType){
-
-			double [][] output = new double [getCounts.length][];
-
-			for (int i = 0; i < getCounts.length; i++){
+			for (int i = 0; i < getCounts.length; i++) {
 				output[i] = new double[getCounts[i]];
 
-				for (int j = 0; j < getCounts[i]; j++){
+				for (int j = 0; j < getCounts[i]; j++) {
 					output[i][j] = dataType.decodeConstant(input[i].getBitsRaw(j*dataType.getTotalBits(),dataType.getTotalBits()));
 				}
 			}
-
-
 			return output;
 		}
 
 		protected double [][] getExpectedOutput() { return expectedOutput; }
-
 	}
 
-	private class FlexibleWidthInputTestKernel extends Kernel {
-		protected FlexibleWidthInputTestKernel(KernelParameters parameters, DFEType type, int inputWidth) {
+	private class VariableWidthIOTestKernel extends Kernel {
+		protected VariableWidthIOTestKernel(KernelParameters parameters, DFEType type, int inputWidth) {
 			super(parameters);
 
-			final FlexibleWidthInput fwi = new FlexibleWidthInput(this, inputWidth);
+			final VariableWidthIO fwi = new VariableWidthIO(this, inputWidth);
 
 			DFEVar needCount = io.input("needCount", dfeUInt(32));
 			DFEVector<DFEVar> input = fwi.input("input", type, needCount);
 
 			io.output("output",input,input.getType());
-
 		}
-
 	}
 
-	private void testFlexibleWidthInput(final int inputWidth, final int dataLength, final int [] getCounts) {
-
+	private void testFlexibleWidthInput(final int inputWidth, final int dataLength, final int[] getCounts) {
 		final DFEType type   = KernelLib.dfeFloat(11,53);
 		final DFEType indexType   = KernelLib.dfeUInt(32);
 
 		TestData data = new TestData(inputWidth, dataLength, getCounts);
 
 		_SimulationManager m = new _SimulationManager("FlexibleWidthInputTest");
-		m.setKernel(new FlexibleWidthInputTestKernel(m.makeKernelParameters(), type, inputWidth));
+		m.setKernel(new VariableWidthIOTestKernel(m.makeKernelParameters(), type, inputWidth));
 		m.setKernelCycles(getCounts.length);
 		m.setInputDataRaw("input", data.encodeInput(type));
 		m.setInputDataRaw("needCount", data.encodeCounts(indexType));
 		m.build();
 		m.run();
 
-		double [][] output = data.decodeOutput(m.getOutputDataRaw("output"), type);
-		double [][] expectedOutput = data.getExpectedOutput();
+		double[][] output = data.decodeOutput(m.getOutputDataRaw("output"), type);
+		double[][] expectedOutput = data.getExpectedOutput();
 		for (int i = 0; i < output.length; i++) {
 			System.out.println("Expected " + Arrays.toString(expectedOutput[i]));
 			System.out.println("Got      " + Arrays.toString(output[i]) + "\n");
 
 		}
-		for (int i = 0; i < output.length; i++){
-			assertArrayEquals(output[i],expectedOutput[i],0.0);
+		for (int i = 0; i < output.length; i++) {
+			assertArrayEquals(expectedOutput[i],output[i],0.0);
 		}
 	}
 
-	@Test public void testExactAspectChange(){ testFlexibleWidthInput(10,20,new int[]{5,5,5,5}); }
-    @Test public void testInExactAspectChange(){ testFlexibleWidthInput(10,20,new int[]{4,4,4,4,4}); }
-    @Test public void testWithSomeUnpleasantNumbers(){ testFlexibleWidthInput(7,21,new int[]{2,3,5,7,2,1,1});}
+	@Test public void testAsPassThrough() { testFlexibleWidthInput(2, 2, new int[]{2}); }
+	@Test public void testExactAspectChange() { testFlexibleWidthInput(10, 20, new int[]{5,5,5,5}); }
+	@Test public void testInExactAspectChange() { testFlexibleWidthInput(10, 20, new int[]{4,4,4,4,4}); }
+	@Test public void testWithSomeUnpleasantNumbers() { testFlexibleWidthInput(7, 21, new int[]{2,3,5,7,2,1,1}); }
 }
