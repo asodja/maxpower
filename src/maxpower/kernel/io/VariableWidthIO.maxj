@@ -54,11 +54,11 @@ public class VariableWidthIO extends KernelLib {
 		carried <== (lastWidth < maxWidth) ?  lastWidth : lastWidth - maxWidth;
 		optimization.popPipeliningFactor();
 
-		DFEVar needToGet = (neededWidth > maxWidth) | ((used === 0) & ~(need === 0));
+		DFEVar needToGet = (neededWidth > maxWidth) | ((used === 0) & (need !== 0));
 		DFEVector<T> wideInput = io.input(name, wideInputType, needToGet);
 
 		DFEVector<T> twoCycleInput = doubleWideInputType.unpack(wideInput.pack() # stream.offset(wideInput, -1).pack());
-		DFEVar shift = (needToGet & (carried === 0)) ? maxWidth : used;
+		DFEVar shift = (used === 0) ? maxWidth : used;
 		DFEVector<T> twoCycleShifted = twoCycleInput.shiftElementsRight(shift);
 
 		DFEVector<T> output = wideInputType.newInstance(this);
