@@ -14,6 +14,7 @@ A (non-exhaustive) list of the contents of the MaxPower library.
   * `io/`
     - `AspectChangeIO` - save manager FIFOs by performing aspect change inside Kernels
     - `ZeroLatencyInput` - hide latency of input, allowing for data dependent control, e.g. run-length decoding
+    - `VariableWidthIO` - a kernel input providing a variable number of words per cycle
   * `mem/`
     - `BoxBuffer` - Buffer an N-dimensional stream of data in FMem and then read contiguous blocks out of it
     - `BoxBuffer1D` - Buffer a stream of data in FMem and read contiguous sections out of it
