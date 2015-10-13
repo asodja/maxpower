@@ -30,7 +30,7 @@ public class VariableWidthIO extends KernelLib {
 	 * @param name The name of the input as referenced in the manager
 	 * @param wideInputType A DFEVectorType representing the input port
 	 * @param numToRead A stream giving the number of valid number of inputs needed on a given cycle (each value must be leq the maximum width for defined behaviour)
-	 * @return A DFEVector of size maximum width, the first <code> needIn </code> elements of which are read linearly from the input.
+	 * @return A DFEVector of size maximum width, the first <code> numToRead </code> elements of which are read linearly from the input.
 	 */
 	public <T extends KernelObjectVectorizable<T,?>> DFEVector<T> input(String name, DFEVectorType<T> wideInputType, DFEVar numToRead) {
 		int maxWidth = wideInputType.getSize();
