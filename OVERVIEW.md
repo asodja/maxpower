@@ -29,4 +29,4 @@ A (non-exhaustive) list of the contents of the MaxPower library.
 * `network/`
   * `tcp/` - TCP framing (turn continuous TCP data into discrete frames)
 * `statemachine/`
-  * `collections/` - list, queue and stack implementions for state machines
+  * `collections/` - list, queue and stack implementations for state machines
