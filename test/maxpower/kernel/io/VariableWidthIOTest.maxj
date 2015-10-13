@@ -14,6 +14,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.managers.standard._SimulationManager;
 import com.maxeler.maxcompiler.v2.utils.Bits;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
@@ -81,13 +82,13 @@ public class VariableWidthIOTest {
 	}
 
 	private class VariableWidthIOTestKernel extends Kernel {
-		protected VariableWidthIOTestKernel(KernelParameters parameters, DFEType type, int inputWidth) {
+		protected VariableWidthIOTestKernel (KernelParameters parameters, DFEVectorType<DFEVar> vectorType, int inputWidth) {
 			super(parameters);
 
-			final VariableWidthIO fwi = new VariableWidthIO(this, inputWidth);
+			final VariableWidthIO vwio = new VariableWidthIO(this);
 
 			DFEVar needCount = io.input("needCount", dfeUInt(32));
-			DFEVector<DFEVar> input = fwi.input("input", type, needCount);
+			DFEVector<DFEVar> input = vwio.input("input", vectorType, needCount);
 
 			io.output("output",input,input.getType());
 		}
@@ -95,12 +96,13 @@ public class VariableWidthIOTest {
 
 	private void testFlexibleWidthInput(final int inputWidth, final int dataLength, final int[] getCounts) {
 		final DFEType type   = KernelLib.dfeFloat(11,53);
+		final DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(type,inputWidth);
 		final DFEType indexType   = KernelLib.dfeUInt(32);
 
 		TestData data = new TestData(inputWidth, dataLength, getCounts);
 
 		_SimulationManager m = new _SimulationManager("FlexibleWidthInputTest");
-		m.setKernel(new VariableWidthIOTestKernel(m.makeKernelParameters(), type, inputWidth));
+		m.setKernel(new VariableWidthIOTestKernel(m.makeKernelParameters(), vectorType, inputWidth));
 		m.setKernelCycles(getCounts.length);
 		m.setInputDataRaw("input", data.encodeInput(type));
 		m.setInputDataRaw("needCount", data.encodeCounts(indexType));

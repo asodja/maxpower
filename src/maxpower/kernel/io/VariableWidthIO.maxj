@@ -33,20 +33,18 @@ public class VariableWidthIO extends KernelLib {
 	 * @return A DFEVector of size maximum width, the first <code> needIn </code> elements of which are read linearly from the input.
 	 */
 	public <T extends KernelObjectVectorizable<T,?>> DFEVector<T> input(String name, DFEVectorType<T> wideInputType, DFEVar numToRead) {
-		optimization.pushPipeliningFactor(0);
 		int maxWidth = wideInputType.getSize();
 		int shiftBits = MathUtils.bitsToRepresent(maxWidth - 1);
 		DFEType doubleShiftType = dfeUInt(shiftBits + 1);
 		DFEVectorType<T> doubleWideInputType = new DFEVectorType<T>(wideInputType.getContainedType(), maxWidth*2);
-
 		DFEVar isFirstTick = control.count.pulse(1);
-		DFEVar carried = doubleShiftType.newInstance(this);
-		DFEVar used = isFirstTick ?  0 : carried;
-
 		DFEVar need = numToRead.cast(doubleShiftType);
+
+		optimization.pushPipeliningFactor(0);
+		DFEVar carried = doubleShiftType.newInstance(this);
+		DFEVar used = isFirstTick ?  0 : stream.offset(carried,-1);
 		DFEVar neededWidth = used + need;
-		DFEVar lastWidth = stream.offset(neededWidth, -1);
-		carried <== (lastWidth < maxWidth) ?  lastWidth : lastWidth - maxWidth;
+		carried <== (neededWidth < maxWidth) ?  neededWidth : neededWidth - maxWidth;
 		optimization.popPipeliningFactor();
 
 		DFEVar needToGet = (neededWidth > maxWidth) | ((used === 0) & (need !== 0));
