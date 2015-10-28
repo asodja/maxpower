@@ -37,7 +37,7 @@ public abstract class MemInterface {
 					structType, numEntries, isDoubleBuffered,
 					baseAddressBursts);
 		} else if (memType == MemType.QDR) {
-			return new QDRInterface(owner, memName,
+			return new QdrInterface(owner, memName,
 					structType, numEntries, isDoubleBuffered,
 					baseAddressBursts);
 		} else if (memType == MemType.FMEM) {

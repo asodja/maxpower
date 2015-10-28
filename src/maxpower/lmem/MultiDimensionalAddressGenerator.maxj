@@ -1,0 +1,281 @@
+package maxpower.lmem;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Accumulator;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.LMemCommandStream;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Params;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.WrapMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
+import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
+import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+public class MultiDimensionalAddressGenerator extends Kernel {
+
+	private static final int latency = 3;//On multi-block case will output once every 4 cycles (this is as fast as the memory controller can handle, and allows for the latency of reading a ROM).
+
+	public static final String outputName       = "cmd";
+	public static final String numRepeatsName   = "numRepeats";
+	public static final String numBurstsName    = "numBursts";
+	public static final String startAddressName = "startAddress";
+	public static final String numBlocksName    = "numBlocks";
+
+	/**
+	 * A kernel that generates commands for reading or writing an N dimensional block from LMem.
+	 * This can be used as a replacement for the default address generators (linear, 3D blocking, etc).
+	 * </p>
+	 * There is no run cycle count to set, as it uses flush on trigger, but there are scalar inputs
+	 * and/or mapped ROMs to set to specify the size of the blocks to be read. Like the default
+	 * address generators, this will produce an interrupt when it is finished, which the CPU should
+	 * usually wait for.
+	 * </p>
+	 * The scalar inputs and mapped ROMs should be configured as follows:
+	 * <ul>
+	 * <li> numRepeats is the number of times you wish to repeat the same set of memory commands.
+	 * e.g if there are 3 blocks to read and you set numRepeats=2 then you will get 1,2,3,1,2,3. </li>
+	 * <li> numBlocks is the number of different blocks you want to read or write. If maxBlocks=1
+	 * then this scalar input doesn't exist. </li>
+	 * <li> startAddress is the address in bursts where the block begins. If maxBlocks is 1 then
+	 * this is a scalar input, otherwise it is a mapped ROM.</li>
+	 * <li> numBursts is the number of bursts to read linearly, i.e. the size of the fast dimension
+	 * for the current block. If maxBlocks is 1 then this is a scalar input, otherwise it is a mapped ROM.</li>
+	 * <li> sizeNd is size of the Nth dimension for N >= 2 for the current block. e.g. if you wish to read
+	 * an NxM block then numBursts is set to N/numElementsInBurst and size2d is set to M. If maxBlocks is 1
+	 * then these are scalar inputs, otherwise they are mapped ROMs.</li>
+	 * <li> skipNd is size of the jump we have to do in in order to in order to move in the Nth dimension
+	 * for N >= 2 for the current block. e.g. if you wish to read an NxM block from a KxL rectangle, then
+	 * skip2d is set to K/numElementsInBurst. If maxBlocks is 1 then these are scalar inputs, otherwise
+	 * they are mapped ROMs.</li>
+	 * </ul>
+	 * @param parameters KernelParameters for the kernel.
+	 * @param numDimensions The number of dimensions of the block we wish to read/write. The higher the
+	 * number, the more mapped ROMs or scalar inputs will be created for specifying the size in each dimension.
+	 * @param maxBlocks The maximum number of blocks to be read in a single action. If this is 1 then all mapped
+	 * ROMs become scalar inputs, otherwise this specifies the depth of the ROMs.
+	 */
+	public MultiDimensionalAddressGenerator(KernelParameters parameters, int numDimensions, int maxBlocks) {
+		super(parameters);
+		if (numDimensions < 1) {
+			throw new RuntimeException("Number of dimensions must be at least 1.");
+		}
+		if (maxBlocks < 1) {
+			throw new RuntimeException("Maximum number of blocks must be at least 1.");
+		}
+
+		DFEStruct cmd = LMemCommandStream.getLMemCommandDFEStructType().newInstance(this);
+		DFEType addressType = (DFEType)cmd["address"].getType();
+
+		DFEVar numRepeats = io.scalarInput(numRepeatsName, dfeUInt(32));
+		DFEVar numBlocks  = maxBlocks > 1
+		                  ? io.scalarInput(numBlocksName, dfeUInt(MathUtils.bitsToRepresent(maxBlocks)))
+		                  : null;
+
+		DFEVar prevBlockNum = maxBlocks > 1 ? numBlocks.getType().newInstance(this) : null;
+		DFEVar startAddress = scalarOrRom(startAddressName, prevBlockNum, addressType, maxBlocks);
+		DFEVar numBursts    = scalarOrRom(numBurstsName,    prevBlockNum, addressType, maxBlocks);
+
+		CounterChain chain = control.count.makeCounterChain();
+		//Repeat all the whole sequence of commands numRepeats times before creating interrupt.
+		chain.addCounter(numRepeats, 1);
+		//Add an interrupt to the command when all the counters wrap
+		DFEVar finalCmd = chain.getCurrentCounterWrap();
+
+		if (maxBlocks > 1) {
+			//If we have multiple blocks, then add a counter to address the ROMs.
+			DFEVar blockNum = chain.addCounter(numBlocks, 1);
+			finalCmd = andWrap(chain, finalCmd);
+			//Using stream offset to cope with the loop around the ROMs and counter chain.
+			prevBlockNum <== safeOffset(blockNum, -latency);
+		}
+
+		//Add an additional counter for all dimensions higher than 1 in reverse order.
+		for (int dim = numDimensions; dim > 1; dim--) {
+			DFEVar sizend = scalarOrRom(getSizeNdName(dim), prevBlockNum, addressType, maxBlocks);
+			DFEVar skipnd = scalarOrRom(getSkipNdName(dim), prevBlockNum, addressType, maxBlocks);
+			DFEVar posnd  = chain.addCounter(sizend, 1);
+			finalCmd = andWrap(chain, finalCmd);
+
+			//Using an accumulator to avoid using DPSs for calculating posnd * skipnd
+			Accumulator.Params config = Reductions.accumulator.makeAccumulatorConfig(addressType)
+				                                              .withClear(stream.offset(posnd === 0, 1))
+				                                              .withEnable(posnd !== safeOffset(posnd, -1) & posnd !== 0);
+			//Moving start address to the beginning of the current 1D strip.
+			startAddress += Reductions.accumulator.makeAccumulator(skipnd, config);
+		}
+
+		//Calculate the distance from start address in the 1D strip.
+		DFEVar offset = chain.addCounter(numBursts,   128);
+		finalCmd = andWrap(chain, finalCmd);
+
+		//All commands are 128 bursts until we reach the final command in our 1D strip.
+		DFEVar burstsLeft = (numBursts - offset).cast((DFEType)cmd["size"].getType());
+		DFEVar smallCmd   = chain.getCurrentCounterWrap();
+
+		//In the multi-block case we need to only output once every 4 cycles to cope with the loop latency.
+		DFEVar enableOutput = maxBlocks > 1
+		                    ? chain.addCounter(latency + 1, 1) === latency
+		                    : constant.var(true);
+
+		//Create output.
+		cmd["address"] = startAddress + offset;
+		cmd["size"]    = smallCmd ? burstsLeft : 128;
+		cmd["inc"]     = constant.var((DFEType)cmd["inc"].getType(),    1);
+		cmd["stream"]  = constant.var((DFEType)cmd["stream"].getType(), 1);
+		cmd["tag"]     = finalCmd & enableOutput;
+
+		LMemCommandStream.makeKernelOutput(outputName, enableOutput, cmd);
+
+		//Flush after we have sent out the final command
+		DFEVar finished = Reductions.streamHold(finalCmd, finalCmd);
+		optimization.pushPipeliningFactor(0.0);
+		DFEVar trigger = finished & ~finalCmd;
+		optimization.popPipeliningFactor();
+
+		flush.onTrigger(trigger);
+	}
+
+	//Avoid offsetting to before cycle 0.
+	private DFEVar safeOffset(DFEVar input, int offset) {
+		if (offset > 0) {
+			throw new RuntimeException("safeOffset is only for negative stream offsets.");
+		}
+		Params params = control.count.makeParams(MathUtils.bitsToRepresent(-offset))
+		                             .withMax(-offset)
+		                             .withWrapMode(WrapMode.STOP_AT_MAX);
+		DFEVar cycleCount = control.count.makeCounter(params).getCount();
+		return cycleCount < -offset ? 0 : stream.offset(input, offset);
+	}
+
+	//This ands in the wrap signal of the current counter. This is put in a method just to hide the pipelining factor.
+	private DFEVar andWrap(CounterChain chain, DFEVar wrap) {
+		DFEVar newWrap = chain.getCurrentCounterWrap();
+		optimization.pushPipeliningFactor(0.0);
+		DFEVar output = wrap & newWrap;
+		optimization.popPipeliningFactor();
+		return output;
+	}
+
+	//Create a scalar input if maxBlocks is 1, and a ROM otherwise.
+	private DFEVar scalarOrRom(String name, DFEVar address, DFEType type, int maxBlocks) {
+		return maxBlocks > 1 ? mem.romMapped(name, address, type, maxBlocks)
+						     : io.scalarInput(name, type);
+	}
+
+	/**
+	 * Adds kernel to manager and gets the command stream output.
+	 */
+	public static DFELink getCommandStream(MultiDimensionalAddressGenerator addressGenerator, CustomManager manager) {
+		KernelBlock kb = manager.addKernel(addressGenerator);
+		return kb.getOutput(outputName);
+	}
+
+	/**
+	 * Gets the name for the sizeNd ROM or scalar input for a given dimension.
+	 */
+	public static String getSizeNdName(int dimension) {
+		return "size"+dimension+"d";
+	}
+
+	/**
+	 * Gets the name for the skipNd ROM or scalar input for a given dimension.
+	 */
+	public static String getSkipNdName(int dimension) {
+		return "skip"+dimension+"d";
+	}
+
+	/**
+	 * Gets a stream from LMem that is controlled by the supplied address generator.
+	 */
+	public static DFELink addStreamFromOnCardMemory(String name, MultiDimensionalAddressGenerator addressGenerator, CustomManager manager) {
+		return manager.addStreamFromOnCardMemory(name, getCommandStream(addressGenerator, manager));
+	}
+
+	/**
+	 * Creates a stream to LMem that is controlled by the supplied address generator.
+	 */
+	public static DFELink addStreamToOnCardMemory(String name, MultiDimensionalAddressGenerator addressGenerator, CustomManager manager) {
+		return manager.addStreamToOnCardMemory(name, getCommandStream(addressGenerator, manager));
+	}
+
+	/**
+	 * Gets a stream that reads an N dimensional block from LMem.
+	 * This can be used as a replacement for the default address generators (linear, 3D blocking, etc).
+	 * </p>
+	 * There are scalar inputs and/or mapped ROMs to set to specify the size of the blocks to be read.
+	 * Like the default address generators, this will produce an interrupt when it is finished, which
+	 * the CPU should usually wait for.
+	 * </p>
+	 * The scalar inputs and mapped ROMs should be configured as follows:
+	 * <ul>
+	 * <li> numRepeats is the number of times you wish to repeat the same set of memory commands.
+	 * e.g if there are 3 blocks to read and you set numRepeats=2 then you will get 1,2,3,1,2,3. </li>
+	 * <li> numBlocks is the number of different blocks you want to read. If maxBlocks=1
+	 * then this scalar input doesn't exist. </li>
+	 * <li> startAddress is the address in bursts where the block begins. If maxBlocks is 1 then
+	 * this is a scalar input, otherwise it is a mapped ROM.</li>
+	 * <li> numBursts is the number of bursts to read linearly, i.e. the size of the fast dimension
+	 * for the current block. If maxBlocks is 1 then this is a scalar input, otherwise it is a mapped ROM.</li>
+	 * <li> sizeNd is size of the Nth dimension for N >= 2 for the current block. e.g. if you wish to read
+	 * an NxM block then numBursts is set to N/numElementsInBurst and size2d is set to M. If maxBlocks is 1
+	 * then these are scalar inputs, otherwise they are mapped ROMs.</li>
+	 * <li> skipNd is size of the jump we have to do in in order to in order to move in the Nth dimension
+	 * for N >= 2 for the current block. e.g. if you wish to read an NxM block from a KxL rectangle, then
+	 * skip2d is set to K/numElementsInBurst. If maxBlocks is 1 then these are scalar inputs, otherwise
+	 * they are mapped ROMs.</li>
+	 * </ul>
+	 * @param name The name for the memory stream.
+	 * @param manager The custom manager this is to be created in (this).
+	 * @param numDimensions The number of dimensions of the block we wish to read. The higher the
+	 * number, the more mapped ROMs or scalar inputs will be created for specifying the size in each dimension.
+	 * @param maxBlocks The maximum number of blocks to be read in a single action. If this is 1 then all mapped
+	 * ROMs become scalar inputs, otherwise this specifies the depth of the ROMs.
+	 */
+	public static DFELink addStreamFromOnCardMemory(String name, CustomManager manager, int numDimensions, int maxBlocks) {
+		MultiDimensionalAddressGenerator ag = new MultiDimensionalAddressGenerator(manager.makeKernelParameters(name+"CmdGen"), numDimensions, maxBlocks);
+		return addStreamFromOnCardMemory(name, ag, manager);
+	}
+
+	/**
+	 * Creates a stream that writes an N dimensional block to LMem.
+	 * This can be used as a replacement for the default address generators (linear, 3D blocking, etc).
+	 * </p>
+	 * There are scalar inputs and/or mapped ROMs to set to specify the size of the blocks to be written.
+	 * Like the default address generators, this will produce an interrupt when it is finished, which
+	 * the CPU should usually wait for.
+	 * </p>
+	 * The scalar inputs and mapped ROMs should be configured as follows:
+	 * <ul>
+	 * <li> numRepeats is the number of times you wish to repeat the same set of memory commands.
+	 * e.g if there are 3 blocks to write and you set numRepeats=2 then you will get 1,2,3,1,2,3. </li>
+	 * <li> numBlocks is the number of different blocks you want to write. If maxBlocks=1
+	 * then this scalar input doesn't exist. </li>
+	 * <li> startAddress is the address in bursts where the block begins. If maxBlocks is 1 then
+	 * this is a scalar input, otherwise it is a mapped ROM.</li>
+	 * <li> numBursts is the number of bursts to write linearly, i.e. the size of the fast dimension
+	 * for the current block. If maxBlocks is 1 then this is a scalar input, otherwise it is a mapped ROM.</li>
+	 * <li> sizeNd is size of the Nth dimension for N >= 2 for the current block. e.g. if you wish to write
+	 * an NxM block then numBursts is set to N/numElementsInBurst and size2d is set to M. If maxBlocks is 1
+	 * then these are scalar inputs, otherwise they are mapped ROMs.</li>
+	 * <li> skipNd is size of the jump we have to do in in order to in order to move in the Nth dimension
+	 * for N >= 2 for the current block. e.g. if you wish to write an NxM block into a KxL rectangle, then
+	 * skip2d is set to K/numElementsInBurst. If maxBlocks is 1 then these are scalar inputs, otherwise
+	 * they are mapped ROMs.</li>
+	 * </ul>
+	 * @param name The name for the memory stream.
+	 * @param manager The custom manager this is to be created in (this).
+	 * @param numDimensions The number of dimensions of the block we wish to write. The higher the
+	 * number, the more mapped ROMs or scalar inputs will be created for specifying the size in each dimension.
+	 * @param maxBlocks The maximum number of blocks to be written in a single action. If this is 1 then all mapped
+	 * ROMs become scalar inputs, otherwise this specifies the depth of the ROMs.
+	 */
+	public static DFELink addStreamToOnCardMemory(String name, CustomManager manager, int numDimensions, int maxBlocks) {
+		MultiDimensionalAddressGenerator ag = new MultiDimensionalAddressGenerator(manager.makeKernelParameters(name+"CmdGen"), numDimensions, maxBlocks);
+		return addStreamToOnCardMemory(name, ag, manager);
+	}
+}

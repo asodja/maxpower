@@ -18,13 +18,13 @@ A (non-exhaustive) list of the contents of the MaxPower library.
     - `BoxBuffer` - Buffer an N-dimensional stream of data in FMem and then read contiguous blocks out of it
     - `BoxBuffer1D` - Buffer a stream of data in FMem and read contiguous sections out of it
     - `ZeroLatencyMemory` - hide latency of FMem, allowing values to be read back on the next cycle
-  * `LargeStreamOffset` - large, negative stream offset backed by LMem to save FMem
-  * `TreeReduce` - reduce latency and save resources by reducing via a binary tree
+  - `LargeStreamOffset` - large, negative stream offset backed by LMem to save FMem
+  - `TreeReduce` - reduce latency and save resources by reducing via a binary tree
 * `lmem/`
-  * `addressgenerators/` - memory address generators
-  * `cpu_access/` - simplified access to LMem from CPU
-  * `superfifo/` - extremely deep FIFO utilising LMem when necessary
+  * `cpuaccess/` - simplified access to LMem from CPU
+  - `MultiDimensionalAddressGenerator` - memory address generator in N dimensions
 * `manager/`
+  * `superfifo/` - extremely deep FIFO utilising LMem when necessary
   - `RoundRobin` - round robin data between outputs
 * `network/`
   * `tcp/` - TCP framing (turn continuous TCP data into discrete frames)
