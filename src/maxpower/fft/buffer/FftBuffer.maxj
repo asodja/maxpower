@@ -13,42 +13,45 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 public class FftBuffer {
-	public static <T extends KernelObject<T>> List<T> buffer(List<T> input, DFEVar enable, int fftSize, int radix, int padding, int numPipes, int numOutputs, int parallelFft, boolean isLogBuffer) {
+
+	public static <T extends KernelObject<T>> List<T> buffer(List<T> input, DFEVar enable, int fftSize,
+			int radix, int numPipes, int numOutputs) {
 		KernelLib k = input[0].getKernel();
 		if (fftSize % (numPipes * numOutputs) != 0) {
 			throw new RuntimeException("fftSize must be divisible by both numPipes and numOutputs.");
 		}
-		int bufferDepth = (fftSize - padding) / numPipes;
+		int bufferDepth = fftSize / numPipes;
 
 		List<DFEVar> packedInput = packInput(input);
 		DFEVector<DFEVar> output;
 		final int height = bufferDepth / numOutputs / radix;
-		if (isLogBuffer && height > 0) {
+		if (height > 0) {
 			List<DFEVar> transposedInput = new ArrayList<DFEVar>(numPipes);
-			for (int i = 0; i < parallelFft; i++) {
-				ArrayList<DFEVar> slicedInput = new ArrayList<DFEVar>(numPipes / parallelFft);
-				for (int j = 0; j < packedInput.size() / parallelFft; j++) {
-					slicedInput.add(packedInput[j + i * packedInput.size() / parallelFft]);
-				}
-				transposedInput.addAll(transpose(slicedInput, numPipes / parallelFft, enable));
+			ArrayList<DFEVar> slicedInput = new ArrayList<DFEVar>(numPipes);
+			for (int j = 0; j < packedInput.size(); j++) {
+				slicedInput.add(packedInput[j]);
 			}
+			transposedInput.addAll(transpose(slicedInput, numPipes, enable));
 			//TODO: add shuffle for multiple FFT case (eg. dual radix 2 buffer)
 			DFEVector<DFEVar> packedData = DFEVectorType.newInstance(transposedInput);
 			DFEVectorType<DFEVar> packedType = packedData.getType();
 
-			Transposer transposeBuffer = new Transposer(k, packedData.pack(), radix, height, numOutputs, enable);
+			Transposer transposeBuffer = new Transposer(k, packedData.pack(), radix, height,
+					numOutputs, enable);
 			output = packedType.unpack(transposeBuffer.getOutput());
 		} else {
 			DFEVector<DFEVar> packedData = DFEVectorType.newInstance(packedInput);
 			DFEVectorType<DFEVar> packedType = packedData.getType();
 
-			Transposer transposeBuffer = new Transposer(k, packedData.pack(), bufferDepth / numOutputs, numOutputs, enable);
+			Transposer transposeBuffer = new Transposer(k, packedData.pack(), bufferDepth / numOutputs,
+					numOutputs, enable);
 			output = packedType.unpack(transposeBuffer.getOutput());
 		}
 
 		DFEVector<DFEVar> offsetOutput = k.stream.offset(output, fftSize / numPipes);
 
-		List<DFEVar> transposedOutput = transpose(offsetOutput.getElementsAsList(), numOutputs, k.stream.offset(enable, fftSize / numPipes));
+		List<DFEVar> transposedOutput = transpose(offsetOutput.getElementsAsList(), numOutputs,
+				k.stream.offset(enable, fftSize / numPipes));
 
 		return unpackOutput(transposedOutput, input[0].getType());
 	}
@@ -68,7 +71,8 @@ public class FftBuffer {
 			}
 			inputToMux.add(k.stream.offset(array, -i));
 		}
-		Params params = k.control.count.makeParams(MathUtils.bitsToAddress(input.size())).withMax(input.size()).withEnable(enable);
+		Params params = k.control.count.makeParams(MathUtils.bitsToAddress(input.size()))
+				.withMax(input.size()).withEnable(enable);
 		DFEVar  select = k.control.count.makeCounter(params).getCount();
 		final DFEVector<DFEVar> packedOutput = k.control.mux(select, inputToMux);
 
@@ -83,11 +87,13 @@ public class FftBuffer {
 		return packedInput;
 	}
 
-	private static <T extends KernelObject<T>> List<T>unpackOutput(DFEVector<DFEVar> packedOutput, KernelType<T> type) {
+	private static <T extends KernelObject<T>> List<T>unpackOutput(DFEVector<DFEVar> packedOutput,
+			KernelType<T> type) {
 		return unpackOutput(packedOutput.getElementsAsList(), type);
 	}
 
-	private static <T extends KernelObject<T>> List<T>unpackOutput(List<DFEVar> packedOutput, KernelType<T> type) {
+	private static <T extends KernelObject<T>> List<T>unpackOutput(List<DFEVar> packedOutput,
+			KernelType<T> type) {
 		List<T> output = new ArrayList<T>(packedOutput.size());
 		for (int i = 0; i < packedOutput.size(); i++) {
 			output.add(type.unpack(packedOutput[i]));

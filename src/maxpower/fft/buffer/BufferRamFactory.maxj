@@ -3,8 +3,6 @@ package maxpower.fft.buffer;
 import java.util.ArrayList;
 import java.util.List;
 
-import maxpower.fft.buffer.CyclicAddressFactory.CyclicAddress;
-
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.DualPortMemOutputs;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortMode;

@@ -19,8 +19,7 @@ public class PlatformUtils {
 
 		throw new MaxCompilerAPIError(
 				"Unable to say whether or not double buffering is required for '" +
-				kernel.getManager().getEngineParameters().getDFEModel() + "'"
-		);
+				kernel.getManager().getEngineParameters().getDFEModel() + "'" );
 	}
 
 	/**

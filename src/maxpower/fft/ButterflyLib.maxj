@@ -22,104 +22,13 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
  * and BRAMs (for the twiddle ROM).
  * This also means that the twiddle ROM needs to be 4 pipes wide and store the transpose of the
  * normal twiddle factors.
- * This is an optimisation for the most common use case (a 5*2^n FFT). The more general case is not yet implemented.
+ * This is an optimisation for the most common use case (a 5*2^n FFT). The more general case is
+ * not yet implemented.
  *
  * @author stephen
  *
  */
 public class ButterflyLib {
-	/**
-	 *
-	 * @param in
-	 * @param twiddleType
-	 * @return
-	 */
-
-	// This is a 5 pipe radix-5 butterfly that doesn't apply any twiddles (that is done in the next function)
-	public static List<DFEVector<DFEComplex>> radix5butterfly(List<DFEVector<DFEComplex>> in, DFEType twiddleType) {
-		if (in.size() != 5) {
-			throw new RuntimeException("radix5butterfly expects 5 pipes of input.");
-		}
-		KernelLib k = in[0].getKernel();
-
-		final DFEComplex C1 = k.constant.cplx(twiddleType, Math.sqrt(5)/4,          0.0);
-		final DFEComplex C2 = k.constant.cplx(twiddleType, -Math.sin(2*Math.PI/5),  0.0);
-		final DFEComplex C3 = k.constant.cplx(twiddleType, -Math.sin(2*Math.PI/10), 0.0);
-
-		DFEVector<DFEComplex> t1 = in[1] + in[4];
-		DFEVector<DFEComplex> t3 = in[1] - in[4];
-		DFEVector<DFEComplex> t2 = in[2] + in[3];
-		DFEVector<DFEComplex> t4 = in[2] - in[3];
-		DFEVector<DFEComplex> t5 = t1 + t2;
-		k.optimization.pushEnableBitGrowth(true);
-		DFEVector<DFEComplex> t6 = (C1 * (t1 - t2)).cast(t1.getType());
-		k.optimization.popEnableBitGrowth();
-		DFEVector<DFEComplex> t7 = in[0] - 0.25 * t5;
-		DFEVector<DFEComplex> y1 = t7 + t6;
-		DFEVector<DFEComplex> y2 = t7 - t6;
-		k.optimization.pushEnableBitGrowth(true);
-		DFEVector<DFEComplex> y3 = (C3 * t3 - C2 * t4).cast(t3.getType());
-		DFEVector<DFEComplex> y4 = (C2 * t3 + C3 * t4).cast(t3.getType());
-		k.optimization.popEnableBitGrowth();
-
-		final List<DFEVector<DFEComplex>> out = new ArrayList<DFEVector<DFEComplex>>(5);
-		out.add(in[0] + t5);
-		out.add(y1 + k.constant.cplx(0,1) * y4);
-		out.add(y2 + k.constant.cplx(0,1) * y3);
-		out.add(y2 - k.constant.cplx(0,1) * y3);
-		out.add(y1 - k.constant.cplx(0,1) * y4);
-		return out;
-	}
-
-	/**
-	 * Apply twiddle factors corresponding to radix-5 to radix-512 commutation.
-	 * We apply twiddle factors exp(-j*2*pi*n*k/N) to four pipes, in the
-	 * following sequence, where the values in the table are n*k:
-	 *
-	 *     A        B        C        D
-	 * ------------------------------------
-	 *    0*0    128*0    256*0    384*0
-	 *    1*0    129*0    257*0    385*0
-	 *     .        .        .        .
-	 *     .        .        .        .
-	 *  127*0    255*0    383*0    511*0
-	 *    0*1    128*1    256*1    384*1
-	 *    1*1    129*1    257*1    385*1
-	 *     .        .        .        .
-	 *     .        .        .        .
-	 *    0*2    128*2    256*2    384*2
-	 *     .        .        .        .
-	 *     .        .        .        .
-	 *    0*3    128*3    256*3    384*3
-	 *     .        .        .        .
-	 *     .        .        .        .
-	 *    0*4    128*4    256*4    384*4
-	 *     .        .        .        .
-	 *     .        .        .        .
-	 *  127*4    255*4    383*4    511*4
-	 *
-	 *  TODO: the first 5th of the pattern are all equal to unity, so we could
-	 *  eliminate some BRAM at the expense of muxes
-	 */
-	//This applies the radix-5 twiddles with 4 pipes (this is done after the transpose from 5 pipes back to 4 pipes)
-	public static List<DFEVector<DFEComplex>> radix5twiddle(List<DFEVector<DFEComplex>> input, List<DFEComplex> twiddles) {
-		if (input.size() != 4) {
-			throw new RuntimeException("radix5twiddle expects 4 pipes of input. (twiddles should be applied after transpose back to 4 pipes)");
-		}
-		if (twiddles.size() != 4) {
-			throw new RuntimeException("radix5twiddle requires 4 twiddle factors.");
-		}
-		KernelLib k = input[0].getKernel();
-		final List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(4);
-
-		for (int i = 0; i < 4; i++) {
-			k.optimization.pushEnableBitGrowth(true);
-			output.add((input[i] * twiddles[i]).cast(input[i].getType()));
-			k.optimization.popEnableBitGrowth();
-		}
-		return output;
-	}
-
 
 	public static List<DFEVector<DFEComplex>> radix4butterfly(List<DFEVector<DFEComplex>> input, List<DFEComplex> twiddles) {
 		if (input.size() != 4) {

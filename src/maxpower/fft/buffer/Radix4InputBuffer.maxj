@@ -33,27 +33,27 @@ public class Radix4InputBuffer extends KernelLib {
 	private static final int m_numBuffers = m_radix / m_valuesPerBuffer;
 
 	private final DFEVar  m_writeBuffer;
-	private final int    m_numCycles;
-	private final int    m_numDataSets;
-	private final int    m_numDataPoints;
-	private final int    m_exponent;
-	private final int    m_bufferSize;
+	private final int     m_numCycles;
+	private final int     m_numDataSets;
+	private final int     m_numDataPoints;
+	private final int     m_exponent;
+	private final int     m_bufferSize;
 	private final DFEType m_addressType;
 
 	/** List containing address pattern. */
 	private final List<DFEVar> m_address;
 	/** Boolean indication of buffer inversion. */
-	private final DFEVar m_invertBuffer;
+	private final DFEVar m_doInvertBuffer;
 
 	/**
 	 * Constructor to create {@link Radix4InputBuffer transpose input buffer}.
 	 *
 	 * @param owner {@link KernelLib Kernel} object.
-	 * @param enable Indication of whether to start addressing.
+	 * @param numPoints number of points to work on
 	 */
-	public Radix4InputBuffer(final KernelLib owner, int numPoints, int padding) {
+	public Radix4InputBuffer(final KernelLib owner, int numPoints) {
 		super(owner);
-		m_numDataPoints = numPoints + padding;
+		m_numDataPoints = numPoints;
 
 		m_exponent = MathUtils.bitsToAddress(m_numDataPoints);
 		m_bufferSize = (int)Math.pow(2, m_exponent) / m_numBuffers;
@@ -96,7 +96,11 @@ public class Radix4InputBuffer extends KernelLib {
 			m_writeBuffer = null;
 		}
 		m_address = calculateAddressPattern(dataCount, cycleCount);
-		m_invertBuffer = calculateInvertPattern(dataCount);
+		if (m_numBuffers > 1) {
+			m_doInvertBuffer = calculateIfBufferShouldBeInverted(dataCount);
+		} else {
+			m_doInvertBuffer = null;
+		}
 	}
 
 	/**
@@ -110,9 +114,8 @@ public class Radix4InputBuffer extends KernelLib {
 		final BufferRamFactory<DFEVector<DFEComplex>, DFEVector<DFEComplex>> buffer =
 			new BufferRamFactory<DFEVector<DFEComplex>, DFEVector<DFEComplex>>(m_bufferSize, constant.var(true), m_writeBuffer);
 
-		for (int i = 0; i < m_numBuffers; i++) {
-			final int index = i;
-			final int invertIndex = m_numBuffers - i - 1;
+		for (int index = 0; index < m_numBuffers; index++) {
+			final int invertIndex = m_numBuffers - index - 1;
 
 			final List<DFEVar> addr;
 			final List<DFEVector<DFEComplex>> ramIn;
@@ -120,14 +123,14 @@ public class Radix4InputBuffer extends KernelLib {
 			if (m_numBuffers > 1) {
 				addr  = new ArrayList<DFEVar>(2);
 				ramIn = new ArrayList<DFEVector<DFEComplex>>(2);
-				addr.add(m_invertBuffer ?
+				addr.add(m_doInvertBuffer ?
 						m_address.get(invertIndex) : m_address.get(index));
-				addr.add(m_invertBuffer ?
+				addr.add(m_doInvertBuffer ?
 						m_address.get(m_radix - invertIndex - 1) :
 						m_address.get(m_radix - index - 1));
-				ramIn.add(m_invertBuffer ?
+				ramIn.add(m_doInvertBuffer ?
 						input.get(invertIndex) : input.get(index));
-				ramIn.add(m_invertBuffer ?
+				ramIn.add(m_doInvertBuffer ?
 						input.get(m_radix - invertIndex - 1) :
 						input.get(m_radix - index - 1));
 			} else { // Single buffer - no need for inversion.
@@ -144,9 +147,9 @@ public class Radix4InputBuffer extends KernelLib {
 			for (int i = 0; i < m_numBuffers; i++) {
 				final int index = (i * m_valuesPerBuffer) + i;
 				final int invertIndex = (index + m_valuesPerBuffer) % m_radix;
-				shuffledRamOut.add(m_invertBuffer ?
+				shuffledRamOut.add(m_doInvertBuffer ?
 						ramOut.get(invertIndex) : ramOut.get(index));
-				shuffledRamOut.add(m_invertBuffer ?
+				shuffledRamOut.add(m_doInvertBuffer ?
 						ramOut.get((invertIndex + m_valuesPerBuffer) % m_radix) :
 						ramOut.get((index + m_valuesPerBuffer) % m_radix));
 			}
@@ -204,7 +207,7 @@ public class Radix4InputBuffer extends KernelLib {
 	 * @param dataCount Current data set count.
 	 * @return Indication of whether buffers should be inverted.
 	 */
-	private DFEVar calculateInvertPattern(final DFEVar dataCount) {
+	private DFEVar calculateIfBufferShouldBeInverted(final DFEVar dataCount) {
 		DFEVar invert = constant.var(false);
 		// Check we have enough buffers to need an inversion.
 		if (m_numBuffers > 1) {
