@@ -286,7 +286,9 @@ public class FloatingPointMultiAdder {
 			KernelLib owner = a.getKernel();
 
 			owner.optimization.pushEnableBitGrowth(true);
-			DFEType rValType = (aVal + bVal).getType(); // this addition will be optimized away
+			DFEVar unusedSum = aVal + bVal;
+			unusedSum.setReportOnUnused(false);
+			DFEType rValType = (unusedSum).getType(); // this addition will be optimized away
 			owner.optimization.popEnableBitGrowth();
 
 			SMIO sm = owner.addStateMachine("CondAddSubSM"+i++, new SM(owner, rValType.getTotalBits()));

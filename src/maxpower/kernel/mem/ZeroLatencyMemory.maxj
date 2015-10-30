@@ -85,6 +85,7 @@ public class ZeroLatencyMemory<T extends KernelObject<T>> extends KernelLib impl
 		// default is to read from RAM
 		List<T> values = new ArrayList<T>();
 		values.add(ram.read(address));
+		values[0].setReportOnUnused(false);
 
 		for (int n = 1; n <= LOOP_LATENCY; ++n)
 			values.add(stream.offset(dataIn, -n));
@@ -124,7 +125,8 @@ public class ZeroLatencyMemory<T extends KernelObject<T>> extends KernelLib impl
 		// Slight hack. This is equivalent to ram.write(address_, data_, enable_),
 		// as we ignore the return value. However, Memory defaults to READ_FIRST,
 		// which won't work on Altera if we also call mapToCPU(), so change that here.
-		ram.port(address_, data_, enable_, RamWriteMode.WRITE_FIRST);
+		T unused = ram.port(address_, data_, enable_, RamWriteMode.WRITE_FIRST);
+		unused.setReportOnUnused(false);
 
 		writeAddress <== address;
 		writeEnable  <== enable;
