@@ -1,7 +1,9 @@
 package maxpower.kernel;
 
+import java.util.Arrays;
 import java.util.List;
 
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
@@ -11,8 +13,15 @@ public class BitUtils {
 	/**
 	 * @return <tt>true</tt> if any bits in any value are '1'.
 	 */
+	public static DFEVar any(KernelObject<?>... vals) {
+		return any(Arrays.asList(vals));
+	}
+
+	/**
+	 * @return <tt>true</tt> if any bits in any value are '1'.
+	 */
 	public static DFEVar any(List<KernelObject<?>> vals) {
-		return any(concat(vals));
+		return any(Bitops.concat(vals));
 	}
 
 	/**
@@ -25,8 +34,15 @@ public class BitUtils {
 	/**
 	 * @return <tt>true</tt> if all bits in all values are '1'.
 	 */
+	public static DFEVar all(KernelObject<?>... vals) {
+		return all(Arrays.asList(vals));
+	}
+
+	/**
+	 * @return <tt>true</tt> if all bits in all values are '1'.
+	 */
 	public static DFEVar all(List<KernelObject<?>> vals) {
-		return all(concat(vals));
+		return all(Bitops.concat(vals));
 	}
 
 	/**
@@ -37,13 +53,5 @@ public class BitUtils {
 		DFEVar allOnes = val.getKernel().constant.var(DFETypeFactory.dfeRawBits(numBits), Bits.allOnes(numBits));
 
 		return (val.pack() === allOnes);
-	}
-
-	private static DFEVar concat(List<KernelObject<?>> vals) {
-		DFEVar result = null;
-		for (KernelObject<?> val : vals) {
-			result = (result == null) ? val.pack() : (result # val.pack());
-		}
-		return result;
 	}
 }
