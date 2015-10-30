@@ -76,12 +76,12 @@ public class AspectChangeIO extends KernelLib {
 	 * @param name The name of the output port (how it is referred to in the manager).
 	 * @param outputType The type of the data you wish to output.
 	 * @param enable The enable signal for the output (when the data is valid and you wish to output it).
-	 * @param flush Output data on this cycle, adding padding if required.
+	 * @param flushNow Output data on this cycle, adding padding if required.
 	 * @return A stream that one can connect their output data to.
 	 */
-	public <T extends KernelObject<T>> T output(String name, KernelType<T> outputType, DFEVar enable, DFEVar flush) {
+	public <T extends KernelObject<T>> T output(String name, KernelType<T> outputType, DFEVar enable, DFEVar flushNow) {
 		T output = outputType.newInstance(this);
-		output(name, output, enable, flush);
+		output(name, output, enable, flushNow);
 		return output;
 	}
 
@@ -112,7 +112,7 @@ public class AspectChangeIO extends KernelLib {
 	 * @param name The name of the output port (how it is referred to in the manager).
 	 * @param output The data you wish to output.
 	 * @param enable The enable signal for the output (when the data is valid and you wish to output it).
-	 * @param flush Output data on this cycle, adding padding if required.
+	 * @param flushNow Output data on this cycle, adding padding if required.
 	 */
 	public <T extends KernelObject<T>> void output(String name, T output, DFEVar enable, DFEVar flushNow) {
 		if (m_pushToManager && flushNow != null) {
@@ -177,7 +177,7 @@ public class AspectChangeIO extends KernelLib {
 	 * @param name The name of the input port (how it is referred to in the manager).
 	 * @param inputType The type of the input data.
 	 * @param enable The enable signal for the input (when you are ready to receive more data).
-	 * @param flush Get new input data from the manager on this cycle, removing padding if required.
+	 * @param flushNow Get new input data from the manager on this cycle, removing padding if required.
 	 * @return The input data you asked for.
 	 */
 	public <T extends KernelObject<T>> T input(String name, KernelType<T> inputType, DFEVar enable, DFEVar flushNow) {
