@@ -10,6 +10,8 @@ package maxpower.network.tcp.framer;
 
 import java.util.List;
 
+import maxpower.manager.superfifo.SuperFifo;
+import maxpower.manager.superfifo.SuperFifo.FifoIO;
 import maxpower.network.tcp.framer.proto.ProtoSpecFactory;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
@@ -19,8 +21,6 @@ import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
 import com.maxeler.maxcompiler.v2.managers.custom.ManagerClock;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.StateMachineBlock;
 import com.maxeler.maxcompiler.v2.statemachine.manager._ManagerStateMachine;
-import com.maxeler.networking.statemachines.superfifo.SuperFIFO;
-import com.maxeler.networking.statemachines.superfifo.SuperFIFO.FifoIO;
 import com.maxeler.networking.v1.managers.NetworkManager;
 import com.maxeler.networking.v1.managers.netlib.NetworkConnection;
 import com.maxeler.networking.v1.managers.netlib.TCPStreamManyConnections;
@@ -72,7 +72,7 @@ public class TcpFramer {
 		framer.getInput(TcpFramerSM.INPUT_RX_CONN_STATE_EVENTS) <== stateEventStream;
 
 		if (hasSuperFifo(fifoDepth)) {
-			FifoIO superFifo = SuperFIFO.create(owner, name, slotType, fifoDepth, lmemOrganizer);
+			FifoIO superFifo = SuperFifo.create(owner, name, slotType, fifoDepth, lmemOrganizer);
 			superFifo.write <== framer.getOutput(TcpFramerSM.OUTPUT_RX_EVENTS);
 			framer.getInput(TcpFramerSM.INPUT_RX_EVENTS) <== superFifo.read;
 		} else {
@@ -101,7 +101,7 @@ public class TcpFramer {
 
 	public static long getMemoryUsageBursts(DFEManager manager, long fifoDepth) {
 		if (hasSuperFifo(fifoDepth))
-			return SuperFIFO.getMemoryUsageBursts(manager, fifoDepth, slotType);
+			return SuperFifo.getMemoryUsageBursts(manager, fifoDepth, slotType);
 		else
 			return 0;
 	}
