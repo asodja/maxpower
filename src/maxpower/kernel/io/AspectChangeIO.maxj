@@ -40,7 +40,7 @@ public class AspectChangeIO extends KernelLib {
 	 * @param portWidth The width of the port (e.g. 128 for PCIe, or 1536 for LMem).
 	 * @param pushMultiplesToManager Push the simple multiple aspect changes into the manager (may help timing on wide ports).
 	 */
-    public AspectChangeIO(KernelLib owner, int portWidth, boolean pushMultiplesToManager) {
+	public AspectChangeIO(KernelLib owner, int portWidth, boolean pushMultiplesToManager) {
 		super(owner);
 		m_portWidth = portWidth;
 		m_pushToManager = pushMultiplesToManager;
