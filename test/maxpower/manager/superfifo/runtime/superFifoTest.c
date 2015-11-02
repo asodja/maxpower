@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
 	max_reset_engine(engine);
 
 	/*
-	 * SLiC is so shit, that if we don't run an empty action, no debug outputs will be generated.
+	 * If we don't run an empty action, no debug outputs will be generated.
 	 */
 	max_actions_t *action = max_actions_init(maxfile, NULL);
 	max_run(engine, action);
