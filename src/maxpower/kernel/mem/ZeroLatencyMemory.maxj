@@ -122,6 +122,7 @@ public class ZeroLatencyMemory<T extends KernelObject<T>> extends KernelLib impl
 		DFEVar enable_  = stream.offset(enable , -LOOP_LATENCY) & (cycle >= LOOP_LATENCY);
 		T      data_    = stream.offset(data   , -LOOP_LATENCY);
 
+		// TODO: remove hack once this has been fixed in the compiler
 		// Slight hack. This is equivalent to ram.write(address_, data_, enable_),
 		// as we ignore the return value. However, Memory defaults to READ_FIRST,
 		// which won't work on Altera if we also call mapToCPU(), so change that here.

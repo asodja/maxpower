@@ -1,6 +1,5 @@
 package maxpower.manager.superfifo;
 
-import maxpower.manager.superfifo.SuperFifo;
 import maxpower.manager.superfifo.SuperFifo.FifoIO;
 
 import com.maxeler.maxcompiler.v2.build.EngineParameters;
@@ -111,7 +110,7 @@ class SuperFifoTest extends NetworkManager {
 	}
 
 	public static void main(String [] args) {
-		boolean isSim = false;
+		boolean isSim = true;
 		SuperFifoTest m = new SuperFifoTest(isSim);
 		m.build();
 	}
