@@ -82,7 +82,7 @@ public class MultiDimensionalAddressGenerator extends Kernel {
 
 		CounterChain chain = control.count.makeCounterChain();
 		//Repeat all the whole sequence of commands numRepeats times before creating interrupt.
-		chain.addCounter(numRepeats, 1);
+		chain.addCounter(numRepeats, 1).setReportOnUnused(false);
 		//Add an interrupt to the command when all the counters wrap
 		DFEVar finalCmd = chain.getCurrentCounterWrap();
 

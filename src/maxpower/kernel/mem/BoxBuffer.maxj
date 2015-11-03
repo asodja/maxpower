@@ -169,6 +169,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 		ConstDivModResult[] addressDivMod = new ConstDivModResult[m_numDimensions];
 		addressDivMod[m_numDimensions - 1] = ConstDenominator.divMod(address[m_numDimensions - 1], 1);//We don't calculate DivMod of fast dim address, as we will do something special with that later.
+		addressDivMod[m_numDimensions - 1].getRemainder().setReportOnUnused(false);
 		for (int i = m_numDimensions - 2; i >= 0; i--) {
 			addressDivMod[i] = ConstDenominator.divMod(address[i], m_numOutputItems[i]);
 		}
@@ -268,6 +269,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		m_hasRead = true;
 		ConstDivModResult[] addressDivMod = new ConstDivModResult[m_numDimensions];
 		addressDivMod[m_numDimensions - 1] = ConstDenominator.divMod(address[m_numDimensions - 1], 1);//We don't calculate DivMod of fast dim address, as we will do something special with that later.
+		addressDivMod[m_numDimensions - 1].getRemainder().setReportOnUnused(false);
 		for (int i = m_numDimensions - 2; i >= 0; i--) {
 			addressDivMod[i] = ConstDenominator.divMod(address[i], m_numOutputItems[i]);
 		}
@@ -360,7 +362,9 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			int chunks = m_1dParams.numCols / gcd;
 
 			DFEVector<DFEVector<T>> chunkedInputData = as2dDFEVector(input, gcd, chunks);
-			DFEVar rotate = ConstDenominator.divMod(ramWriteCol, gcd, MathUtils.bitsToAddress(chunks)).getQuotient();
+			ConstDivModResult rotateDivMod = ConstDenominator.divMod(ramWriteCol, gcd, MathUtils.bitsToAddress(chunks));
+			rotateDivMod.getRemainder().setReportOnUnused(false);
+			DFEVar rotate = rotateDivMod.getQuotient();
 			output = asSingleDFEVector(chunkedInputData.rotateElementsLeft(rotate));
 		} else {
 			output = input;

@@ -32,6 +32,7 @@ public class AspectChangeIO extends KernelLib {
 		super(owner);
 		m_portWidth = portWidth;
 		m_pushToManager = false;
+		stream.suppressOffsetVectorWarnings();
 	}
 
 	/**

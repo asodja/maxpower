@@ -1,6 +1,5 @@
 package maxpower.manager.superfifo;
 
-import maxpower.manager.superfifo.SuperFifo;
 import maxpower.manager.superfifo.SuperFifo.FifoIO;
 
 import com.maxeler.maxcompiler.v2.build.EngineParameters;

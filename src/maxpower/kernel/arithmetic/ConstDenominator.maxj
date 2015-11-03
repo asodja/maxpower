@@ -73,6 +73,7 @@ public class ConstDenominator {
 		}
 
 		ConstDivModResult result = internalDivide(lhs);
+		result.getRemainder().setReportOnUnused(false);
 		return result.getQuotient().cast(lhsType);
 	}
 

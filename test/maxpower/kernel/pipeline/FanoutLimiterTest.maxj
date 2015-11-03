@@ -41,6 +41,8 @@ public class FanoutLimiterTest {
 		}
 		mgr.setInputData("input", input);
 		mgr.setKernelCycles(size);
+		mgr.setScalarInput("io_input_force_disabled", 0);//avoiding warning message that only appears with HDL sim.
+		mgr.setScalarInput("io_output_force_disabled", 0);
 		mgr.runTest();
 
 		mgr.dumpOutput();

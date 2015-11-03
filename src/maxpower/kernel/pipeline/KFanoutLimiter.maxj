@@ -46,6 +46,7 @@ public class KFanoutLimiter<T extends KernelObject<T>> extends KernelLib impleme
 			ArrayList<T> next = new ArrayList<T>(current.size()*max);
 			for(T h : current) {
 				T v = optimization.pipeline(h);
+				v.setReportOnUnused(false);//The unused ones will be optimised away
 				for(int f = 0; f < max; ++f) {
 					next.add(v);
 				}

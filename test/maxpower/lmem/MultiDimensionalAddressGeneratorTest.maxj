@@ -14,8 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
-import maxpower.lmem.MultiDimensionalAddressGenerator;
-
 import org.junit.Test;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.LMemCommandStream;
@@ -25,14 +23,14 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 public class MultiDimensionalAddressGeneratorTest {
 
 	private class MDAGTestData {
-		final double[] startAddress;
-		final List<double[]> numBursts;
-		final List<double[]> skipNd;
-		final int[] address;
-		final int[] size;
-		final int[] tag;
+		public final double[] startAddress;
+		public final List<double[]> numBursts;
+		public final List<double[]> skipNd;
+		private final int[] address;
+		private final int[] size;
+		private final int[] tag;
 
-		MDAGTestData(int numDimensions, int numRepeats, int numBlocks) {
+		public MDAGTestData(int numDimensions, int numRepeats, int numBlocks) {
 			startAddress = new double[numBlocks];
 			numBursts    = new ArrayList<double[]>(numDimensions);
 			skipNd       = new ArrayList<double[]>(numDimensions - 1);
@@ -80,7 +78,7 @@ public class MultiDimensionalAddressGeneratorTest {
 			}
 		}
 
-		int fillAddresses(int startAdd, int idx, int dimension, int numDimensions, int blockNum) {
+		private int fillAddresses(int startAdd, int idx, int dimension, int numDimensions, int blockNum) {
 			if (dimension == 0) {
 				for (int k = 0; k < MathUtils.ceilDivide((int)numBursts[0][blockNum], 128); k++) {
 					address[idx] = startAdd + k * 128;
@@ -95,7 +93,7 @@ public class MultiDimensionalAddressGeneratorTest {
 			return idx;
 		}
 
-		boolean checkOutput(List<Map<String,Double>> output) {
+		public boolean checkOutput(List<Map<String,Double>> output) {
 			if (output.size() != address.length) {
 				System.out.println("Output is the wrong length. Expected " + address.length + ", got " + output.size());
 				return false;
