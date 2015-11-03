@@ -7,6 +7,12 @@ maxpower.kernel.arithmetic
 maxpower.kernel.io
 maxpower.kernel.mem
 maxpower.kernel.pipeline
+maxpower.lmem
+maxpower.lmem.cpuaccess
 maxpower.manager
+maxpower.manager.superfifo
+maxpower.network.tcp.framer
+maxpower.network.tcp.framer.debug
+maxpower.network.tcp.framer.proto
 maxpower.ops
 maxpower.statemachine.collections
