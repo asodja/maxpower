@@ -110,7 +110,7 @@ class SuperFifoTest extends NetworkManager {
 	}
 
 	public static void main(String [] args) {
-		boolean isSim = true;
+		boolean isSim = false;
 		SuperFifoTest m = new SuperFifoTest(isSim);
 		m.build();
 	}
