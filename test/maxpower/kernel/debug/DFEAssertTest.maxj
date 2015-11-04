@@ -1,0 +1,48 @@
+package maxpower.kernel.debug;
+
+import static org.junit.Assert.assertTrue;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.managers.standard._SimulationManager;
+
+public class DFEAssertTest {
+
+	private static final int length = 100;
+
+	private class AssertTestKernel extends Kernel {
+		protected AssertTestKernel(KernelParameters parameters) {
+			super(parameters);
+			DFEType type = dfeUInt(32);
+			DFEVar input = io.input("input", type);
+			DFEAssert.simAssert(input > length / 2, "Input too large! %d > " + (length / 2) + "\n", input);
+			io.output("output", input, input.getType());
+		}
+	}
+
+	@Test
+	public void testAssertion() {
+		double[] input = new double[length];
+		for (int i = 0; i < length; i++) {
+			input[i] = i;
+		}
+
+		_SimulationManager m = new _SimulationManager("DFEAssertTest");
+		m.setKernel(new AssertTestKernel(m.makeKernelParameters()));
+		m.setKernelCycles(length);
+		m.setInputData("input", input);
+		m.build();
+		boolean excpetionThrown = false;
+		try {
+			m.run();
+        } catch (Exception e) {
+        	excpetionThrown = true;
+        }
+
+		assertTrue(excpetionThrown);
+	}
+}
