@@ -34,7 +34,7 @@ public class VariableWidthIO extends KernelLib {
 	 */
 	public <T extends KernelObjectVectorizable<T,?>> DFEVector<T> input(String name, DFEVectorType<T> wideInputType, DFEVar numToRead) {
 		int maxWidth = wideInputType.getSize();
-		int shiftBits = MathUtils.bitsToRepresent(maxWidth - 1);
+		int shiftBits = MathUtils.bitsToAddress(maxWidth);
 		DFEType doubleShiftType = dfeUInt(shiftBits + 1);
 		DFEVectorType<T> doubleWideInputType = new DFEVectorType<T>(wideInputType.getContainedType(), maxWidth*2);
 		DFEVar isFirstTick = control.count.pulse(1);
@@ -53,6 +53,9 @@ public class VariableWidthIO extends KernelLib {
 		DFEVector<T> twoCycleInput = doubleWideInputType.unpack(wideInput.pack() # stream.offset(wideInput, -1).pack());
 		DFEVar shift = (used === 0) ? maxWidth : used;
 		DFEVector<T> twoCycleShifted = twoCycleInput.shiftElementsRight(shift);
+		for (int i = maxWidth; i < 2*maxWidth; i++) {
+			twoCycleShifted[i].setReportOnUnused(false);
+		}
 
 		DFEVector<T> output = wideInputType.newInstance(this);
 		for (int i = 0; i < maxWidth; i++) {
