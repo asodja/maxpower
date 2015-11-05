@@ -20,6 +20,15 @@ import com.maxeler.photon.types.HWTypeFactory;
 
 public class DFEAssert {
 
+	/**
+	 * Will halt the simulation when condition is true and print out a message.
+	 *
+	 * @param condition A stream of type dfeBool() indicating whether to halt simulation on a given kernel tick.
+	 * @param format A format string for error message.
+	 * @param args Arguments referenced by the format specifiers in the format string. If the condition does not
+	 * depend on these, then there is a chance that the printf node will be scheduled after the assert node and
+	 * the printf will not appear before the exception is thrown.
+	 */
 	public static void simAssert(DFEVar condition, String format, Object... args) {
 		Kernel kernel = condition.getKernel();
 		kernel.debug.simPrintf(condition, format, args);
