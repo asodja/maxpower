@@ -31,16 +31,18 @@ public class DFEAssert {
 	 */
 	public static void simAssert(DFEVar condition, String format, Object... args) {
 		Kernel kernel = condition.getKernel();
-		kernel.debug.simPrintf(condition, format, args);
-		PhotonDesignData container = _Kernel.getPhotonDesignData(kernel);
-		container.pushNodeVisible(false);
-//		kernel.pushScheduleAtEnd(true);
-		//TODO: when pushScheduleAtEnd is fixed in the compiler, use it instead of the following line
-		DFEVar pipelinedCondition = kernel.optimization.pipeline(condition);
-		NodeAssert n = new NodeAssert(container);
-		n.connectInput("condition", _KernelBaseTypes.toImp(pipelinedCondition));
-//		kernel.popScheduleAtEnd();
-		container.popNodeVisible();
+		if (kernel.getManager().isTargetSimulation()) {
+			kernel.debug.simPrintf(condition, format, args);
+			PhotonDesignData container = _Kernel.getPhotonDesignData(kernel);
+			container.pushNodeVisible(false);
+//			kernel.pushScheduleAtEnd(true);
+			//TODO: when pushScheduleAtEnd is fixed in the compiler (ticket #7492), use it instead of the following line
+			DFEVar pipelinedCondition = kernel.optimization.pipeline(condition);
+			NodeAssert n = new NodeAssert(container);
+			n.connectInput("condition", _KernelBaseTypes.toImp(pipelinedCondition));
+//			kernel.popScheduleAtEnd();
+			container.popNodeVisible();
+		}
 	}
 
 	private static class NodeAssert extends NodeStateful {
@@ -90,6 +92,6 @@ public class DFEAssert {
 		public String getUserFriendlyDescription() { return "assert"; }
 
 		@Override
-        protected void assignOutputTypes() {}
+		protected void assignOutputTypes() {}
 	}
 }
