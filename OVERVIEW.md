@@ -11,6 +11,8 @@ A (non-exhaustive) list of the contents of the MaxPower library.
     - `ConstDenominator` - efficient division and modulus division by small, constant denominators
     - `FloatingPointAccumulator` - several floating point accumulator implementations
     - `FloatingPointMultiAdder` - save resources when adding three or more floating point numbers
+  * `debug/`
+    - `DFEAssert` - A method to throw an exception and halt a simulated DFE
   * `io/`
     - `AspectChangeIO` - save manager FIFOs by performing aspect change inside Kernels
     - `ZeroLatencyInput` - hide latency of input, allowing for data dependent control, e.g. run-length decoding

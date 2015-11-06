@@ -1,0 +1,97 @@
+package maxpower.kernel.debug;
+
+import java.util.EnumSet;
+import java.util.Set;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler._Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base._KernelBaseTypes;
+import com.maxeler.maxdc.Entity;
+import com.maxeler.photon.core.PhotonDesignData;
+import com.maxeler.photon.core.PhotonException;
+import com.maxeler.photon.core.VarTyped;
+import com.maxeler.photon.maxcompilersim.CodeBlock;
+import com.maxeler.photon.maxcompilersim.CodeContext;
+import com.maxeler.photon.maxcompilersim.ExpInput;
+import com.maxeler.photon.maxcompilersim.StatementIf;
+import com.maxeler.photon.nodes.NodeStateful;
+import com.maxeler.photon.types.HWTypeFactory;
+
+public class DFEAssert {
+
+	/**
+	 * Will halt the simulation when condition is true and print out a message.
+	 *
+	 * @param condition A stream of type dfeBool() indicating whether to halt simulation on a given kernel tick.
+	 * @param format A format string for error message.
+	 * @param args Arguments referenced by the format specifiers in the format string. If the condition does not
+	 * depend on these, then there is a chance that the printf node will be scheduled after the assert node and
+	 * the printf will not appear before the exception is thrown.
+	 */
+	public static void simAssert(DFEVar condition, String format, Object... args) {
+		Kernel kernel = condition.getKernel();
+		if (kernel.getManager().isTargetSimulation()) {
+			kernel.debug.simPrintf(condition, format, args);
+			PhotonDesignData container = _Kernel.getPhotonDesignData(kernel);
+			container.pushNodeVisible(false);
+//			kernel.pushScheduleAtEnd(true);
+			//TODO: when pushScheduleAtEnd is fixed in the compiler (ticket #7492), use it instead of the following line
+			DFEVar pipelinedCondition = kernel.optimization.pipeline(condition);
+			NodeAssert n = new NodeAssert(container);
+			n.connectInput("condition", _KernelBaseTypes.toImp(pipelinedCondition));
+//			kernel.popScheduleAtEnd();
+			container.popNodeVisible();
+		}
+	}
+
+	private static class NodeAssert extends NodeStateful {
+		public NodeAssert(PhotonDesignData container) {
+			super(container);
+			addInput("condition");
+			assertInputType("condition", HWTypeFactory.hwBool(), false);
+			setPinToGraph(true);
+		}
+
+		@Override
+		public VarTyped<NodeAssert> connectOutput(String name) {
+			return _connectOutput(this, name);
+		}
+
+		@Override
+		public Set<ControlSignal> getControlSignals() {
+			return EnumSet.of(ControlSignal.CLOCK, ControlSignal.CLOCK_ENABLE);
+		}
+
+		@Override
+		public Entity make() {
+			throw new PhotonException(this, "Can't synthesize an assert node in hardware");
+		}
+
+		@Override
+		public void makeSimCode(CodeContext ctx) {
+			ExpInput condition = ctx.getInputVar("condition");
+
+			CodeBlock cbe = ctx.getExecuteBlock();
+
+			StatementIf ifstmt = cbe.ifClause(condition, false);
+			ifstmt.getThen().exception("DFEAssert failed.");
+		}
+
+		@Override
+		public boolean getDisableDuringFlush() {
+			return true;
+		}
+
+		@Override
+		public String toString() {
+			return "DFEAssert";
+		}
+
+		@Override
+		public String getUserFriendlyDescription() { return "assert"; }
+
+		@Override
+		protected void assignOutputTypes() {}
+	}
+}
