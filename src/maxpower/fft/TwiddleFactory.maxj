@@ -5,7 +5,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
@@ -14,6 +13,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.utils.Bits;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 /**
  * Provides twiddle factors for an FFT. Twiddle factors are calculated for
@@ -96,6 +96,51 @@ public class TwiddleFactory extends KernelLib {
 	}
 
 	/**
+	 * Generate the twiddles for the dual radix-2 butterfly stage.
+	 *
+	 * @param dataCount Current dataset count.
+	 * @return {@link List} of twiddle factors.
+	 */
+	public List<DFEComplex> r2dualTwiddles(final DFEVar dataCount) {
+		final KernelLib owner = dataCount.getKernel();
+		final List<DFEComplex> twiddles = new ArrayList<DFEComplex>(FftFactory4pipes.NUM_FFT_PIPES);
+
+		final int fftSize = (int) Math.pow(2, m_exponent * 2 + 1);
+		final int numTwiddles = fftSize / 4;
+		final DFEType addressType = KernelLib.dfeUInt(MathUtils.bitsToAddress(numTwiddles));
+		final Bits[] twiddleFactors = new Bits[numTwiddles];
+		final DFEComplexType twiddleType = new DFEComplexType(m_twiddleType);
+		final double precision;
+		if (m_twiddleType instanceof DFEFix) {
+			precision = 1.0 / (1 << ((DFEFix) m_twiddleType).getFractionBits());
+		} else {
+			precision = 0.0;
+		}
+
+		for (int i = 0; i < numTwiddles; i++) {
+			final double angle = -i * 2 * Math.PI / fftSize;
+			final double real  = Math.cos(angle);
+			final double img   = Math.sin(angle);
+
+			final double realTw = (Math.abs(real) > precision) ? real : 0.0;
+			final double imgTw  = (Math.abs(img)  > precision) ? img  : 0.0;
+
+			final Bits twiddle = twiddleType.encodeConstant(realTw, imgTw);
+			twiddleFactors[i] = twiddle;
+		}
+
+		final DFEComplex twiddle = owner.mem.rom(dataCount.cast(addressType), twiddleType,
+				twiddleFactors);
+
+		twiddles.add(twiddle);
+		DFEComplex secondTwiddle = DFEComplexType.newInstance(owner, twiddle.getImaginary(),
+				-twiddle.getReal());
+		twiddles.add(secondTwiddle);
+
+		return twiddles;
+	}
+
+	/**
 	 * Creates ROMs containing the {@link DFEComplex complex} twiddle factors
 	 * for each phase.
 	 *
@@ -104,7 +149,7 @@ public class TwiddleFactory extends KernelLib {
 	private Map<Integer, Twiddles> createTwiddleROMsForAllPhases() {
 		final Map<Integer, Twiddles> twiddleRoms =
 				new HashMap<Integer, Twiddles>(m_phases);
-		// Phase 0 doesnt have twiddles; butterfly starts from phase 1
+		// Phase 0 doesn't have twiddles; butterfly starts from phase 1
 		for (int phase = 1; phase <= m_phases; phase++) {
 			final Twiddles twiddles = new Twiddles(phase, m_enable);
 			twiddleRoms.put(phase, twiddles);
@@ -130,11 +175,11 @@ public class TwiddleFactory extends KernelLib {
 
 		for (int i = 0; i < m_N; i++) {
 			final double angle = -i * 2 * Math.PI / m_N;
-			double realTw = Math.cos(angle);
-			double imgTw = Math.sin(angle);
+			final double real  = Math.cos(angle);
+			final double img   = Math.sin(angle);
 
-			realTw = Math.abs(realTw)>twiddleTypePrecision ? realTw : 0.0;
-			imgTw = Math.abs(imgTw)>twiddleTypePrecision ? imgTw : 0.0;
+			final double realTw = (Math.abs(real) > twiddleTypePrecision) ? real : 0.0;
+			final double imgTw  = (Math.abs(img)  > twiddleTypePrecision) ? img  : 0.0;
 
 			// store twiddle factor as Java complex and HW Bits
 			twiddleFactorsBits[i] = m_twiddleComplexType.encodeConstant(realTw, imgTw);
@@ -224,8 +269,7 @@ public class TwiddleFactory extends KernelLib {
 				// Create the phase ROMs.
 				for (int i = 0; i < m_noTwiddles; i++) {
 					final DFEComplex twiddle =
-							mem.rom(dataCount.cast(dfeUInt(m_tBits)),
-									m_twiddleComplexType, twiddleBits[i]);
+							mem.rom(dataCount.cast(dfeUInt(m_tBits)), m_twiddleComplexType, twiddleBits[i]);
 					twiddles.add(twiddle);
 				}
 
