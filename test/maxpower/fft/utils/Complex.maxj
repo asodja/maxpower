@@ -1,0 +1,79 @@
+package maxpower.fft.utils;
+
+import com.maxeler.maxcompiler.v2.errors.MaxConstantEncodingException;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+
+public class Complex  implements Cloneable {
+
+	private final double real;
+	private final double imag;
+
+	public Complex() {
+		this(0.0, 0.0);
+	}
+
+	public Complex(double real) {
+		this(real, 0.0);
+	}
+
+	public Complex(double real, double imag) {
+		this.real = real;
+		this.imag = imag;
+	}
+
+	public Complex sub(Complex number) {
+		return new Complex(real - number.real, imag - number.imag);
+	}
+
+	public Complex add(Complex number) {
+		return new Complex(real + number.real, imag + number.imag);
+	}
+
+	public double real() {
+		return real;
+	}
+
+	public double imag() {
+		return imag;
+	}
+
+	@Override
+	public String toString() {
+		if (imag < 0) {
+			return real + " - " + Math.abs(imag) + " * i";
+		} else {
+			return real + " + " + imag + " * i";
+		}
+	}
+
+    public Bits encode(DFEComplexType type) {
+    	Bits result;
+		try {
+			result = type.encodeConstant(this.real(), this.imag());
+		} catch (MaxConstantEncodingException e) {
+			if (e.isCompleteFixedPointUnderflow()) {
+				double real = this.real();
+				double imag = this.imag();
+				if (real < Math.pow(2.0, -((DFEFix)type.getRealType()).getFractionBits())) {
+					real = 0.0;
+				}
+				if (imag < Math.pow(2.0, -((DFEFix)type.getImaginaryType()).getFractionBits())) {
+					imag = 0.0;
+				}
+				result = type.encodeConstant(real, imag);
+			} else {
+				throw new MaxConstantEncodingException(
+					e.isOverflow(),
+					e.isUnderflow(),
+					e.isCompleteFixedPointUnderflow(),
+					e.isInvalidOp(),
+					e.isNegativeToUnsigned(),
+					e.getRelativeError(),
+					null);
+			}
+		}
+		return result;
+    }
+}
