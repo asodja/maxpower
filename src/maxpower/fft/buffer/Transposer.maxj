@@ -67,9 +67,14 @@ public class Transposer extends KernelLib {
 	 **/
 	public Transposer(KernelLib owner, DFEVar in, int width, int height, int depth, DFEVar enable) {
 		super(owner);
-		if (height == 1) {
+		final int N = width * height * depth;;
+		final boolean isDoubleBuffered;
 
-			final int N = width * depth;
+		DFEVar writeAddress;
+		DFEVar readAddress;
+
+		if (height == 1) {
+			isDoubleBuffered = false;
 
 			final int Nm = N - 1;
 			final int nBits = MathUtils.bitsToAddress(N);
@@ -79,25 +84,39 @@ public class Transposer extends KernelLib {
 			DFEVar i = control.count.makeCounter(control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
 			DFEVar mul = dfeUInt(nBits).newInstance(this);
 			optimization.pushEnableBitGrowth(true);
-			DFEVar address = i === Nm ? Nm : KernelMath.modulo(i*mul, Nm).cast(dfeUInt(nBits));
+			DFEVar address = i === Nm ? Nm : KernelMath.modulo(i * mul, Nm).cast(dfeUInt(nBits));
 			DFEVar nextMul = mul*dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(this, width);
 			optimization.popEnableBitGrowth();
 			nextMul = KernelMath.modulo(nextMul, Nm).cast(dfeUInt(nBits));
 			OffsetExpr offset = stream.makeOffsetAutoLoop("transposerOffset" + offset_counter++, 0, N);
-			mul <== control.mux(isFirst#i===0, stream.offset(mul, -1), stream.offset(nextMul, -offset), constant.var(1), constant.var(1));
-			if(owner.getManager().getEngineParameters().getDFEModel().getBoardCapabilities().getMajorVersion()==4){
-				RamPortParams<DFEVar> readPort  = mem.makeRamPortParams(RamPortMode.READ_ONLY,  address, in.getType());
-				RamPortParams<DFEVar> writePort = mem.makeRamPortParams(RamPortMode.WRITE_ONLY, address, in).withWriteEnable(enable);
-				DualPortMemOutputs<DFEVar> ram = mem.ramDualPort(N, RamWriteMode.READ_FIRST, readPort, writePort);
-				output = ram.getOutputA();
-				getManager().logInfo("Depth of RAM in Transposer = " + N);
-			} else {
-				output = mem.ram(N, RamWriteMode.READ_FIRST, mem.makeRamPortParams(RamPortMode.READ_WRITE, address, in).withWriteEnable(enable));
-				getManager().logInfo("Depth of RAM in Transposer (xilinx) = " + N);
-			}
+			mul <== control.mux(isFirst#(i===0), stream.offset(mul, -1), stream.offset(nextMul, -offset), constant.var(1), constant.var(1));
+
+			writeAddress = address;
+			readAddress = address;
+
+			getManager().logInfo("Depth of RAM in Transposer = " + N);
+		} else if (width == depth) {
+			isDoubleBuffered = false;
+
+			DFEType addressType = dfeUInt(MathUtils.bitsToAddress(N));
+
+			CounterChain readCounter = control.count.makeCounterChain(enable);
+
+			DFEVar changePattern = readCounter.addCounter(2,      1);
+			DFEVar slow          = readCounter.addCounter(width,  1).cast(addressType);
+			DFEVar medium        = readCounter.addCounter(height, 1).cast(addressType);
+			DFEVar fast          = readCounter.addCounter(depth,  1).cast(addressType);
+
+			DFEVar cycleCounter = control.count.simpleCounter(MathUtils.bitsToAddress(N), N);
+
+			DFEVar address = changePattern === 0 ? cycleCounter :
+					fast * width * height + medium * width + slow;
+
+			writeAddress = address;
+			readAddress = address;
 		} else {
 			// double buffered implementation
-			final int N = width * height * depth;
+			isDoubleBuffered = true;
 
 			DFEType addressType = dfeUInt(MathUtils.bitsToAddress(2 * N));
 			CounterChain readCounter = control.count.makeCounterChain(enable);
@@ -108,18 +127,20 @@ public class Transposer extends KernelLib {
 			DFEVar medium = readCounter.addCounter(height, 1).cast(addressType);
 			DFEVar fast   = readCounter.addCounter(depth,  1).cast(addressType);
 
-			DFEVar readAddress  = fast * width * height + medium * width + slow;
-			DFEVar writeAddress = writeCounter.addCounter(N, 1).cast(addressType);
+			readAddress  = fast * width * height + medium * width + slow;
+			writeAddress = writeCounter.addCounter(N, 1).cast(addressType);
 
 			writeAddress = rdBuff ? writeAddress    : writeAddress + N;
 			readAddress  = rdBuff ? readAddress + N : readAddress;
-
-			RamPortParams<DFEVar> writePort   = mem.makeRamPortParams(RamPortMode.WRITE_ONLY, writeAddress, in).withWriteEnable(enable);
-			RamPortParams<DFEVar> readPort    = mem.makeRamPortParams(RamPortMode.READ_ONLY,  readAddress,  in.getType());
-			DualPortMemOutputs<DFEVar> buffer = mem.ramDualPort(2 * N, RamWriteMode.READ_FIRST, writePort, readPort);
-
-			output = buffer.getOutputB();
 		}
+
+		final int ramSize = isDoubleBuffered ? 2 * N : N;
+
+		RamPortParams<DFEVar> writePort   = mem.makeRamPortParams(RamPortMode.WRITE_ONLY, writeAddress, in).withWriteEnable(enable);
+		RamPortParams<DFEVar> readPort    = mem.makeRamPortParams(RamPortMode.READ_ONLY,  readAddress,  in.getType());
+		DualPortMemOutputs<DFEVar> buffer = mem.ramDualPort(ramSize, RamWriteMode.READ_FIRST, writePort, readPort);
+
+		output = buffer.getOutputB();
 	}
 
 	public DFEVar getOutput() {
