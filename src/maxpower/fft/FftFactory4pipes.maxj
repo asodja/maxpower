@@ -14,7 +14,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 /**
- * KernelLib for a mixed-radix implementation of a size 2^N or 5*2^N FFT.
+ * KernelLib for a mixed-radix implementation of a size 2^N.
  *
  * This factory uses cyclic addressing in order to process multiple inputs at
  * a time (number dependent on radix), and will output continuously (after an
@@ -85,7 +85,7 @@ public class FftFactory4pipes extends KernelLib {
 		 */
 		if (m_radix2phases == 1) {
 			m_mixedBuffer    = new MixedRadixBuffer(m_exponent, constant.var(true));
-			m_r2Twiddles     = TwiddleLib.r2Twiddles(m_mixedBuffer.getDataCount(), twiddleType, (int)Math.pow(2, m_exponent));
+			m_r2Twiddles	 = m_twiddleFactory.r2dualTwiddles(m_mixedBuffer.getDataCount());
 		} else {
 			m_mixedBuffer    = null;
 			m_r2Twiddles     = null;
@@ -124,7 +124,6 @@ public class FftFactory4pipes extends KernelLib {
 		rdx4input = m_r4InputBuffer.transpose(input);
 
 		List<DFEVector<DFEComplex>> fftOut;
-		// Start with the dual radix 2 stage (if needed).
 		if (m_radix2phases == 1) {
 			fftOut = ButterflyLib.radix2DualButterfly(rdx4input, m_r2Twiddles);
 			fftOut = m_mixedBuffer.transpose(fftOut);
@@ -136,7 +135,13 @@ public class FftFactory4pipes extends KernelLib {
 		}
 
 		for (int phase = 1; phase <= m_radix4phases; phase++) {
+			//debug.simPrintf("Start Radix 4; Phase: %d\n", constant.var(dfeUInt(32), phase));
 			final List<DFEComplex> twiddles = m_twiddleFactory.getTwiddles(phase);
+
+			/*for (int i = 0; i < 3; i++) {
+				debug.simPrintf("Real: %f Imag: %f * i\n", twiddles[i].getReal(), twiddles[i].getImaginary());
+				debug.simPrintf("Real: %f Imag: %f * i\n", newtwiddles[i].getReal(), newtwiddles[i].getImaginary());
+			}*/
 
 			fftOut = ButterflyLib.radix4butterfly(fftOut, twiddles);
 

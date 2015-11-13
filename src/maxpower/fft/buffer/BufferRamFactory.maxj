@@ -15,25 +15,20 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 public class BufferRamFactory<T extends KernelObject<S>, S> extends KernelLib {
 	/** Enable processing. */
 	private final DFEVar m_enable;
-	/** Which buffer we are writing to (null if not double buffering). */
+	/** Which buffer we are writing to. */
 	private final DFEVar m_writeBuffer;
+	/** Which buffer we are reading from. */
 	private final DFEVar m_readBuffer;
 	/** Size of each buffer. */
 	private final int m_bufferSize;
-	/** Requires double buffering **/
-	private final boolean m_isDoubleBuffered;
+
 
 	public BufferRamFactory(int bufferSize, DFEVar enable, DFEVar writeBuffer) {
 		super(enable.getKernel());
 		m_enable 		= enable;
 		m_writeBuffer 	= writeBuffer;
-		m_readBuffer 	= writeBuffer == null ? null : ~writeBuffer;
+		m_readBuffer 	= writeBuffer = ~writeBuffer;
 		m_bufferSize 	= bufferSize;
-		m_isDoubleBuffered = PlatformUtils.isDoubleBufferingRequired(this);
-		if (m_isDoubleBuffered && m_writeBuffer == null) {
-			throw new RuntimeException("FftBuffer must be double buffered on Altera, as dual port read first RAMs are not supported.\n" +
-								"Therefore, writeBuffer must not be null.");
-		}
 	}
 
 	/**
@@ -54,46 +49,31 @@ public class BufferRamFactory<T extends KernelObject<S>, S> extends KernelLib {
 		final KernelType<S> typeB = in[1].getType();
 		final List<S> output = new ArrayList<S>(2);
 
-		if (m_isDoubleBuffered) {
-			final RamPortParams<DFEVar> portA0 = mem.makeRamPortParams(
-					RamPortMode.READ_WRITE, addr[0], in[0].pack())
-					.withWriteEnable(m_enable & m_writeBuffer);
+		final RamPortParams<DFEVar> portA0 = mem.makeRamPortParams(
+				RamPortMode.READ_WRITE, addr[0], in[0].pack())
+				.withWriteEnable(m_enable & m_writeBuffer);
 
-			final RamPortParams<DFEVar> portB0 = mem.makeRamPortParams(
-					RamPortMode.READ_WRITE, addr[1], in[1].pack())
-					.withWriteEnable(m_enable & m_writeBuffer);
+		final RamPortParams<DFEVar> portB0 = mem.makeRamPortParams(
+				RamPortMode.READ_WRITE, addr[1], in[1].pack())
+				.withWriteEnable(m_enable & m_writeBuffer);
 
-			final RamPortParams<DFEVar> portA1 = mem.makeRamPortParams(
-					RamPortMode.READ_WRITE, addr[0], in[0].pack())
-					.withWriteEnable(m_enable & m_readBuffer);
+		final RamPortParams<DFEVar> portA1 = mem.makeRamPortParams(
+				RamPortMode.READ_WRITE, addr[0], in[0].pack())
+				.withWriteEnable(m_enable & m_readBuffer);
 
-			final RamPortParams<DFEVar> portB1 = mem.makeRamPortParams(
-					RamPortMode.READ_WRITE, addr[1], in[1].pack())
-					.withWriteEnable(m_enable & m_readBuffer);
+		final RamPortParams<DFEVar> portB1 = mem.makeRamPortParams(
+				RamPortMode.READ_WRITE, addr[1], in[1].pack())
+				.withWriteEnable(m_enable & m_readBuffer);
 
-			final DualPortMemOutputs<DFEVar> ram0 = mem.ramDualPort(
-					m_bufferSize, RamWriteMode.WRITE_FIRST, portA0, portB0);
+		final DualPortMemOutputs<DFEVar> ram0 = mem.ramDualPort(
+				m_bufferSize, RamWriteMode.WRITE_FIRST, portA0, portB0);
 
-			final DualPortMemOutputs<DFEVar> ram1 = mem.ramDualPort(
-					m_bufferSize, RamWriteMode.WRITE_FIRST, portA1, portB1);
+		final DualPortMemOutputs<DFEVar> ram1 = mem.ramDualPort(
+				m_bufferSize, RamWriteMode.WRITE_FIRST, portA1, portB1);
 
-			output.add(typeA.unpack(m_readBuffer ? ram0.getOutputA() : ram1.getOutputA()));
-			output.add(typeB.unpack(m_readBuffer ? ram0.getOutputB() : ram1.getOutputB()));
-		} else {
-			final RamPortParams<DFEVar> portA0 = mem.makeRamPortParams(
-					RamPortMode.READ_WRITE, addr[0], in[0].pack())
-					.withWriteEnable(m_enable);
+		output.add(typeA.unpack(m_readBuffer ? ram0.getOutputA() : ram1.getOutputA()));
+		output.add(typeB.unpack(m_readBuffer ? ram0.getOutputB() : ram1.getOutputB()));
 
-			final RamPortParams<DFEVar> portB0 = mem.makeRamPortParams(
-					RamPortMode.READ_WRITE, addr[1], in[1].pack())
-					.withWriteEnable(m_enable);
-
-			final DualPortMemOutputs<DFEVar> ram0 = mem.ramDualPort(
-					m_bufferSize, RamWriteMode.READ_FIRST, portA0, portB0);
-
-			output.add(typeA.unpack(ram0.getOutputA()));
-			output.add(typeB.unpack(ram0.getOutputB()));
-		}
 		return output;
 	}
 

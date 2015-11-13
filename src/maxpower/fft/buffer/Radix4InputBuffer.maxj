@@ -27,23 +27,32 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 public class Radix4InputBuffer extends KernelLib {
 	private static final boolean m_debug_watches = false;
 
+	/** Radix of FFT. */
 	private static final int m_radix = Radix.RADIX_4.getRadix();
+	/** Binary shift to convert exponent of radix to binary. */
 	private static final int m_radixShift = Radix.RADIX_4.getBinaryShift();
 	private static final int m_valuesPerBuffer = 2;
+	/** Number of buffers. */
 	private static final int m_numBuffers = m_radix / m_valuesPerBuffer;
 
-	private final DFEVar  m_writeBuffer;
-	private final int     m_numCycles;
+	/** Exponent of 2 (i.e. N = 2 ^ exponent). */
+	private final int m_exponent;
+
+	/** Number of data sets. */
 	private final int     m_numDataSets;
+	private final int     m_numCycles;
 	private final int     m_numDataPoints;
-	private final int     m_exponent;
-	private final int     m_bufferSize;
+
+	private final DFEVar  m_writeBuffer;
+	/** {@link DFEType HW type} for addresses. */
 	private final DFEType m_addressType;
 
 	/** List containing address pattern. */
 	private final List<DFEVar> m_address;
 	/** Boolean indication of buffer inversion. */
 	private final DFEVar m_doInvertBuffer;
+	/** Size of each buffer. */
+	private final int m_bufferSize;
 
 	/**
 	 * Constructor to create {@link Radix4InputBuffer transpose input buffer}.
@@ -86,15 +95,12 @@ public class Radix4InputBuffer extends KernelLib {
 		final DFEVar dataCount = dataCounter.getCount();
 		final DFEVar cycleCount = cycleCounter.getCount();
 
-		if (PlatformUtils.isDoubleBufferingRequired(this)) {
-			final Counter bufferCounter = control.count.makeCounter(
-					control.count.makeParams(1)
-							.withEnable(dataCounter.getWrap()));
+		final Counter bufferCounter = control.count.makeCounter(
+				control.count.makeParams(1)
+						.withEnable(dataCounter.getWrap()));
 
-			m_writeBuffer = bufferCounter.getCount() === 0;
-		} else {
-			m_writeBuffer = null;
-		}
+		m_writeBuffer = bufferCounter.getCount() === 0;
+
 		m_address = calculateAddressPattern(dataCount, cycleCount);
 		if (m_numBuffers > 1) {
 			m_doInvertBuffer = calculateIfBufferShouldBeInverted(dataCount);
@@ -158,7 +164,6 @@ public class Radix4InputBuffer extends KernelLib {
 		}
 
 		final List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(4);
-//		int offset = m_numDataPoints / 4 * shuffledRamOut[0].getNElements(); // Multiply by numPipes to compensate for the way KMultiPipe does offsets
 		int offset = m_numDataPoints / 4;
 		for (int i = 0; i < 4; i++) {
 			output.add(stream.offset(shuffledRamOut[i], offset));

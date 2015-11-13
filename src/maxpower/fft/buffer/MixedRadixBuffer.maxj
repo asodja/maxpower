@@ -38,11 +38,11 @@ public class MixedRadixBuffer extends KernelLib {
 	private final int m_exponent;
 
 	/** Number of bits to represent FFT values (i.e. N = 1 << N_BITS). */
-	private final int m_noBits;
+	private final int m_numBits;
 	/** Number of bits to represent data sets. */
-	private final int m_noDataSetBits;
+	private final int m_numDataSetBits;
 	/** Number of data sets. */
-	private final int m_noDataSets;
+	private final int m_numDataSets;
 	/** Number of values per buffer. */
 	private final int m_valuesPerBuffer;
 	/** Number of cycles - always 3 for mixed radix. */
@@ -59,7 +59,7 @@ public class MixedRadixBuffer extends KernelLib {
 	/** List containing address pattern. */
 	private final List<DFEVar> m_address;
 	/** Boolean indication of buffer inversion. */
-	private final DFEVar m_invertBuffer;
+	private final DFEVar m_doInvertBuffer;
 	/** Size of each buffer. */
 	private final int m_bufferSize;
 	/** Current cycle count. */
@@ -79,29 +79,25 @@ public class MixedRadixBuffer extends KernelLib {
 		m_exponent = exponent;
 		m_enable = Reductions.streamHold(constant.var(true), startAddressing);
 
-		m_noBits = m_exponent;
-		m_noDataSetBits = m_noBits - m_radixShift;
-		m_noDataSets = 1 << m_noDataSetBits;
-		m_outputOffset = m_noDataSets;
+		m_numBits = m_exponent;
+		m_numDataSetBits = m_numBits - m_radixShift;
+		m_numDataSets = 1 << m_numDataSetBits;
+		m_outputOffset = m_numDataSets;
 		m_valuesPerBuffer = m_radix / m_numBuffers;
-		m_bufferSize = m_valuesPerBuffer << m_noDataSetBits;
+		m_bufferSize = m_valuesPerBuffer << m_numDataSetBits;
 		m_addressType = dfeUInt(MathUtils.bitsToAddress(m_bufferSize));
 
 		final CounterChain chain = control.count.makeCounterChainMoreBits(m_enable);
 		m_cycleCount = chain.addCounter(NO_CYCLES, 1);
-		m_dataCount = chain.addCounter(m_noDataSets, 1);
+		m_dataCount = chain.addCounter(m_numDataSets, 1);
 
-		if (PlatformUtils.isDoubleBufferingRequired(this)) {
-			final Counter bufferCounter = control.count.makeCounter(
-					control.count.makeParams(1)
-							.withEnable(chain.getCurrentCounterWrap()));
-			m_writeBuffer = bufferCounter.getCount() === 0;
-		} else {
-			m_writeBuffer = null;
-		}
+		final Counter bufferCounter = control.count.makeCounter(
+				control.count.makeParams(1)
+						.withEnable(chain.getCurrentCounterWrap()));
+		m_writeBuffer = bufferCounter.getCount() === 0;
 
 		m_address = calculateAddressPattern();
-		m_invertBuffer = calculateInvertPattern();
+		m_doInvertBuffer = calculateInvertPattern();
 	}
 
 	/**
@@ -136,16 +132,16 @@ public class MixedRadixBuffer extends KernelLib {
 
 			if (m_numBuffers > 1) {
 				addr = new ArrayList<DFEVar>(2);
-				addr.add(m_invertBuffer ?
+				addr.add(m_doInvertBuffer ?
 						m_address.get(invertIndex) : m_address.get(index));
-				addr.add(m_invertBuffer ?
+				addr.add(m_doInvertBuffer ?
 						m_address.get(m_radix - invertIndex - 1) :
 						m_address.get(m_radix - index - 1));
 
 				ramIn = new ArrayList<DFEVector<DFEComplex>>(2);
-				ramIn.add(m_invertBuffer ?
+				ramIn.add(m_doInvertBuffer ?
 						input.get(invertIndex) : input.get(index));
-				ramIn.add(m_invertBuffer ?
+				ramIn.add(m_doInvertBuffer ?
 						input.get(m_radix - invertIndex - 1) :
 						input.get(m_radix - index - 1));
 			} else { // Single buffer - no need for inversion.
@@ -165,9 +161,9 @@ public class MixedRadixBuffer extends KernelLib {
 			for (int i = 0; i < m_numBuffers; i++) {
 				final int index = (i * m_valuesPerBuffer) + i;
 				final int invertIndex = (index + m_valuesPerBuffer) % m_radix;
-				output.add(m_invertBuffer ?
+				output.add(m_doInvertBuffer ?
 						ramOut.get(invertIndex) : ramOut.get(index));
-				output.add(m_invertBuffer ?
+				output.add(m_doInvertBuffer ?
 						ramOut.get((invertIndex + m_valuesPerBuffer) % m_radix) :
 						ramOut.get((index + m_valuesPerBuffer) % m_radix));
 			}
@@ -183,11 +179,11 @@ public class MixedRadixBuffer extends KernelLib {
 	 */
 	private List<DFEVar> calculateAddressPattern() {
 		final List<DFEVar> addresses = new ArrayList<DFEVar>(m_radix);
-		final DFEType valueType = dfeUInt(m_noBits);
+		final DFEType valueType = dfeUInt(m_numBits);
 		for (int i = 0; i < m_radix; i++) {
 			// First calculate position in stream.
 			final DFEVar position = m_dataCount.cast(valueType)
-					+ (i << m_noDataSetBits);
+					+ (i << m_numDataSetBits);
 			// Next cycle the buffer location if required.
 			final DFEVar value = cyclePosition(position);
 			final DFEVar address = value.slice(0, m_addressType.getTotalBits())
@@ -211,7 +207,7 @@ public class MixedRadixBuffer extends KernelLib {
 		final DFEVar invert;
 		// Check we have enough buffers to need an inversion.
 		if (m_numBuffers > 1) {
-			invert = m_dataCount.slice(m_noDataSetBits - 1);
+			invert = m_dataCount.slice(m_numDataSetBits - 1);
 		} else {
 			invert = constant.var(false);
 		}
@@ -226,7 +222,7 @@ public class MixedRadixBuffer extends KernelLib {
 	 */
 	private DFEVar cyclePosition(final DFEVar position) {
 		final DFEType positionType = position.getType();
-		final int rotateBitStart = m_noBits - NO_CYCLES;
+		final int rotateBitStart = m_numBits - NO_CYCLES;
 
 		final DFEVar rotateBits = position.slice(rotateBitStart, NO_CYCLES);
 		final DFEVar rotate = (rotateBits >> m_cycleCount)
