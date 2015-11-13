@@ -2,6 +2,7 @@ package maxpower.kernel.io;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
@@ -63,4 +64,64 @@ public class VariableWidthIO extends KernelLib {
 		}
 		return output;
 	}
+
+	/**
+	 * Create an output which will accumulate a variable amount of input data each cycle and output it through a fixed width io port.
+	 * @param name The name of the output as referenced in the manager
+	 * @param wideData A DFEVector of incoming data, with valid data at the beginning
+	 * @param numToRead The amount of valid data this cycle
+	 */
+	public <T extends KernelObjectVectorizable<T,?>> void output(String name, DFEVector<T> wideData, DFEVar numToWrite) {
+
+		stream.suppressOffsetVectorWarnings();
+		//debug.simPrintf("%g\n",wideData[0]);
+
+		DFEVectorType<T> wideDataType = wideData.getType();
+		int maxWidth = wideDataType.getSize();
+		int shiftBits = MathUtils.bitsToAddress(maxWidth);
+		DFEType doubleShiftType = dfeUInt(shiftBits + 1);
+		KernelType<T> dataType  = wideDataType.getContainedType();
+		int dataTypeBits = dataType.getTotalBits();
+		DFEVectorType<T> doubleWideDataType = new DFEVectorType<T>(dataType, maxWidth*2);
+		DFEVar isFirstTick = control.count.pulse(1);
+		DFEVar receiving = numToWrite.cast(doubleShiftType);
+
+		optimization.pushPipeliningFactor(0);
+		DFEVar carried = doubleShiftType.newInstance(this);
+		DFEVar used = isFirstTick ?  0 : stream.offset(carried,-1);
+		DFEVar neededWidth = used + receiving;
+		carried <== (neededWidth < maxWidth) ?  neededWidth : neededWidth - maxWidth;
+
+		DFEVector<T> doubleWideData = doubleWideDataType.newInstance(this);
+		for (int i = 0; i < maxWidth; i++){
+			doubleWideData[i] <== wideData[i];
+			doubleWideData[i].setReportOnUnused(false);
+			doubleWideData[i+maxWidth] <== wideData[i];
+			doubleWideData[i+maxWidth].setReportOnUnused(false);
+		}
+
+		DFEVector<T> doubleWideShifted = doubleWideData.shiftElementsLeft(used);
+		DFEVector<T> merged =  doubleWideDataType.newInstance(this);
+		DFEVector<T> mergedAndShifted = wideDataType.newInstance(this);
+		DFEVector<T> prev = stream.offset(mergedAndShifted, -1);
+		for (int i = 0; i < maxWidth; i++) {
+			merged[i] <== (i < used) ? prev[i] : doubleWideShifted[i];
+			merged[i+maxWidth] <== doubleWideShifted[i+maxWidth];
+
+			prev[i].setReportOnUnused(false);
+			doubleWideShifted[i].setReportOnUnused(false);
+			merged[i+maxWidth].setReportOnUnused(false);
+		}
+		optimization.popPipeliningFactor();
+
+		DFEVector<T> output = wideDataType.unpack(merged.pack().slice(0,maxWidth*dataTypeBits));
+		DFEVar needToWrite = neededWidth >= maxWidth;
+		mergedAndShifted <==  needToWrite ? wideDataType.unpack(merged.pack().slice(maxWidth*dataTypeBits,maxWidth*dataTypeBits)):
+											wideDataType.unpack(merged.pack().slice(0,maxWidth*dataTypeBits));
+
+
+		io.output(name, output, wideDataType, needToWrite);
+
+	}
+
 }
