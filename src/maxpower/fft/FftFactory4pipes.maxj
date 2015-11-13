@@ -135,18 +135,12 @@ public class FftFactory4pipes extends KernelLib {
 		}
 
 		for (int phase = 1; phase <= m_radix4phases; phase++) {
-			//debug.simPrintf("Start Radix 4; Phase: %d\n", constant.var(dfeUInt(32), phase));
 			final List<DFEComplex> twiddles = m_twiddleFactory.getTwiddles(phase);
-
-			/*for (int i = 0; i < 3; i++) {
-				debug.simPrintf("Real: %f Imag: %f * i\n", twiddles[i].getReal(), twiddles[i].getImaginary());
-				debug.simPrintf("Real: %f Imag: %f * i\n", newtwiddles[i].getReal(), newtwiddles[i].getImaginary());
-			}*/
 
 			fftOut = ButterflyLib.radix4butterfly(fftOut, twiddles);
 
 			if(phase < m_radix4phases) {
-				fftOut = FftBuffer.buffer(fftOut, constant.var(true), depth, 4, 4, 4);
+				fftOut = FftBuffer.buffer(fftOut, depth, Radix.RADIX_4.getRadix(), Radix.RADIX_4.getRadix());
 				depth /= 4;
 			}
 		}
