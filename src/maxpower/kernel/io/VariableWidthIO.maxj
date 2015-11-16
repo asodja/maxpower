@@ -73,9 +73,6 @@ public class VariableWidthIO extends KernelLib {
 	 */
 	public <T extends KernelObjectVectorizable<T,?>> void output(String name, DFEVector<T> wideData, DFEVar numToWrite) {
 
-		stream.suppressOffsetVectorWarnings();
-		//debug.simPrintf("%g\n",wideData[0]);
-
 		DFEVectorType<T> wideDataType = wideData.getType();
 		int maxWidth = wideDataType.getSize();
 		int shiftBits = MathUtils.bitsToAddress(maxWidth);
@@ -117,8 +114,7 @@ public class VariableWidthIO extends KernelLib {
 		DFEVector<T> output = wideDataType.unpack(merged.pack().slice(0,maxWidth*dataTypeBits));
 		DFEVar needToWrite = neededWidth >= maxWidth;
 		mergedAndShifted <==  needToWrite ? wideDataType.unpack(merged.pack().slice(maxWidth*dataTypeBits,maxWidth*dataTypeBits)):
-											wideDataType.unpack(merged.pack().slice(0,maxWidth*dataTypeBits));
-
+		                                    wideDataType.unpack(merged.pack().slice(0,maxWidth*dataTypeBits));
 
 		io.output(name, output, wideDataType, needToWrite);
 

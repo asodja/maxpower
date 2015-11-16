@@ -15,7 +15,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
-import com.maxeler.maxcompiler.v2.managers.standard._SimulationManager;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
 import com.maxeler.maxcompiler.v2.utils.Bits;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
@@ -117,7 +117,7 @@ public class VariableWidthIOTest {
 				}
 			}
 
-		    dataitr = 1;
+			dataitr = 1;
 			for (int i = 0; i < nOutputs; i++) {
 				for (int j = 0; j < outputWidth; j++) {
 					expectedOutput[i][j] = dataitr;
@@ -144,7 +144,6 @@ public class VariableWidthIOTest {
 
 		protected double[][] decodeOutput(List<Bits> input, DFEType dataType) {
 			double[][] output = new double [nOutputs][outputWidth];
-
 			for (int i = 0; i < nOutputs; i++) {
 				for (int j = 0; j < outputWidth; j++) {
 					output[i][j] = dataType.decodeConstant(input[i].getBitsRaw(j*dataType.getTotalBits(),dataType.getTotalBits()));
@@ -190,7 +189,7 @@ public class VariableWidthIOTest {
 
 		InputTestData data = new InputTestData(inputWidth, getCounts);
 
-		_SimulationManager m = new _SimulationManager("FlexibleWidthInputTest");
+		SimulationManager m = new SimulationManager("FlexibleWidthInputTest");
 		m.setKernel(new VariableWidthIOInputTestKernel(m.makeKernelParameters(), vectorType, inputWidth));
 		m.setKernelCycles(getCounts.length);
 		m.setInputDataRaw("input", data.encodeInput(type));
@@ -203,7 +202,6 @@ public class VariableWidthIOTest {
 		for (int i = 0; i < output.length; i++) {
 			System.out.println("Expected " + Arrays.toString(expectedOutput[i]));
 			System.out.println("Got      " + Arrays.toString(output[i]) + "\n");
-
 		}
 		for (int i = 0; i < output.length; i++) {
 			assertArrayEquals(expectedOutput[i],output[i],0.0);
@@ -217,7 +215,7 @@ public class VariableWidthIOTest {
 
 		OutputTestData data = new OutputTestData(outputWidth,  getCounts);
 
-		_SimulationManager m = new _SimulationManager("FlexibleWidthOutputTest");
+		SimulationManager m = new SimulationManager("FlexibleWidthOutputTest");
 		m.setKernel(new VariableWidthIOOutputTestKernel(m.makeKernelParameters(), vectorType, outputWidth));
 		m.setKernelCycles(getCounts.length);
 		m.setInputDataRaw("input", data.encodeInput(type));
@@ -230,7 +228,6 @@ public class VariableWidthIOTest {
 		for (int i = 0; i < output.length; i++) {
 			System.out.println("Expected " + Arrays.toString(expectedOutput[i]));
 			System.out.println("Got      " + Arrays.toString(output[i]) + "\n");
-
 		}
 		for (int i = 0; i < output.length; i++) {
 			assertArrayEquals(expectedOutput[i],output[i],0.0);
