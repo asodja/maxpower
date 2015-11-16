@@ -1,0 +1,106 @@
+package maxpower.kernel.sort;
+
+import static org.junit.Assert.assertArrayEquals;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+
+public class BitonicSortTest {
+
+	private static final int N = 1000;
+
+	private static class BitonicSortTestKernel extends Kernel {
+
+		public DFEVectorType<DFEVar> dataType;
+
+		public BitonicSortTestKernel(KernelParameters parameters, final int size, final boolean isFloat) {
+			super(parameters);
+
+			if (isFloat) {
+				dataType = new DFEVectorType<DFEVar>(dfeFloat(8, 24), size);
+			} else {
+				dataType = new DFEVectorType<DFEVar>(dfeInt(32), size);
+			}
+
+			DFEVector<DFEVar> input = io.input("input", dataType);
+
+			DFEVector<DFEVar> result = dataType.newInstance(this, BitonicSort.sort(size, input));
+
+			io.output("output", result, result.getType());
+		}
+	}
+
+	@Test public void testBitonicSort2()         {testBitonicSort(2,    false);};
+	@Test public void testBitonicSort4()         {testBitonicSort(4,    false);};
+	@Test public void testBitonicSort8()         {testBitonicSort(8,    false);};
+	@Test public void testBitonicSort16()        {testBitonicSort(16,   false);};
+	@Test public void testBitonicSort32()        {testBitonicSort(32,   false);};
+	@Test public void testBitonicSort64()        {testBitonicSort(64,   false);};
+	@Test public void testBitonicSort128()       {testBitonicSort(128,  false);};
+	@Test public void testBitonicSort256()       {testBitonicSort(256,  false);};
+	@Test public void testBitonicSort2float()    {testBitonicSort(2,    true );};
+	@Test public void testBitonicSort4float()    {testBitonicSort(4,    true );};
+	@Test public void testBitonicSort8float()    {testBitonicSort(8,    true );};
+	@Test public void testBitonicSort16float()   {testBitonicSort(16,   true );};
+	@Test public void testBitonicSort32float()   {testBitonicSort(32,   true );};
+	@Test public void testBitonicSort64float()   {testBitonicSort(64,   true );};
+	@Test public void testBitonicSort128float()  {testBitonicSort(128,  true );};
+	@Test public void testBitonicSort256float()  {testBitonicSort(256,  true );};
+
+	public void testBitonicSort(final int size, final boolean isFloat) {
+		double input[][]    = new double[N][size];
+		double expected[][] = new double[N][size];
+		double actual[][]   = new double[N][size];
+		Bits inputBits[]    = new Bits[N];
+
+		SimulationManager manager = new SimulationManager("ConstDenominatorTest");
+		BitonicSortTestKernel kernel = new BitonicSortTestKernel(manager.makeKernelParameters(), size, isFloat);
+		manager.setKernel(kernel);
+		manager.build();
+
+		long seed = System.currentTimeMillis();
+		manager.logMsg("Using random seed: %d", seed);
+		Random rng = new Random(seed);
+
+		for (int i = 0; i < N; i++) {
+			for (int j = 0; j < size; j++) {
+				if (isFloat) {
+					input[i][j] = rng.nextFloat();
+				} else {
+					input[i][j] = rng.nextInt();
+				}
+				expected[i][j] = input[i][j];
+			}
+			inputBits[i] = kernel.dataType.encodeConstant(input[i]);
+		}
+
+		manager.setKernelCycles(N);
+		manager.setInputDataRaw("input", inputBits);
+		manager.run();
+
+		Bits[] actualBits  = manager.getOutputDataRawArray("output");
+		for (int i = 0; i < N; i++) {
+			 @SuppressWarnings("rawtypes")
+             List word = kernel.dataType.decodeConstant(actualBits[i]);
+            for (int j = 0; j < size; j++) {
+            	actual[i][j] = (Double) word[j];
+            }
+        }
+
+		for (int i = 0; i < N; i++) {
+			Arrays.sort(expected[i]);
+			assertArrayEquals("Sort: Size: " + size + " IsFloat: " + isFloat + " " + i, expected[i], actual[i], 0);
+		}
+	}
+}
