@@ -19,6 +19,8 @@ import com.maxeler.maxcompiler.v2.utils.Bits;
 public class BitonicSortTest {
 
 	private static final int N = 1000;
+	private static final int DifferentSizes = 10;
+	private static final int MaxSortSize = 256;
 
 	private static class BitonicSortTestKernel extends Kernel {
 
@@ -41,37 +43,33 @@ public class BitonicSortTest {
 		}
 	}
 
-	@Test public void testBitonicSort2()        {testBitonicSort(2,   false);};
-	@Test public void testBitonicSort4()        {testBitonicSort(4,   false);};
-	@Test public void testBitonicSort8()        {testBitonicSort(8,   false);};
-	@Test public void testBitonicSort16()       {testBitonicSort(16,  false);};
-	@Test public void testBitonicSort32()       {testBitonicSort(32,  false);};
-	@Test public void testBitonicSort64()       {testBitonicSort(64,  false);};
-	@Test public void testBitonicSort128()      {testBitonicSort(128, false);};
-	@Test public void testBitonicSort256()      {testBitonicSort(256, false);};
-	@Test public void testBitonicSort2float()   {testBitonicSort(2,   true );};
-	@Test public void testBitonicSort4float()   {testBitonicSort(4,   true );};
-	@Test public void testBitonicSort8float()   {testBitonicSort(8,   true );};
-	@Test public void testBitonicSort16float()  {testBitonicSort(16,  true );};
-	@Test public void testBitonicSort32float()  {testBitonicSort(32,  true );};
-	@Test public void testBitonicSort64float()  {testBitonicSort(64,  true );};
-	@Test public void testBitonicSort128float() {testBitonicSort(128, true );};
-	@Test public void testBitonicSort256float() {testBitonicSort(256, true );};
+	@Test public void testBitonicSortInt() {testBitonicSortWrapper(false);}
+	@Test public void testBitonicSortfloat() {testBitonicSortWrapper(false);}
 
-	public void testBitonicSort(final int size, final boolean isFloat) {
+	private void testBitonicSortWrapper (final boolean isFloat) {
+		long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		for (int i = 0; i < DifferentSizes; i++) {
+			final int size = Math.abs(rng.nextInt()) % MaxSortSize;
+			testBitonicSort(size, isFloat, i, seed, rng);
+		}
+	}
+
+	private void testBitonicSort(final int size, final boolean isFloat, final int run, final long seed,
+			Random rng) {
 		double input[][]    = new double[N][size];
 		double expected[][] = new double[N][size];
 		double actual[][]   = new double[N][size];
 		Bits inputBits[]    = new Bits[N];
 
-		SimulationManager manager = new SimulationManager("ConstDenominatorTest");
+		SimulationManager manager = new SimulationManager("BitonicSortTest");
 		BitonicSortTestKernel kernel = new BitonicSortTestKernel(manager.makeKernelParameters(), size, isFloat);
 		manager.setKernel(kernel);
 		manager.build();
 
-		long seed = System.currentTimeMillis();
 		manager.logMsg("Using random seed: %d", seed);
-		Random rng = new Random(seed);
+		manager.logMsg("Using size: %d", size);
+		manager.logMsg("Run: %d", run);
 
 		for (int i = 0; i < N; i++) {
 			for (int j = 0; j < size; j++) {

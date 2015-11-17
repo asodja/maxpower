@@ -10,14 +10,13 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 /**
  * Class providing simple interfaces to sort DFEVars using bitonic sort
- * @author nvoss
+ * @author Nils Voss
  *
  */
 public class BitonicSort {
 
 	/**
 	 * Sorts DFEVars
-	 * @param size Number of DFEVars to sort (has to be a power of 2)
 	 * @param input DFEVars to sort
 	 * @return Sorted DFEVars
 	 */
@@ -27,7 +26,6 @@ public class BitonicSort {
 
 	/**
 	 * Sorts DFEVars
-	 * @param size Number of DFEVars to sort (has to be a power of 2)
 	 * @param input DFEVars to sort
 	 * @return Sorted DFEVars
 	 */
@@ -37,16 +35,18 @@ public class BitonicSort {
 
 	/**
 	 * Sorts DFEVars
-	 * @param size Number of DFEVars to sort (has to be a power of 2)
 	 * @param input DFEVars to sort
 	 * @return Sorted DFEVars
 	 */
 	public static List<DFEVar> sort(List<DFEVar> input) {
+		List<DFEVar> values = new ArrayList<DFEVar>(input);
 		if (!MathUtils.isPowerOf2(input.size())) {
-			throw new RuntimeException("Numbers of values to sort has to be a power of 2!");
+			for (int i = 0; i < MathUtils.getPadding(input.size(), MathUtils.nextPowerOfTwo(input.size())); i++){
+				values.add(null);
+			}
 		}
 
-		return bitonicSort(true, input);
+		return bitonicSort(true, values).subList(0, input.size());
 	}
 
 	private static List<DFEVar> bitonicSort(boolean up, List<DFEVar> input) {
@@ -78,15 +78,26 @@ public class BitonicSort {
 		int distance = input.size() / 2;
 
 		for (int i = 0; i < distance; i++) {
-			DFEVar change;
-			if (up == true) {
-				change = input.get(i) > input.get(i + distance);
+			if (input.get(i) == null || input.get(i + distance) == null) {
+				if (input.get(i) != null && input.get(i + distance) == null && !up){
+					input.set(i + distance, input.get(i));
+					input.set(i, null);
+				}
+				if (input.get(i) == null && input.get(i + distance) != null && up){
+					input.set(i, input.get(i + distance));
+					input.set(i + distance, null);
+				}
 			} else {
-				change = input.get(i) < input.get(i + distance);
+				DFEVar change;
+				if (up == true) {
+					change = input.get(i) > input.get(i + distance);
+				} else {
+					change = input.get(i) < input.get(i + distance);
+				}
+				DFEVar tmp = input.get(i);
+				input.set(i, change ? input.get(i + distance) : input.get(i));
+				input.set(i + distance, change ? tmp : input.get(i + distance));
 			}
-			DFEVar tmp = input.get(i);
-			input.set(i, change ? input.get(i + distance) : input.get(i));
-			input.set(i + distance, change ? tmp : input.get(i + distance));
 		}
 	}
 }
