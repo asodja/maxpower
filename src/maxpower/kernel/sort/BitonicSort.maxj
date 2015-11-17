@@ -112,9 +112,9 @@ public class BitonicSort {
 			} else {
 				DFEVar change;
 				if (up) {
-					change = sortObjects[i].getKey() > sortObjects[i + distance].getKey();
+					change = sortObjects[i].isBiggerThan(sortObjects[i + distance]);
 				} else {
-					change = sortObjects[i].getKey() < sortObjects[i + distance].getKey();
+					change = sortObjects[i].isSmallerThan(sortObjects[i + distance]);
 				}
 				List<SortObject> swappedList = sortObjects[i].swap(change, sortObjects[i + distance]);
 				sortObjects.set(i, swappedList[0]);
@@ -158,6 +158,16 @@ public class BitonicSort {
 			list.add(new DFEVarSortObject(change ? secondElement.getKey() : key));
 			list.add(new DFEVarSortObject(change ? key : secondElement.getKey()));
 			return list;
+		}
+
+		@Override
+		public DFEVar isBiggerThan(SortObject element) {
+			return key > element.getKey();
+		}
+
+		@Override
+		public DFEVar isSmallerThan(SortObject element) {
+			return key < element.getKey();
 		}
 	}
 }

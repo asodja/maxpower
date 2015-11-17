@@ -16,6 +16,7 @@ public interface SortObject {
 	 * @return Key used to compare different objects.
 	 */
 	public DFEVar getKey();
+
 	/**
 	 * This method is used to swap all elements of a SortObject between to different SortObjects.
 	 * This is necessary since ternary if is only defined for elements like DFEVars and not for new classes.
@@ -26,4 +27,20 @@ public interface SortObject {
 	 * called on followed by the secondElement. If change is true the order is swapped.
 	 */
 	public List<SortObject> swap(DFEVar change, SortObject secondElement);
+
+	/**
+	 * This method allows the usage of more complicated comparisons (useful if the data has a specific interpretation
+	 * like being a character).
+	 * @param element SortObject to compare to.
+	 * @return Flag indicating if the object the method is called on is bigger.
+	 */
+	public DFEVar isBiggerThan(SortObject element);
+
+	/**
+	 * This method allows the usage of more complicated comparisons (useful if the data has a specific interpretation
+	 * like being a character).
+	 * @param element SortObject to compare to.
+	 * @return Flag indicating if the object the method is called on is smaller.
+	 */
+	public DFEVar isSmallerThan(SortObject element);
 }
