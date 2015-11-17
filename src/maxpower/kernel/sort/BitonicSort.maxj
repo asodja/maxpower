@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 /**
  * Class providing simple interfaces to sort DFEVars using bitonic sort
@@ -20,8 +21,8 @@ public class BitonicSort {
 	 * @param input DFEVars to sort
 	 * @return Sorted DFEVars
 	 */
-	public static List<DFEVar> sort(final int size, DFEVar... input) {
-		return sort(size, Arrays.asList(input));
+	public static List<DFEVar> sort(DFEVar... input) {
+		return sort(Arrays.asList(input));
 	}
 
 	/**
@@ -30,12 +31,8 @@ public class BitonicSort {
 	 * @param input DFEVars to sort
 	 * @return Sorted DFEVars
 	 */
-	public static List<DFEVar> sort(final int size, DFEVector<DFEVar> input) {
-		List<DFEVar> inputAsList = new ArrayList<DFEVar>();
-		for (int i = 0; i < size; i++) {
-			inputAsList.add(input[i]);
-		}
-		return sort(size, inputAsList);
+	public static DFEVector<DFEVar> sort(DFEVector<DFEVar> input) {
+		return input.getType().newInstance(input.getKernel(), sort(input.getElementsAsList()));
 	}
 
 	/**
@@ -44,12 +41,9 @@ public class BitonicSort {
 	 * @param input DFEVars to sort
 	 * @return Sorted DFEVars
 	 */
-	public static List<DFEVar> sort(final int size, List<DFEVar> input) {
-		if (!checkPowerOf2(size)) {
+	public static List<DFEVar> sort(List<DFEVar> input) {
+		if (!MathUtils.isPowerOf2(input.size())) {
 			throw new RuntimeException("Numbers of values to sort has to be a power of 2!");
-		}
-		if (input.size() != size) {
-			throw new RuntimeException("Size of List must match number of values to sort!");
 		}
 
 		return bitonicSort(true, input);
@@ -59,10 +53,10 @@ public class BitonicSort {
 		if (input.size() == 1) {
 			return input;
 		} else {
-			List<DFEVar> firstHalf   = bitonicSort(true,  input.subList(0, input.size() / 2));
-			List<DFEVar> secondeHalf = bitonicSort(false, input.subList(input.size() / 2, input.size()));
+			List<DFEVar> firstHalf  = bitonicSort(true,  input.subList(0, input.size() / 2));
+			List<DFEVar> secondHalf = bitonicSort(false, input.subList(input.size() / 2, input.size()));
 			List<DFEVar> combined = new ArrayList<DFEVar>(firstHalf);
-			combined.addAll(secondeHalf);
+			combined.addAll(secondHalf);
 			return bitonicMerge(up, combined);
 		}
 	}
@@ -72,10 +66,10 @@ public class BitonicSort {
 			return input;
 		} else {
 			bitonicCompare(up, input);
-			List<DFEVar> firstHalf   = bitonicMerge(up, input.subList(0, input.size() / 2));
-			List<DFEVar> secondeHalf = bitonicMerge(up, input.subList(input.size() / 2, input.size()));
+			List<DFEVar> firstHalf  = bitonicMerge(up, input.subList(0, input.size() / 2));
+			List<DFEVar> secondHalf = bitonicMerge(up, input.subList(input.size() / 2, input.size()));
 			List<DFEVar> combined = new ArrayList<DFEVar>(firstHalf);
-			combined.addAll(secondeHalf);
+			combined.addAll(secondHalf);
 			return combined;
 		}
 	}
@@ -93,17 +87,6 @@ public class BitonicSort {
 			DFEVar tmp = input.get(i);
 			input.set(i, change ? input.get(i + distance) : input.get(i));
 			input.set(i + distance, change ? tmp : input.get(i + distance));
-		}
-	}
-
-	private static boolean checkPowerOf2(final int size) {
-		if (size == 1) {
-			return true;
-		}
-		if (size % 2 == 0) {
-			return checkPowerOf2(size / 2);
-		} else {
-			return false;
 		}
 	}
 }
