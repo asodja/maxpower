@@ -40,11 +40,11 @@ public class BitonicSort {
 	 * @return Sorted DFEVars
 	 */
 	public static List<DFEVar> sort(List<DFEVar> input) {
-		return createDFEVarListFromDFEVarSortObjectList(sortSortable(createDFEVarSortObjectListFromDFEVarList(input)));
+		return fromSortableList(sortSortable(asSortableList(input)));
 	}
 
 	/**
-	 * Sorts SortObjects
+	 * Sorts Sortable objects
 	 * @param input SortObjects to sort
 	 * @return Sorted SortObjects
 	 */
@@ -53,7 +53,7 @@ public class BitonicSort {
 	}
 
 	/**
-	 * Sorts SortObjects
+	 * Sorts Sortable objects
 	 * @param input SortObjects to sort
 	 * @return Sorted SortObjects
 	 */
@@ -127,7 +127,7 @@ public class BitonicSort {
 	}
 
 	@SuppressWarnings("rawtypes")
-	private static List<DFEVarSortObject<?>> createDFEVarSortObjectListFromDFEVarList(List<DFEVar> values) {
+	private static List<DFEVarSortObject<?>> asSortableList(List<DFEVar> values) {
 		List<DFEVarSortObject<?>> list = new ArrayList<DFEVarSortObject<?>>();
 		for (int i = 0; i < values.size(); i++) {
 			list.add(new DFEVarSortObject(values[i]));
@@ -135,7 +135,7 @@ public class BitonicSort {
 		return list;
 	}
 
-	private static List<DFEVar> createDFEVarListFromDFEVarSortObjectList(List<DFEVarSortObject<?>> values) {
+	private static List<DFEVar> fromSortableList(List<DFEVarSortObject<?>> values) {
 		List<DFEVar> list = new ArrayList<DFEVar>();
 		for (int i = 0; i < values.size(); i++) {
 			list.add(values[i].getKey());
