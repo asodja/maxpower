@@ -1,7 +1,5 @@
 package maxpower.kernel.sort;
 
-import java.util.List;
-
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 
 /**
@@ -10,7 +8,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
  * @author Nils Voss
  *
  */
-public interface Sortable {
+public interface Sortable<T extends Sortable<T>> {
 	/**
 	 * This method should return the key used to compare different objects.
 	 * @return Key used to compare different objects.
@@ -18,15 +16,16 @@ public interface Sortable {
 	public DFEVar getKey();
 
 	/**
-	 * This method is used to swap all elements of a SortObject between to different SortObjects.
-	 * This is necessary since ternary if is only defined for elements like DFEVars and not for new classes.
-	 *
-	 * @param change This flag indicates if a swap has to be executed or not.
-	 * @param secondElement The second element to swap with.
-	 * @return A list containing two elements. If change is false then first the SortObject the method is
-	 * called on followed by the secondElement. If change is true the order is swapped.
+	 * Packs a object implementing Sortable to be a DFEVar
+	 * @return DFEVar containing all information
 	 */
-	public List<Sortable> swap(DFEVar change, Sortable secondElement);
+	public DFEVar pack();
+
+	/**
+	 * Restore all member attributes form a DFEVar
+	 * @param packed DFEVar containing a packed object implementing Sortable
+	 */
+	public T unpack(DFEVar packed);
 
 	/**
 	 * This method allows the usage of more complicated comparisons (useful if the data has a specific interpretation
@@ -34,7 +33,7 @@ public interface Sortable {
 	 * @param element SortObject to compare to.
 	 * @return Flag indicating if the object the method is called on is bigger.
 	 */
-	public DFEVar isBiggerThan(Sortable element);
+	public DFEVar gt(T element);
 
 	/**
 	 * This method allows the usage of more complicated comparisons (useful if the data has a specific interpretation
@@ -42,5 +41,5 @@ public interface Sortable {
 	 * @param element SortObject to compare to.
 	 * @return Flag indicating if the object the method is called on is smaller.
 	 */
-	public DFEVar isSmallerThan(Sortable element);
+	public DFEVar lt(T element);
 }

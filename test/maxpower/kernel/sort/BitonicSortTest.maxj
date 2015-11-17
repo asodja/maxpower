@@ -37,7 +37,7 @@ public class BitonicSortTest {
 
 			DFEVector<DFEVar> input = io.input("input", dataType);
 
-			DFEVector<DFEVar> result = BitonicSort.sortVars(input);
+			DFEVector<DFEVar> result = BitonicSort.sort(input);
 
 			io.output("output", result, result.getType());
 		}

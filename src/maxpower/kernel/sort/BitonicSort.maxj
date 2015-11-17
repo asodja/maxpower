@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
@@ -20,44 +21,44 @@ public class BitonicSort {
 	 * @param input DFEVars to sort
 	 * @return Sorted DFEVars
 	 */
-	public static List<DFEVar> sortVars(DFEVar... input) {
-		return sortVars(Arrays.asList(input));
-	}
-
-	/**
-	 * Sorts DFEVars
-	 * @param input DFEVars to sort
-	 * @return Sorted DFEVars
-	 */
-	public static DFEVector<DFEVar> sortVars(DFEVector<DFEVar> input) {
-		return input.getType().newInstance(input.getKernel(), sortVars(input.getElementsAsList()));
-	}
-
-	/**
-	 * Sorts DFEVars
-	 * @param input DFEVars to sort
-	 * @return Sorted DFEVars
-	 */
-	public static List<DFEVar> sortVars(List<DFEVar> input) {
-		return createDFEVarListFromDFEVarSortObjectList(sort(createDFEVarSortObjectListFromDFEVarList(input)));
-	}
-
-	/**
-	 * Sorts SortObjects
-	 * @param input SortObjects to sort
-	 * @return Sorted SortObjects
-	 */
-	public static List<Sortable> sort(Sortable... input) {
+	public static List<DFEVar> sort(DFEVar... input) {
 		return sort(Arrays.asList(input));
 	}
 
 	/**
+	 * Sorts DFEVars
+	 * @param input DFEVars to sort
+	 * @return Sorted DFEVars
+	 */
+	public static DFEVector<DFEVar> sort(DFEVector<DFEVar> input) {
+		return input.getType().newInstance(input.getKernel(), sort(input.getElementsAsList()));
+	}
+
+	/**
+	 * Sorts DFEVars
+	 * @param input DFEVars to sort
+	 * @return Sorted DFEVars
+	 */
+	public static List<DFEVar> sort(List<DFEVar> input) {
+		return createDFEVarListFromDFEVarSortObjectList(sortSortable(createDFEVarSortObjectListFromDFEVarList(input)));
+	}
+
+	/**
 	 * Sorts SortObjects
 	 * @param input SortObjects to sort
 	 * @return Sorted SortObjects
 	 */
-	public static List<Sortable> sort(List<Sortable> input) {
-		List<Sortable> values = new ArrayList<Sortable>(input);
+	public static <T extends Sortable<T>> List<T> sortSortable(T... input) {
+		return sortSortable(Arrays.asList(input));
+	}
+
+	/**
+	 * Sorts SortObjects
+	 * @param input SortObjects to sort
+	 * @return Sorted SortObjects
+	 */
+	public static <T extends Sortable<T>> List<T> sortSortable(List<T> input) {
+		List<T> values = new ArrayList<T>(input);
 		if (!MathUtils.isPowerOf2(input.size())) {
 			for (int i = 0; i < MathUtils.getPadding(input.size(), MathUtils.nextPowerOfTwo(input.size())); i++){
 				values.add(null);
@@ -69,34 +70,34 @@ public class BitonicSort {
 
 
 
-	private static List<Sortable> bitonicSort(boolean up, List<Sortable> sortObjects) {
+	private static <T extends Sortable<T>> List<T> bitonicSort(boolean up, List<T> sortObjects) {
 		if (sortObjects.size() == 1) {
 			return sortObjects;
 		} else {
-			List<Sortable> firstHalf  = bitonicSort(true,  sortObjects.subList(0, sortObjects.size() / 2));
-			List<Sortable> secondHalf = bitonicSort(false, sortObjects.subList(sortObjects.size() / 2,
+			List<T> firstHalf  = bitonicSort(true,  sortObjects.subList(0, sortObjects.size() / 2));
+			List<T> secondHalf = bitonicSort(false, sortObjects.subList(sortObjects.size() / 2,
 					sortObjects.size()));
-			List<Sortable> combined = new ArrayList<Sortable>(firstHalf);
+			List<T> combined = new ArrayList<T>(firstHalf);
 			combined.addAll(secondHalf);
 			return bitonicMerge(up, combined);
 		}
 	}
 
-	private static List<Sortable> bitonicMerge(boolean up, List<Sortable> sortObjects) {
+	private static <T extends Sortable<T>> List<T> bitonicMerge(boolean up, List<T> sortObjects) {
 		if (sortObjects.size() == 1) {
 			return sortObjects;
 		} else {
 			bitonicCompare(up, sortObjects);
-			List<Sortable> firstHalf  = bitonicMerge(up, sortObjects.subList(0, sortObjects.size() / 2));
-			List<Sortable> secondHalf = bitonicMerge(up, sortObjects.subList(sortObjects.size() / 2,
+			List<T> firstHalf  = bitonicMerge(up, sortObjects.subList(0, sortObjects.size() / 2));
+			List<T> secondHalf = bitonicMerge(up, sortObjects.subList(sortObjects.size() / 2,
 					sortObjects.size()));
-			List<Sortable> combined = new ArrayList<Sortable>(firstHalf);
+			List<T> combined = new ArrayList<T>(firstHalf);
 			combined.addAll(secondHalf);
 			return combined;
 		}
 	}
 
-	private static void bitonicCompare(boolean up, List<Sortable> sortObjects) {
+	private static <T extends Sortable<T>> void bitonicCompare(boolean up, List<T> sortObjects) {
 		int distance = sortObjects.size() / 2;
 
 		for (int i = 0; i < distance; i++) {
@@ -112,26 +113,29 @@ public class BitonicSort {
 			} else {
 				DFEVar change;
 				if (up) {
-					change = sortObjects[i].isBiggerThan(sortObjects[i + distance]);
+					change = sortObjects[i] > sortObjects[i + distance];
 				} else {
-					change = sortObjects[i].isSmallerThan(sortObjects[i + distance]);
+					change = sortObjects[i] < sortObjects[i + distance];
 				}
-				List<Sortable> swappedList = sortObjects[i].swap(change, sortObjects[i + distance]);
-				sortObjects.set(i, swappedList[0]);
-				sortObjects.set(i + distance, swappedList[1]);
+				DFEVar tmp = sortObjects[i].pack();
+				sortObjects.set(i,
+						sortObjects[i].unpack(change ? sortObjects[i + distance].pack() : sortObjects[i].pack()));
+				sortObjects.set(i + distance,
+						sortObjects[i].unpack(change ? tmp : sortObjects[i + distance].pack()));
 			}
 		}
 	}
 
-	private static List<Sortable> createDFEVarSortObjectListFromDFEVarList(List<DFEVar> values) {
-		List<Sortable> list = new ArrayList<Sortable>();
+	@SuppressWarnings("rawtypes")
+	private static List<DFEVarSortObject<?>> createDFEVarSortObjectListFromDFEVarList(List<DFEVar> values) {
+		List<DFEVarSortObject<?>> list = new ArrayList<DFEVarSortObject<?>>();
 		for (int i = 0; i < values.size(); i++) {
 			list.add(new DFEVarSortObject(values[i]));
 		}
 		return list;
 	}
 
-	private static List<DFEVar> createDFEVarListFromDFEVarSortObjectList(List<Sortable> values) {
+	private static List<DFEVar> createDFEVarListFromDFEVarSortObjectList(List<DFEVarSortObject<?>> values) {
 		List<DFEVar> list = new ArrayList<DFEVar>();
 		for (int i = 0; i < values.size(); i++) {
 			list.add(values[i].getKey());
@@ -139,35 +143,59 @@ public class BitonicSort {
 		return list;
 	}
 
-	private static class DFEVarSortObject implements Sortable {
+	public static class DFEVarSortObject<T extends KernelObject<T>> implements Sortable<DFEVarSortObject<T>> {
+		private final DFEVar m_key;
+		private final T m_metadata;
 
-		private final DFEVar key;
+		public DFEVarSortObject(DFEVar key) {
+			m_key = key;
+			m_metadata = null;
+		}
 
-		public DFEVarSortObject(DFEVar value) {
-			key = value;
+		public DFEVarSortObject(DFEVar key, T metadata) {
+			m_key = key;
+			m_metadata = metadata;
+		}
+
+		public T getMetadata() {
+			return m_metadata;
 		}
 
 		@Override
 		public DFEVar getKey() {
-			return key;
+			return m_key;
 		}
 
 		@Override
-		public List<Sortable> swap(DFEVar change, Sortable secondElement) {
-			List<Sortable> list = new ArrayList<Sortable>();
-			list.add(new DFEVarSortObject(change ? secondElement.getKey() : key));
-			list.add(new DFEVarSortObject(change ? key : secondElement.getKey()));
-			return list;
+		public DFEVar pack() {
+			if (m_metadata == null) {
+				return m_key;
+			} else {
+				return m_key # m_metadata.pack();
+			}
 		}
 
 		@Override
-		public DFEVar isBiggerThan(Sortable element) {
-			return key > element.getKey();
+		public DFEVarSortObject<T> unpack(DFEVar packed) {
+			DFEVarSortObject<T> unpackedObject;
+			if (m_metadata == null) {
+				unpackedObject = new DFEVarSortObject<T>(packed);
+			} else {
+				unpackedObject = new DFEVarSortObject<T>(
+						packed.slice(m_metadata.getType().getTotalBits(), m_key.getType().getTotalBits()),
+						m_metadata.getType().unpack(packed.slice(0, m_metadata.getType().getTotalBits())));
+			}
+			return unpackedObject;
 		}
 
 		@Override
-		public DFEVar isSmallerThan(Sortable element) {
-			return key < element.getKey();
+		public DFEVar gt(DFEVarSortObject<T> element) {
+			return m_key > element.getKey();
+		}
+
+		@Override
+		public DFEVar lt(DFEVarSortObject<T> element) {
+			return m_key < element.getKey();
 		}
 	}
 }
