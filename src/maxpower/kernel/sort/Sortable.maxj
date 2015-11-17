@@ -10,7 +10,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
  * @author Nils Voss
  *
  */
-public interface SortObject {
+public interface Sortable {
 	/**
 	 * This method should return the key used to compare different objects.
 	 * @return Key used to compare different objects.
@@ -26,7 +26,7 @@ public interface SortObject {
 	 * @return A list containing two elements. If change is false then first the SortObject the method is
 	 * called on followed by the secondElement. If change is true the order is swapped.
 	 */
-	public List<SortObject> swap(DFEVar change, SortObject secondElement);
+	public List<Sortable> swap(DFEVar change, Sortable secondElement);
 
 	/**
 	 * This method allows the usage of more complicated comparisons (useful if the data has a specific interpretation
@@ -34,7 +34,7 @@ public interface SortObject {
 	 * @param element SortObject to compare to.
 	 * @return Flag indicating if the object the method is called on is bigger.
 	 */
-	public DFEVar isBiggerThan(SortObject element);
+	public DFEVar isBiggerThan(Sortable element);
 
 	/**
 	 * This method allows the usage of more complicated comparisons (useful if the data has a specific interpretation
@@ -42,5 +42,5 @@ public interface SortObject {
 	 * @param element SortObject to compare to.
 	 * @return Flag indicating if the object the method is called on is smaller.
 	 */
-	public DFEVar isSmallerThan(SortObject element);
+	public DFEVar isSmallerThan(Sortable element);
 }

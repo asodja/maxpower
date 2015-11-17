@@ -47,7 +47,7 @@ public class BitonicSort {
 	 * @param input SortObjects to sort
 	 * @return Sorted SortObjects
 	 */
-	public static List<SortObject> sort(SortObject... input) {
+	public static List<Sortable> sort(Sortable... input) {
 		return sort(Arrays.asList(input));
 	}
 
@@ -56,8 +56,8 @@ public class BitonicSort {
 	 * @param input SortObjects to sort
 	 * @return Sorted SortObjects
 	 */
-	public static List<SortObject> sort(List<SortObject> input) {
-		List<SortObject> values = new ArrayList<SortObject>(input);
+	public static List<Sortable> sort(List<Sortable> input) {
+		List<Sortable> values = new ArrayList<Sortable>(input);
 		if (!MathUtils.isPowerOf2(input.size())) {
 			for (int i = 0; i < MathUtils.getPadding(input.size(), MathUtils.nextPowerOfTwo(input.size())); i++){
 				values.add(null);
@@ -69,34 +69,34 @@ public class BitonicSort {
 
 
 
-	private static List<SortObject> bitonicSort(boolean up, List<SortObject> sortObjects) {
+	private static List<Sortable> bitonicSort(boolean up, List<Sortable> sortObjects) {
 		if (sortObjects.size() == 1) {
 			return sortObjects;
 		} else {
-			List<SortObject> firstHalf  = bitonicSort(true,  sortObjects.subList(0, sortObjects.size() / 2));
-			List<SortObject> secondHalf = bitonicSort(false, sortObjects.subList(sortObjects.size() / 2,
+			List<Sortable> firstHalf  = bitonicSort(true,  sortObjects.subList(0, sortObjects.size() / 2));
+			List<Sortable> secondHalf = bitonicSort(false, sortObjects.subList(sortObjects.size() / 2,
 					sortObjects.size()));
-			List<SortObject> combined = new ArrayList<SortObject>(firstHalf);
+			List<Sortable> combined = new ArrayList<Sortable>(firstHalf);
 			combined.addAll(secondHalf);
 			return bitonicMerge(up, combined);
 		}
 	}
 
-	private static List<SortObject> bitonicMerge(boolean up, List<SortObject> sortObjects) {
+	private static List<Sortable> bitonicMerge(boolean up, List<Sortable> sortObjects) {
 		if (sortObjects.size() == 1) {
 			return sortObjects;
 		} else {
 			bitonicCompare(up, sortObjects);
-			List<SortObject> firstHalf  = bitonicMerge(up, sortObjects.subList(0, sortObjects.size() / 2));
-			List<SortObject> secondHalf = bitonicMerge(up, sortObjects.subList(sortObjects.size() / 2,
+			List<Sortable> firstHalf  = bitonicMerge(up, sortObjects.subList(0, sortObjects.size() / 2));
+			List<Sortable> secondHalf = bitonicMerge(up, sortObjects.subList(sortObjects.size() / 2,
 					sortObjects.size()));
-			List<SortObject> combined = new ArrayList<SortObject>(firstHalf);
+			List<Sortable> combined = new ArrayList<Sortable>(firstHalf);
 			combined.addAll(secondHalf);
 			return combined;
 		}
 	}
 
-	private static void bitonicCompare(boolean up, List<SortObject> sortObjects) {
+	private static void bitonicCompare(boolean up, List<Sortable> sortObjects) {
 		int distance = sortObjects.size() / 2;
 
 		for (int i = 0; i < distance; i++) {
@@ -116,22 +116,22 @@ public class BitonicSort {
 				} else {
 					change = sortObjects[i].isSmallerThan(sortObjects[i + distance]);
 				}
-				List<SortObject> swappedList = sortObjects[i].swap(change, sortObjects[i + distance]);
+				List<Sortable> swappedList = sortObjects[i].swap(change, sortObjects[i + distance]);
 				sortObjects.set(i, swappedList[0]);
 				sortObjects.set(i + distance, swappedList[1]);
 			}
 		}
 	}
 
-	private static List<SortObject> createDFEVarSortObjectListFromDFEVarList(List<DFEVar> values) {
-		List<SortObject> list = new ArrayList<SortObject>();
+	private static List<Sortable> createDFEVarSortObjectListFromDFEVarList(List<DFEVar> values) {
+		List<Sortable> list = new ArrayList<Sortable>();
 		for (int i = 0; i < values.size(); i++) {
 			list.add(new DFEVarSortObject(values[i]));
 		}
 		return list;
 	}
 
-	private static List<DFEVar> createDFEVarListFromDFEVarSortObjectList(List<SortObject> values) {
+	private static List<DFEVar> createDFEVarListFromDFEVarSortObjectList(List<Sortable> values) {
 		List<DFEVar> list = new ArrayList<DFEVar>();
 		for (int i = 0; i < values.size(); i++) {
 			list.add(values[i].getKey());
@@ -139,7 +139,7 @@ public class BitonicSort {
 		return list;
 	}
 
-	private static class DFEVarSortObject implements SortObject {
+	private static class DFEVarSortObject implements Sortable {
 
 		private final DFEVar key;
 
@@ -153,20 +153,20 @@ public class BitonicSort {
 		}
 
 		@Override
-		public List<SortObject> swap(DFEVar change, SortObject secondElement) {
-			List<SortObject> list = new ArrayList<SortObject>();
+		public List<Sortable> swap(DFEVar change, Sortable secondElement) {
+			List<Sortable> list = new ArrayList<Sortable>();
 			list.add(new DFEVarSortObject(change ? secondElement.getKey() : key));
 			list.add(new DFEVarSortObject(change ? key : secondElement.getKey()));
 			return list;
 		}
 
 		@Override
-		public DFEVar isBiggerThan(SortObject element) {
+		public DFEVar isBiggerThan(Sortable element) {
 			return key > element.getKey();
 		}
 
 		@Override
-		public DFEVar isSmallerThan(SortObject element) {
+		public DFEVar isSmallerThan(Sortable element) {
 			return key < element.getKey();
 		}
 	}
