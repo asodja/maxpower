@@ -19,7 +19,7 @@ import com.maxeler.maxcompiler.v2.utils.Bits;
 public class BitonicSortTest {
 
 	private static final int N = 1000;
-	private static final int DifferentSizes = 10;
+	private static final int DifferentSizes = 5;
 	private static final int MaxSortSize = 256;
 
 	private static class BitonicSortTestKernel extends Kernel {
@@ -37,7 +37,7 @@ public class BitonicSortTest {
 
 			DFEVector<DFEVar> input = io.input("input", dataType);
 
-			DFEVector<DFEVar> result = BitonicSort.sort(input);
+			DFEVector<DFEVar> result = BitonicSort.sortVars(input);
 
 			io.output("output", result, result.getType());
 		}
@@ -50,7 +50,7 @@ public class BitonicSortTest {
 		long seed = System.currentTimeMillis();
 		Random rng = new Random(seed);
 		for (int i = 0; i < DifferentSizes; i++) {
-			final int size = Math.abs(rng.nextInt()) % MaxSortSize;
+			final int size = (Math.abs(rng.nextInt()) % (MaxSortSize - 1)) + 1;
 			testBitonicSort(size, isFloat, i, seed, rng);
 		}
 	}

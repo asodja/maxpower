@@ -1,0 +1,29 @@
+package maxpower.kernel.sort;
+
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+
+/**
+ * This interface can be used to sort key value pairs.
+ *
+ * @author Nils Voss
+ *
+ */
+public interface SortObject {
+	/**
+	 * This method should return the key used to compare different objects.
+	 * @return Key used to compare different objects.
+	 */
+	public DFEVar getKey();
+	/**
+	 * This method is used to swap all elements of a SortObject between to different SortObjects.
+	 * This is necessary since ternary if is only defined for elements like DFEVars and not for new classes.
+	 *
+	 * @param change This flag indicates if a swap has to be executed or not.
+	 * @param secondElement The second element to swap with.
+	 * @return A list containing two elements. If change is false then first the SortObject the method is
+	 * called on followed by the secondElement. If change is true the order is swapped.
+	 */
+	public List<SortObject> swap(DFEVar change, SortObject secondElement);
+}
