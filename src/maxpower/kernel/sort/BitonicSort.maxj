@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
@@ -40,7 +39,7 @@ public class BitonicSort {
 	 * @return Sorted DFEVars
 	 */
 	public static List<DFEVar> sort(List<DFEVar> input) {
-		return fromSortableList(sortSortable(asSortableList(input)));
+		return SortableDFEVar.dfeVarFromList(sortSortable(SortableDFEVar.dfeVarAsList(input)));
 	}
 
 	/**
@@ -123,79 +122,6 @@ public class BitonicSort {
 				sortObjects.set(i + distance,
 						sortObjects[i].unpack(change ? tmp : sortObjects[i + distance].pack()));
 			}
-		}
-	}
-
-	@SuppressWarnings("rawtypes")
-	private static List<DFEVarSortObject<?>> asSortableList(List<DFEVar> values) {
-		List<DFEVarSortObject<?>> list = new ArrayList<DFEVarSortObject<?>>();
-		for (int i = 0; i < values.size(); i++) {
-			list.add(new DFEVarSortObject(values[i]));
-		}
-		return list;
-	}
-
-	private static List<DFEVar> fromSortableList(List<DFEVarSortObject<?>> values) {
-		List<DFEVar> list = new ArrayList<DFEVar>();
-		for (int i = 0; i < values.size(); i++) {
-			list.add(values[i].getKey());
-		}
-		return list;
-	}
-
-	public static class DFEVarSortObject<T extends KernelObject<T>> implements Sortable<DFEVarSortObject<T>> {
-		private final DFEVar m_key;
-		private final T m_metadata;
-
-		public DFEVarSortObject(DFEVar key) {
-			m_key = key;
-			m_metadata = null;
-		}
-
-		public DFEVarSortObject(DFEVar key, T metadata) {
-			m_key = key;
-			m_metadata = metadata;
-		}
-
-		public T getMetadata() {
-			return m_metadata;
-		}
-
-		@Override
-		public DFEVar getKey() {
-			return m_key;
-		}
-
-		@Override
-		public DFEVar pack() {
-			if (m_metadata == null) {
-				return m_key;
-			} else {
-				return m_key # m_metadata.pack();
-			}
-		}
-
-		@Override
-		public DFEVarSortObject<T> unpack(DFEVar packed) {
-			DFEVarSortObject<T> unpackedObject;
-			if (m_metadata == null) {
-				unpackedObject = new DFEVarSortObject<T>(packed);
-			} else {
-				unpackedObject = new DFEVarSortObject<T>(
-						packed.slice(m_metadata.getType().getTotalBits(), m_key.getType().getTotalBits()),
-						m_metadata.getType().unpack(packed.slice(0, m_metadata.getType().getTotalBits())));
-			}
-			return unpackedObject;
-		}
-
-		@Override
-		public DFEVar gt(DFEVarSortObject<T> element) {
-			return m_key > element.getKey();
-		}
-
-		@Override
-		public DFEVar lt(DFEVarSortObject<T> element) {
-			return m_key < element.getKey();
 		}
 	}
 }
