@@ -1,0 +1,80 @@
+package maxpower.kernel.sort;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+
+public class SortableDFEVar<T extends KernelObject<T>> implements Sortable<SortableDFEVar<T>> {
+	private final DFEVar m_key;
+	private final T m_metadata;
+
+	public SortableDFEVar(DFEVar key) {
+		m_key = key;
+		m_metadata = null;
+	}
+
+	public SortableDFEVar(DFEVar key, T metadata) {
+		m_key = key;
+		m_metadata = metadata;
+	}
+
+	public T getMetadata() {
+		return m_metadata;
+	}
+
+	@Override
+	public DFEVar getKey() {
+		return m_key;
+	}
+
+	@Override
+	public DFEVar pack() {
+		if (m_metadata == null) {
+			return m_key;
+		} else {
+			return m_key # m_metadata.pack();
+		}
+	}
+
+	@Override
+	public SortableDFEVar<T> unpack(DFEVar packed) {
+		SortableDFEVar<T> unpackedObject;
+		if (m_metadata == null) {
+			unpackedObject = new SortableDFEVar<T>(packed);
+		} else {
+			unpackedObject = new SortableDFEVar<T>(
+					packed.slice(m_metadata.getType().getTotalBits(), m_key.getType().getTotalBits()),
+					m_metadata.getType().unpack(packed.slice(0, m_metadata.getType().getTotalBits())));
+		}
+		return unpackedObject;
+	}
+
+	@Override
+	public DFEVar gt(SortableDFEVar<T> element) {
+		return m_key > element.getKey();
+	}
+
+	@Override
+	public DFEVar lt(SortableDFEVar<T> element) {
+		return m_key < element.getKey();
+	}
+
+	@SuppressWarnings("rawtypes")
+	public static List<SortableDFEVar<?>> dfeVarAsList(List<DFEVar> values) {
+		List<SortableDFEVar<?>> list = new ArrayList<SortableDFEVar<?>>();
+		for (int i = 0; i < values.size(); i++) {
+			list.add(new SortableDFEVar(values[i]));
+		}
+		return list;
+	}
+
+	public static List<DFEVar> dfeVarFromList(List<SortableDFEVar<?>> values) {
+		List<DFEVar> list = new ArrayList<DFEVar>();
+		for (int i = 0; i < values.size(); i++) {
+			list.add(values[i].getKey());
+		}
+		return list;
+	}
+}

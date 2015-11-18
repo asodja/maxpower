@@ -1,0 +1,45 @@
+package maxpower.kernel.sort;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+
+/**
+ * This interface can be used to sort key value pairs.
+ *
+ * @author Nils Voss
+ *
+ */
+public interface Sortable<T extends Sortable<T>> {
+	/**
+	 * This method should return the key used to compare different objects.
+	 * @return Key used to compare different objects.
+	 */
+	public DFEVar getKey();
+
+	/**
+	 * Packs a object implementing Sortable to be a DFEVar
+	 * @return DFEVar containing all information
+	 */
+	public DFEVar pack();
+
+	/**
+	 * Restore all member attributes form a DFEVar
+	 * @param packed DFEVar containing a packed object implementing Sortable
+	 */
+	public T unpack(DFEVar packed);
+
+	/**
+	 * This method allows the usage of more complicated comparisons (useful if the data has a specific interpretation
+	 * like being a character).
+	 * @param element SortObject to compare to.
+	 * @return Flag indicating if the object the method is called on is bigger.
+	 */
+	public DFEVar gt(T element);
+
+	/**
+	 * This method allows the usage of more complicated comparisons (useful if the data has a specific interpretation
+	 * like being a character).
+	 * @param element SortObject to compare to.
+	 * @return Flag indicating if the object the method is called on is smaller.
+	 */
+	public DFEVar lt(T element);
+}
