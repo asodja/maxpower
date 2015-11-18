@@ -34,7 +34,7 @@ public class RoundRobin<T extends KernelObject<T>> extends Kernel {
 
 		CounterChain cc = control.count.makeCounterChain();
 		DFEVar output = cc.addCounter(nOutputs, 1);
-		if (nWords > 1) cc.addCounter(nWords, 1);
+		if (nWords > 1) cc.addCounter(nWords, 1).setReportOnUnused(false);
 
 		T din = io.input(INPUT_NAME, wordType);
 
