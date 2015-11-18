@@ -49,31 +49,31 @@ public class Complex  implements Cloneable {
 	}
 
     public Bits encode(DFEComplexType type) {
-    	Bits result;
-		try {
-			result = type.encodeConstant(this.real(), this.imag());
-		} catch (MaxConstantEncodingException e) {
-			if (e.isCompleteFixedPointUnderflow()) {
-				double real = this.real();
-				double imag = this.imag();
-				if (real < Math.pow(2.0, -((DFEFix)type.getRealType()).getFractionBits())) {
-					real = 0.0;
-				}
-				if (imag < Math.pow(2.0, -((DFEFix)type.getImaginaryType()).getFractionBits())) {
-					imag = 0.0;
-				}
-				result = type.encodeConstant(real, imag);
-			} else {
-				throw new MaxConstantEncodingException(
-					e.isOverflow(),
-					e.isUnderflow(),
-					e.isCompleteFixedPointUnderflow(),
-					e.isInvalidOp(),
-					e.isNegativeToUnsigned(),
-					e.getRelativeError(),
-					null);
-			}
-		}
-		return result;
+        Bits result;
+        try {
+            result = type.encodeConstant(this.real(), this.imag());
+        } catch (MaxConstantEncodingException e) {
+    	    if (e.isCompleteFixedPointUnderflow()) {
+    	        double real = this.real();
+    	        double imag = this.imag();
+    	        if (real < Math.pow(2.0, -((DFEFix)type.getRealType()).getFractionBits())) {
+    	            real = 0.0;
+    	        }
+    	        if (imag < Math.pow(2.0, -((DFEFix)type.getImaginaryType()).getFractionBits())) {
+    	            imag = 0.0;
+    	        }
+    	        result = type.encodeConstant(real, imag);
+    	    } else {
+    	        throw new MaxConstantEncodingException(
+    	                e.isOverflow(),
+    	                e.isUnderflow(),
+    	                e.isCompleteFixedPointUnderflow(),
+    	                e.isInvalidOp(),
+    	                e.isNegativeToUnsigned(),
+    	                e.getRelativeError(),
+    	                null);
+    	    }
+    	}
+        return result;
     }
 }

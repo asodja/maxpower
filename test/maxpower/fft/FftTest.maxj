@@ -106,7 +106,7 @@ public class FftTest {
     	}
     }
 
-	@Test public void testFft32()         { testFft(32,    false); }
+    @Test public void testFft32()         { testFft(32,    false); }
     @Test public void testFft64()         { testFft(64,    false); }
     @Test public void testFft128()        { testFft(128,   false); }
     @Test public void testFft256()        { testFft(256,   false); }
@@ -129,7 +129,7 @@ public class FftTest {
 
     public void testFft(int fftSize, boolean useFloat) {
         long seed = System.currentTimeMillis();
-    	Random rn = new Random(seed);
+        Random rn = new Random(seed);
 
 
         Complex[][] pairs       = generateInputData(rn, fftSize);
@@ -141,7 +141,7 @@ public class FftTest {
 
         List<List<Bits>> bitsIn = convertInputToRaw(pairs, fftSize);
 
-		final int numKernelCycles = NUM_ITERATIONS * (fftSize / FftFactory4pipes.NUM_FFT_PIPES);
+        final int numKernelCycles = NUM_ITERATIONS * (fftSize / FftFactory4pipes.NUM_FFT_PIPES);
         manager.setInputDataRaw("pairsIn0", bitsIn[0]);
         manager.setInputDataRaw("pairsIn1", bitsIn[1]);
         manager.setKernelCycles(numKernelCycles);

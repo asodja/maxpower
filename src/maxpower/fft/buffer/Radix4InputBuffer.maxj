@@ -117,8 +117,6 @@ public class Radix4InputBuffer extends KernelLib {
 	 */
 	public List<DFEVector<DFEComplex>> transpose(final List<DFEVector<DFEComplex>> input) {
 		final List<DFEVector<DFEComplex>> ramOut = new ArrayList<DFEVector<DFEComplex>>(m_radix);
-		final BufferRamFactory<DFEVector<DFEComplex>, DFEVector<DFEComplex>> buffer =
-			new BufferRamFactory<DFEVector<DFEComplex>, DFEVector<DFEComplex>>(m_bufferSize, constant.var(true), m_writeBuffer);
 
 		for (int index = 0; index < m_numBuffers; index++) {
 			final int invertIndex = m_numBuffers - index - 1;
@@ -144,7 +142,8 @@ public class Radix4InputBuffer extends KernelLib {
 				ramIn = input;
 			}
 
-			ramOut.addAll(buffer.dualRam(addr, ramIn));
+			ramOut.addAll(BufferRam.dualRam(m_bufferSize, constant.var(true), m_writeBuffer, addr,
+					ramIn));
 		}
 
 		final List<DFEVector<DFEComplex>> shuffledRamOut = new ArrayList<DFEVector<DFEComplex>>(m_radix);

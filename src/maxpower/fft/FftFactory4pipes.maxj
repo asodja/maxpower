@@ -125,7 +125,7 @@ public class FftFactory4pipes extends KernelLib {
 
 		List<DFEVector<DFEComplex>> fftOut;
 		if (m_radix2phases == 1) {
-			fftOut = ButterflyLib.radix2DualButterfly(rdx4input, m_r2Twiddles);
+			fftOut = ButterflyLib.createButterfly(rdx4input, m_r2Twiddles, Radix.RADIX_2);
 			fftOut = m_mixedBuffer.transpose(fftOut);
 			depth /= 2;
 		} else if (m_radix2phases == 0) {
@@ -137,7 +137,7 @@ public class FftFactory4pipes extends KernelLib {
 		for (int phase = 1; phase <= m_radix4phases; phase++) {
 			final List<DFEComplex> twiddles = m_twiddleFactory.getTwiddles(phase);
 
-			fftOut = ButterflyLib.radix4butterfly(fftOut, twiddles);
+			fftOut = ButterflyLib.createButterfly(fftOut, twiddles, Radix.RADIX_4);
 
 			if(phase < m_radix4phases) {
 				fftOut = FftBuffer.buffer(fftOut, depth, Radix.RADIX_4.getRadix(), Radix.RADIX_4.getRadix());
