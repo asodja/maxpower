@@ -32,13 +32,7 @@ public class ButterflyLib {
 	 */
 	public static List<DFEVector<DFEComplex>> createButterfly(List<DFEVector<DFEComplex>> input,
 			List<DFEComplex> twiddles, Radix radix) {
-		if (input.size() != 4) {
-			throw new RuntimeException("radix4butterfly expects 4 pipes of input.");
-		}
-		final int requiredTwiddleFactors = radix.getRadix() == 4 ? 3 : 2;
-		if (twiddles.size() != requiredTwiddleFactors) {
-			throw new RuntimeException("radix4butterfly requires " + requiredTwiddleFactors + " twiddle factors.");
-		}
+
 		KernelLib k = input[0].getKernel();
 		DFEType type = (DFEType) ((DFEComplexType)input[0].getType().getContainedType()).getRealType();
 		// Optimise if using fixed types.
