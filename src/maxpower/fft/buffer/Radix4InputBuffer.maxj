@@ -6,7 +6,6 @@ import java.util.List;
 import maxpower.fft.Radix;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.CountMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Counter;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.WrapMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
@@ -77,18 +76,11 @@ public class Radix4InputBuffer extends KernelLib {
 
 		final Counter dataCounter = control.count.makeCounter(
 				control.count.makeParams(MathUtils.bitsToAddress(m_numDataSets))
-						.withEnable(constant.var(true))
-						.withCountMode(CountMode.NUMERIC_INCREMENTING)
-						.withInitValue(0)
-						.withInc(1)
 						.withMax(m_numDataSets)
-						.withWrapMode(WrapMode.COUNT_LT_MAX_THEN_WRAP)
 						.withWrapValue(0));
 		final Counter cycleCounter = control.count.makeCounter(
 				control.count.makeParams(MathUtils.bitsToAddress(m_numCycles))
 						.withEnable(dataCounter.getWrap())
-						.withCountMode(CountMode.NUMERIC_INCREMENTING)
-						.withInitValue(0)
 						.withInc(2)
 						.withMax(m_numCycles)
 						.withWrapMode(WrapMode.MODULO_MAX_OF_COUNT));

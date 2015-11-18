@@ -59,11 +59,10 @@ public class FftTest {
     		final FftFactory4pipes fftFactory = new FftFactory4pipes(this, twiddleType, fftSize);
 
     		/* Input */
-    		final DFEVar gateInput = fftFactory.acceptingInput();
-    		final DFEVector<DFEVar> in0 = io.input("pairsIn0", ioInVectorType, gateInput);
-    		final DFEVector<DFEVar> in1 = io.input("pairsIn1", ioInVectorType, gateInput);
+    		final DFEVector<DFEVar> in0 = io.input("pairsIn0", ioInVectorType);
+    		final DFEVector<DFEVar> in1 = io.input("pairsIn1", ioInVectorType);
 
-    		final List<DFEVector<DFEComplex>> dataIn = untangleInput(in0, in1, gateInput);
+    		final List<DFEVector<DFEComplex>> dataIn = untangleInput(in0, in1);
 
     		/* Do the FFT */
     		final List<DFEVector<DFEComplex>> fftOut = fftFactory.transform(dataIn);
@@ -75,8 +74,7 @@ public class FftTest {
     	}
 
     	// Cast data to internal type
-    	private List<DFEVector<DFEComplex>> untangleInput(DFEVector<DFEVar> in0, DFEVector<DFEVar> in1,
-    			DFEVar gateInput) {
+    	private List<DFEVector<DFEComplex>> untangleInput(DFEVector<DFEVar> in0, DFEVector<DFEVar> in1) {
     		final List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(NUM_FFT_PIPES);
 
     		for (int i = 0; i < NUM_FFT_PIPES; i++) {
@@ -85,7 +83,7 @@ public class FftTest {
     			DFEVector<DFEComplex> inMP = mpType.newInstance(this);
 				DFEComplex input = DFEComplexType.newInstance(this, in0[i], in1[i]);
 				DFEComplex castInput = input.cast(new DFEComplexType(internalSampleType));
-				inMP[0] <== gateInput ? castInput : 0;
+				inMP[0] <== castInput;
     			output.add(inMP);
     		}
     		return output;
