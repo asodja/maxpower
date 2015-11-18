@@ -8,7 +8,6 @@ import maxpower.fft.buffer.Radix4InputBuffer;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
@@ -66,7 +65,7 @@ public class FftFactory4pipes extends KernelLib {
 		stream.suppressOffsetVectorWarnings();
 
 		m_fftSize = N;
-		if (!validFftSize(m_fftSize)) {
+		if (m_fftSize < 32 || !MathUtils.isPowerOf2(m_fftSize)) {
 			throw new RuntimeException("4 pipe FFT currently only supports sizes that are 2^N for N > 5.");
 		}
 		m_r4InputBuffer  = new Radix4InputBuffer(this, m_fftSize);
@@ -146,26 +145,5 @@ public class FftFactory4pipes extends KernelLib {
 		}
 
 		return fftOut;
-	}
-
-
-
-	private boolean validFftSize(int fftSize) {
-		int minFftSize = 32;
-		if (fftSize < minFftSize) {
-			return false;
-		}
-		if (fftSize == minFftSize) {
-			return true;
-		}
-		if (fftSize % 2 == 0) {
-			return validFftSize(fftSize / 2);
-		} else {
-			return false;
-		}
-	}
-
-	public DFEVar acceptingInput() {
-		return constant.var(true);
 	}
 }
