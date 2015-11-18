@@ -13,9 +13,9 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 
 /**
- * This is a collection of all the butterfly functions for radix-4 and dual radix-2 FFTs.
+ * A collection of all the butterfly functions for radix-4 and dual radix-2 FFTs.
  *
- * @author stephen
+ * @author Stephen Girdlestone
  *
  */
 public class ButterflyLib {
