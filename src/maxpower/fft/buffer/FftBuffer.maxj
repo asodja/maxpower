@@ -52,16 +52,14 @@ public class FftBuffer {
 			DFEVector<DFEVar> packedData = DFEVectorType.newInstance(transposedInput);
 			DFEVectorType<DFEVar> packedType = packedData.getType();
 
-			Transposer transposeBuffer = new Transposer(kernel, packedData.pack(), radix, height,
-					numOutputs, kernel.constant.var(true));
-			output = packedType.unpack(transposeBuffer.getOutput());
+			output = packedType.unpack(Transposer.transpose(kernel, packedData.pack(), radix,
+					height, numOutputs, kernel.constant.var(true)));
 		} else {
 			DFEVector<DFEVar> packedData = DFEVectorType.newInstance(packedInput);
 			DFEVectorType<DFEVar> packedType = packedData.getType();
 
-			Transposer transposeBuffer = new Transposer(kernel, packedData.pack(), bufferDepth / numOutputs,
-					numOutputs, kernel.constant.var(true));
-			output = packedType.unpack(transposeBuffer.getOutput());
+			output = packedType.unpack(Transposer.transpose(kernel, packedData.pack(),
+					bufferDepth / numOutputs, numOutputs, kernel.constant.var(true)));
 		}
 
 		DFEVector<DFEVar> offsetOutput = kernel.stream.offset(output, fftSize / numPipes);

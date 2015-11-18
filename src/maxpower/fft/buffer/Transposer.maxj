@@ -15,8 +15,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 /**
  * Use single buffer to transpose matrices.
  */
-public class Transposer extends KernelLib {
-	private final DFEVar output;
+public class Transposer {
 
 	private static int offset_counter = 0;
 
@@ -39,8 +38,8 @@ public class Transposer extends KernelLib {
 	 * width     fast dimension
 	 * height    slow dimension
 	 **/
-	public Transposer(KernelLib owner, DFEVar in, int width, int height, DFEVar enable) {
-		this(owner, in, width, 1, height, enable);
+	public static DFEVar transpose(KernelLib owner, DFEVar in, int width, int height, DFEVar enable) {
+		return transpose(owner, in, width, 1, height, enable);
 	}
 
 	/**
@@ -54,9 +53,9 @@ public class Transposer extends KernelLib {
 	 *	10	|	11	|	12	|	13	|	14
 	 *	20	|	21	|	22	|	23	|	24
 	 *
-	 *  5	|	6	|	7	|	8	|	9
-	 *  15	|	16	|	17	|	18	|	19
-	 *  25	|	26	|	27	|	28	|	29
+	 *	5	|	6	|	7	|	8	|	9
+	 *	15	|	16	|	17	|	18	|	19
+	 *	25	|	26	|	27	|	28	|	29
 	 *
 	 *	Then the output will return
 	 *		0, 5, 10, 15, 20, 25, 1, 6, 11, 16, ...
@@ -65,8 +64,7 @@ public class Transposer extends KernelLib {
 	 * height    medium dimension
 	 * depth     slow dimension
 	 **/
-	public Transposer(KernelLib owner, DFEVar in, int width, int height, int depth, DFEVar enable) {
-		super(owner);
+	public static DFEVar transpose(KernelLib owner, DFEVar in, int width, int height, int depth, DFEVar enable) {
 		final int N = width * height * depth;;
 		final boolean isDoubleBuffered;
 
@@ -79,35 +77,36 @@ public class Transposer extends KernelLib {
 			final int Nm = N - 1;
 			final int nBits = MathUtils.bitsToAddress(N);
 
-			DFEVar isFirst = control.count.pulse(1);
+			DFEVar isFirst = owner.control.count.pulse(1);
 
-			DFEVar i = control.count.makeCounter(control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
-			DFEVar mul = dfeUInt(nBits).newInstance(this);
-			optimization.pushEnableBitGrowth(true);
-			DFEVar address = i === Nm ? Nm : KernelMath.modulo(i * mul, Nm).cast(dfeUInt(nBits));
-			DFEVar nextMul = mul*dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(this, width);
-			optimization.popEnableBitGrowth();
-			nextMul = KernelMath.modulo(nextMul, Nm).cast(dfeUInt(nBits));
-			OffsetExpr offset = stream.makeOffsetAutoLoop("transposerOffset" + offset_counter++, 0, N);
-			mul <== control.mux(isFirst#(i===0), stream.offset(mul, -1), stream.offset(nextMul, -offset), constant.var(1), constant.var(1));
+			DFEVar i = owner.control.count.makeCounter(owner.control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
+			DFEVar mul = KernelLib.dfeUInt(nBits).newInstance(owner);
+			owner.optimization.pushEnableBitGrowth(true);
+			DFEVar address = i === Nm ? Nm : KernelMath.modulo(i * mul, Nm).cast(KernelLib.dfeUInt(nBits));
+			DFEVar nextMul = mul * KernelLib.dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(owner, width);
+			owner.optimization.popEnableBitGrowth();
+			nextMul = KernelMath.modulo(nextMul, Nm).cast(KernelLib.dfeUInt(nBits));
+			OffsetExpr offset = owner.stream.makeOffsetAutoLoop("transposerOffset" + offset_counter++, 0, N);
+			mul <== owner.control.mux(isFirst#(i===0), owner.stream.offset(mul, -1),
+					owner.stream.offset(nextMul, -offset), owner.constant.var(1), owner.constant.var(1));
 
 			writeAddress = address;
 			readAddress = address;
 
-			getManager().logInfo("Depth of RAM in Transposer = " + N);
+			owner.getManager().logInfo("Depth of RAM in Transposer = " + N);
 		} else if (width == depth) {
 			isDoubleBuffered = false;
 
-			DFEType addressType = dfeUInt(MathUtils.bitsToAddress(N));
+			DFEType addressType = KernelLib.dfeUInt(MathUtils.bitsToAddress(N));
 
-			CounterChain readCounter = control.count.makeCounterChain(enable);
+			CounterChain readCounter = owner.control.count.makeCounterChain(enable);
 
 			DFEVar changePattern = readCounter.addCounter(2,      1);
 			DFEVar slow          = readCounter.addCounter(width,  1).cast(addressType);
 			DFEVar medium        = readCounter.addCounter(height, 1).cast(addressType);
 			DFEVar fast          = readCounter.addCounter(depth,  1).cast(addressType);
 
-			DFEVar cycleCounter = control.count.simpleCounter(MathUtils.bitsToAddress(N), N);
+			DFEVar cycleCounter = owner.control.count.simpleCounter(MathUtils.bitsToAddress(N), N);
 
 			DFEVar address = changePattern === 0 ? cycleCounter :
 					fast * width * height + medium * width + slow;
@@ -118,9 +117,9 @@ public class Transposer extends KernelLib {
 			// double buffered implementation
 			isDoubleBuffered = true;
 
-			DFEType addressType = dfeUInt(MathUtils.bitsToAddress(2 * N));
-			CounterChain readCounter = control.count.makeCounterChain(enable);
-			CounterChain writeCounter = control.count.makeCounterChain(enable);
+			DFEType addressType = KernelLib.dfeUInt(MathUtils.bitsToAddress(2 * N));
+			CounterChain readCounter = owner.control.count.makeCounterChain(enable);
+			CounterChain writeCounter = owner.control.count.makeCounterChain(enable);
 
 			DFEVar rdBuff = readCounter.addCounter(2,      1);
 			DFEVar slow   = readCounter.addCounter(width,  1).cast(addressType);
@@ -136,14 +135,10 @@ public class Transposer extends KernelLib {
 
 		final int ramSize = isDoubleBuffered ? 2 * N : N;
 
-		RamPortParams<DFEVar> writePort   = mem.makeRamPortParams(RamPortMode.WRITE_ONLY, writeAddress, in).withWriteEnable(enable);
-		RamPortParams<DFEVar> readPort    = mem.makeRamPortParams(RamPortMode.READ_ONLY,  readAddress,  in.getType());
-		DualPortMemOutputs<DFEVar> buffer = mem.ramDualPort(ramSize, RamWriteMode.READ_FIRST, writePort, readPort);
+		RamPortParams<DFEVar> writePort   = owner.mem.makeRamPortParams(RamPortMode.WRITE_ONLY, writeAddress, in).withWriteEnable(enable);
+		RamPortParams<DFEVar> readPort    = owner.mem.makeRamPortParams(RamPortMode.READ_ONLY,  readAddress,  in.getType());
+		DualPortMemOutputs<DFEVar> buffer = owner.mem.ramDualPort(ramSize, RamWriteMode.READ_FIRST, writePort, readPort);
 
-		output = buffer.getOutputB();
-	}
-
-	public DFEVar getOutput() {
-		return output;
+		return buffer.getOutputB();
 	}
 }
