@@ -1,0 +1,67 @@
+package maxpower.fft.buffer;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.DualPortMemOutputs;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortParams;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamWriteMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+
+public class BufferRam {
+
+	/**
+	 * Creates a dual-port RAM instance. Both ports are read and written on each call, the
+	 * existing value being read out before being overwritten by the new value
+	 * (i.e. {@link RamWriteMode#READ_FIRST read-first} mode).
+	 *
+	 * @param addrA Input address for port A.
+	 * @param inA Input data for port A.
+	 * @param outA Output data for connection to port A.
+	 * @param addrB Input address for port B.
+	 * @param inB Input data for port B.
+	 * @param outB Output data for connection to port B.
+	 */
+	public static <T extends KernelObject<S>, S> List<S> dualRam(int bufferSize, DFEVar enable,
+			DFEVar writeBuffer, final List<DFEVar> addr, final List<T> in) {
+		Kernel owner = enable.getKernel();
+
+		final KernelType<S> typeA = in[0].getType();
+		final KernelType<S> typeB = in[1].getType();
+		final List<S> output = new ArrayList<S>(2);
+
+		DFEVar readBuffer  = ~writeBuffer;
+
+		final RamPortParams<DFEVar> portA0 = owner.mem.makeRamPortParams(
+				RamPortMode.READ_WRITE, addr[0], in[0].pack())
+				.withWriteEnable(enable & writeBuffer);
+
+		final RamPortParams<DFEVar> portB0 = owner.mem.makeRamPortParams(
+				RamPortMode.READ_WRITE, addr[1], in[1].pack())
+				.withWriteEnable(enable & writeBuffer);
+
+		final RamPortParams<DFEVar> portA1 = owner.mem.makeRamPortParams(
+				RamPortMode.READ_WRITE, addr[0], in[0].pack())
+				.withWriteEnable(enable & readBuffer);
+
+		final RamPortParams<DFEVar> portB1 = owner.mem.makeRamPortParams(
+				RamPortMode.READ_WRITE, addr[1], in[1].pack())
+				.withWriteEnable(enable & readBuffer);
+
+		final DualPortMemOutputs<DFEVar> ram0 = owner.mem.ramDualPort(
+				bufferSize, RamWriteMode.WRITE_FIRST, portA0, portB0);
+
+		final DualPortMemOutputs<DFEVar> ram1 = owner.mem.ramDualPort(
+				bufferSize, RamWriteMode.WRITE_FIRST, portA1, portB1);
+
+		output.add(typeA.unpack(readBuffer ? ram0.getOutputA() : ram1.getOutputA()));
+		output.add(typeB.unpack(readBuffer ? ram0.getOutputB() : ram1.getOutputB()));
+
+		return output;
+	}
+
+}
