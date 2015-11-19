@@ -1,7 +1,9 @@
 package maxpower.kernel.mem;
 
+import maxpower.kernel.arithmetic.ConstDenominator;
+import maxpower.kernel.arithmetic.ConstDenominator.ConstDivModResult;
+
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.DualPortMemOutputs;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortMode;
@@ -82,10 +84,17 @@ public class Transposer {
 			DFEVar i = owner.control.count.makeCounter(owner.control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
 			DFEVar mul = KernelLib.dfeUInt(nBits).newInstance(owner);
 			owner.optimization.pushEnableBitGrowth(true);
-			DFEVar address = i === Nm ? Nm : KernelMath.modulo(i * mul, Nm).cast(KernelLib.dfeUInt(nBits));
+			ConstDivModResult addressDivMod = ConstDenominator.divMod(i * mul, Nm);
+			addressDivMod.getQuotient().setReportOnUnused(false);
+			DFEVar address = i === Nm ? Nm : addressDivMod.getRemainder().cast(KernelLib.dfeUInt(nBits));
+
 			DFEVar nextMul = mul * KernelLib.dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(owner, width);
 			owner.optimization.popEnableBitGrowth();
-			nextMul = KernelMath.modulo(nextMul, Nm).cast(KernelLib.dfeUInt(nBits));
+
+			ConstDivModResult nextMulDivMod = ConstDenominator.divMod(nextMul, Nm);
+			nextMulDivMod.getQuotient().setReportOnUnused(false);
+			nextMul = nextMulDivMod.getRemainder().cast(KernelLib.dfeUInt(nBits));
+
 			OffsetExpr offset = owner.stream.makeOffsetAutoLoop("transposerOffset" + offset_counter++, 0, N);
 			mul <== owner.control.mux(isFirst#(i===0), owner.stream.offset(mul, -1),
 					owner.stream.offset(nextMul, -offset), owner.constant.var(1), owner.constant.var(1));
