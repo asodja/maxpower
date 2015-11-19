@@ -134,7 +134,7 @@ public class Radix4InputBuffer extends KernelLib {
 				ramIn = input;
 			}
 
-			ramOut.addAll(BufferRam.dualRam(m_bufferSize, constant.var(true), m_writeBuffer, addr,
+			ramOut.addAll(BufferRam.dualRam(m_bufferSize, m_writeBuffer, addr,
 					ramIn));
 		}
 

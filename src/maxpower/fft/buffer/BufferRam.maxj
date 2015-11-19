@@ -26,9 +26,9 @@ public class BufferRam {
 	 * @param inB Input data for port B.
 	 * @param outB Output data for connection to port B.
 	 */
-	public static <T extends KernelObject<S>, S> List<S> dualRam(int bufferSize, DFEVar enable,
+	public static <T extends KernelObject<S>, S> List<S> dualRam(int bufferSize,
 			DFEVar writeBuffer, final List<DFEVar> addr, final List<T> in) {
-		Kernel owner = enable.getKernel();
+		Kernel owner = writeBuffer.getKernel();
 
 		final KernelType<S> typeA = in[0].getType();
 		final KernelType<S> typeB = in[1].getType();
@@ -38,19 +38,19 @@ public class BufferRam {
 
 		final RamPortParams<DFEVar> portA0 = owner.mem.makeRamPortParams(
 				RamPortMode.READ_WRITE, addr[0], in[0].pack())
-				.withWriteEnable(enable & writeBuffer);
+				.withWriteEnable(writeBuffer);
 
 		final RamPortParams<DFEVar> portB0 = owner.mem.makeRamPortParams(
 				RamPortMode.READ_WRITE, addr[1], in[1].pack())
-				.withWriteEnable(enable & writeBuffer);
+				.withWriteEnable(writeBuffer);
 
 		final RamPortParams<DFEVar> portA1 = owner.mem.makeRamPortParams(
 				RamPortMode.READ_WRITE, addr[0], in[0].pack())
-				.withWriteEnable(enable & readBuffer);
+				.withWriteEnable(readBuffer);
 
 		final RamPortParams<DFEVar> portB1 = owner.mem.makeRamPortParams(
 				RamPortMode.READ_WRITE, addr[1], in[1].pack())
-				.withWriteEnable(enable & readBuffer);
+				.withWriteEnable(readBuffer);
 
 		final DualPortMemOutputs<DFEVar> ram0 = owner.mem.ramDualPort(
 				bufferSize, RamWriteMode.WRITE_FIRST, portA0, portB0);

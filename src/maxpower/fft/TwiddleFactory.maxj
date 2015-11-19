@@ -44,8 +44,6 @@ public class TwiddleFactory extends KernelLib {
 	private final int m_N;
 	/** Number of FFT butterfly phases. */
 	private final int m_phases;
-	/** Enable processing. */
-	private final DFEVar m_enable;
 	/** Number of twiddle factors for butterfly (i.e. radix - 1). */
 	private final int m_noTwiddles;
 	/** {@link DFEComplexType Complex type} for twiddle factors. */
@@ -63,15 +61,13 @@ public class TwiddleFactory extends KernelLib {
 	 * @param radixType {@link Radix Radix} of FFT.
 	 * @param exponent Exponent of radix.
 	 * @param twiddleType {@link DFEType Type} of twiddle factors to generate.
-	 * @param startTwiddling Indication of whether to start twiddling.
 	 */
 	public TwiddleFactory(final Radix radixType, final int exponent,
-			final DFEType twiddleType, final DFEVar startTwiddling) {
-		super(startTwiddling.getKernel());
+			final DFEType twiddleType, KernelLib owner) {
+		super(owner);
 		m_radixType = radixType;
 		m_twiddleType = twiddleType;
 		m_exponent = exponent;
-		m_enable = startTwiddling;
 
 		m_radix = m_radixType.getRadix();
 		m_radixShift = m_radixType.getBinaryShift();
@@ -151,7 +147,7 @@ public class TwiddleFactory extends KernelLib {
 				new HashMap<Integer, Twiddles>(m_phases);
 		// Phase 0 doesn't have twiddles; butterfly starts from phase 1
 		for (int phase = 1; phase <= m_phases; phase++) {
-			final Twiddles twiddles = new Twiddles(phase, m_enable);
+			final Twiddles twiddles = new Twiddles(phase);
 			twiddleRoms.put(phase, twiddles);
 		}
 		return twiddleRoms;
@@ -201,8 +197,6 @@ public class TwiddleFactory extends KernelLib {
 		private final int m_T;
 		/** Ratio used to index raw twiddle factors as phase progresses. */
 		private final int m_tRatioShift;
-		/** Enable processing. */
-		private final DFEVar m_enable;
 
 		/** List of twiddles. */
 		private final List<DFEComplex> m_twiddles;
@@ -213,9 +207,8 @@ public class TwiddleFactory extends KernelLib {
 		 * @param phase FFT butterfly phase.
 		 * @param startTwiddling Indication of whether to start twiddling.
 		 */
-		public Twiddles(final int phase, final DFEVar startTwiddling) {
+		public Twiddles(final int phase) {
 			m_phase = phase;
-			m_enable = startTwiddling;
 
 			m_tBits = (m_phases - m_phase) * m_radixShift;
 			m_T = 1 << m_tBits;
@@ -263,7 +256,7 @@ public class TwiddleFactory extends KernelLib {
 				}
 				// Create the address counter.
 				final CounterChain chain =
-						control.count.makeCounterChainMoreBits(m_enable);
+						control.count.makeCounterChainMoreBits();
 				final DFEVar dataCount = chain.addCounter(m_T, 1);
 
 				// Create the phase ROMs.

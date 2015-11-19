@@ -28,7 +28,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 public class FftFactory4pipes extends KernelLib {
 
 	// Expose useful parameters
-	public static final int NUM_FFT_PIPES	= 4;
+	public static final int NUM_FFT_PIPES = 4;
 
 	/** Number of butterfly phases of FFT. */
 	private final int m_radix4phases;
@@ -75,7 +75,7 @@ public class FftFactory4pipes extends KernelLib {
 		m_radix2phases = m_exponent % 2;
 		m_twiddleType = twiddleType;
 
-		m_twiddleFactory = new TwiddleFactory(Radix.RADIX_4, m_radix4phases, m_twiddleType, constant.var(true));
+		m_twiddleFactory = new TwiddleFactory(Radix.RADIX_4, m_radix4phases, m_twiddleType, kernel);
 
 		/*
 		 * Enable write all the time we are processing data to make sure all
@@ -83,7 +83,7 @@ public class FftFactory4pipes extends KernelLib {
 		 * when neither input not output is enabled.
 		 */
 		if (m_radix2phases == 1) {
-			m_mixedBuffer    = new MixedRadixBuffer(m_exponent, constant.var(true));
+			m_mixedBuffer    = new MixedRadixBuffer(m_exponent, kernel);
 			m_r2Twiddles	 = m_twiddleFactory.r2dualTwiddles(m_mixedBuffer.getDataCount());
 		} else {
 			m_mixedBuffer    = null;

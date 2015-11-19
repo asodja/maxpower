@@ -6,7 +6,6 @@ import java.util.List;
 import maxpower.fft.Radix;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Counter;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
@@ -50,8 +49,6 @@ public class MixedRadixBuffer extends KernelLib {
 	/** Output offset. */
 	private final int m_outputOffset;
 
-	/** Enable processing. */
-	private final DFEVar m_enable;
 	private final DFEVar m_writeBuffer;
 	/** {@link DFEType HW type} for addresses. */
 	private final DFEType m_addressType;
@@ -74,10 +71,9 @@ public class MixedRadixBuffer extends KernelLib {
 	 * @param exponent Exponent of radix.
 	 * @param startAddressing Indication of whether to start addressing.
 	 */
-	public MixedRadixBuffer(final int exponent, final DFEVar startAddressing) {
-		super(startAddressing.getKernel());
+	public MixedRadixBuffer(final int exponent, KernelLib owner) {
+		super(owner);
 		m_exponent = exponent;
-		m_enable = Reductions.streamHold(constant.var(true), startAddressing);
 
 		m_numBits = m_exponent;
 		m_numDataSetBits = m_numBits - m_radixShift;
@@ -87,7 +83,7 @@ public class MixedRadixBuffer extends KernelLib {
 		m_bufferSize = m_valuesPerBuffer << m_numDataSetBits;
 		m_addressType = dfeUInt(MathUtils.bitsToAddress(m_bufferSize));
 
-		final CounterChain chain = control.count.makeCounterChainMoreBits(m_enable);
+		final CounterChain chain = control.count.makeCounterChainMoreBits();
 		m_cycleCount = chain.addCounter(NO_CYCLES, 1);
 		m_dataCount = chain.addCounter(m_numDataSets, 1);
 
@@ -97,16 +93,6 @@ public class MixedRadixBuffer extends KernelLib {
 
 		m_address = calculateAddressPattern();
 		m_doInvertBuffer = calculateInvertPattern();
-	}
-
-	/**
-	 * Get the output offset. This is calculated based on the data size, and
-	 * is to allow RAM buffers time to fill.
-	 *
-	 * @return Offset to apply to output.
-	 */
-	public int getOutputOffset() {
-		return m_outputOffset;
 	}
 
 	public DFEVar getDataCount() {
@@ -147,10 +133,10 @@ public class MixedRadixBuffer extends KernelLib {
 				ramIn = input;
 			}
 
-			final List<DFEVector<DFEComplex>> bufferOutput = BufferRam.dualRam(m_bufferSize, m_enable,
+			final List<DFEVector<DFEComplex>> bufferOutput = BufferRam.dualRam(m_bufferSize,
 					m_writeBuffer, addr, ramIn);
 			for (int j = 0; j < bufferOutput.size(); j++) {
-				ramOut.add(stream.offset(bufferOutput[j], getOutputOffset()));
+				ramOut.add(stream.offset(bufferOutput[j], m_outputOffset));
 			}
 		}
 
