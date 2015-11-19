@@ -84,7 +84,7 @@ public class FftFactory4pipes extends KernelLib {
 		 */
 		if (m_radix2phases == 1) {
 			m_mixedBuffer    = new MixedRadixBuffer(m_exponent, kernel);
-			m_r2Twiddles	 = m_twiddleFactory.r2dualTwiddles(m_mixedBuffer.getDataCount());
+			m_r2Twiddles	 = TwiddleFactory.r2dualTwiddles(m_twiddleType, m_fftSize, kernel);
 		} else {
 			m_mixedBuffer    = null;
 			m_r2Twiddles     = null;

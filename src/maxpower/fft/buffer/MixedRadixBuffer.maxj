@@ -95,10 +95,6 @@ public class MixedRadixBuffer extends KernelLib {
 		m_doInvertBuffer = calculateInvertPattern();
 	}
 
-	public DFEVar getDataCount() {
-		return m_dataCount;
-	}
-
 	/**
 	 * Transpose the inputs according the addressing pattern.
 	 *

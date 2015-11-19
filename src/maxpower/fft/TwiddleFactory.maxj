@@ -97,18 +97,21 @@ public class TwiddleFactory extends KernelLib {
 	 * @param dataCount Current dataset count.
 	 * @return {@link List} of twiddle factors.
 	 */
-	public List<DFEComplex> r2dualTwiddles(final DFEVar dataCount) {
-		final KernelLib owner = dataCount.getKernel();
+	public static List<DFEComplex> r2dualTwiddles(DFEType type, final int fftSize, KernelLib owner) {
 		final List<DFEComplex> twiddles = new ArrayList<DFEComplex>(FftFactory4pipes.NUM_FFT_PIPES);
 
-		final int fftSize = (int) Math.pow(2, m_exponent * 2 + 1);
+		final CounterChain chain = owner.control.count.makeCounterChainMoreBits();
+		                   chain.addCounter(3, 1);
+		DFEVar dataCount = chain.addCounter(1 << (MathUtils.bitsToAddress(fftSize) -
+				Radix.RADIX_4.getBinaryShift()), 1);
+
 		final int numTwiddles = fftSize / 4;
 		final DFEType addressType = KernelLib.dfeUInt(MathUtils.bitsToAddress(numTwiddles));
 		final Bits[] twiddleFactors = new Bits[numTwiddles];
-		final DFEComplexType twiddleType = new DFEComplexType(m_twiddleType);
+		final DFEComplexType twiddleType = new DFEComplexType(type);
 		final double precision;
-		if (m_twiddleType instanceof DFEFix) {
-			precision = 1.0 / (1 << ((DFEFix) m_twiddleType).getFractionBits());
+		if (type instanceof DFEFix) {
+			precision = 1.0 / (1 << ((DFEFix) type).getFractionBits());
 		} else {
 			precision = 0.0;
 		}
