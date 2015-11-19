@@ -39,10 +39,6 @@ public class FftFactory4pipes extends KernelLib {
 	/** {@link DFEType Type} of twiddle factors. */
 	private final DFEType m_twiddleType;
 
-	/** {@link TwiddleFactory Twiddle factory}. */
-	private final TwiddleFactory m_twiddleFactory;
-	/** {@link List} of twiddle factors for Radix-2 stage. */
-	private final List<DFEComplex> m_r2Twiddles;
 	/** @link MixedRadixBuffer Mixed-radix buffer}. */
 	private final MixedRadixBuffer m_mixedBuffer;
 
@@ -75,8 +71,6 @@ public class FftFactory4pipes extends KernelLib {
 		m_radix2phases = m_exponent % 2;
 		m_twiddleType = twiddleType;
 
-		m_twiddleFactory = new TwiddleFactory(Radix.RADIX_4, m_radix4phases, m_twiddleType, kernel);
-
 		/*
 		 * Enable write all the time we are processing data to make sure all
 		 * buffer phases get completed. Note that we may be processing data
@@ -84,10 +78,8 @@ public class FftFactory4pipes extends KernelLib {
 		 */
 		if (m_radix2phases == 1) {
 			m_mixedBuffer    = new MixedRadixBuffer(m_exponent, kernel);
-			m_r2Twiddles	 = TwiddleFactory.r2dualTwiddles(m_twiddleType, m_fftSize, kernel);
 		} else {
 			m_mixedBuffer    = null;
-			m_r2Twiddles     = null;
 		}
 	}
 
@@ -124,7 +116,7 @@ public class FftFactory4pipes extends KernelLib {
 
 		List<DFEVector<DFEComplex>> fftOut;
 		if (m_radix2phases == 1) {
-			fftOut = ButterflyLib.createButterfly(rdx4input, m_r2Twiddles, Radix.RADIX_2);
+			fftOut = ButterflyLib.createButterfly(m_fftSize, 0, rdx4input, Radix.RADIX_2, m_twiddleType);
 			fftOut = m_mixedBuffer.transpose(fftOut);
 			depth /= 2;
 		} else if (m_radix2phases == 0) {
@@ -134,9 +126,7 @@ public class FftFactory4pipes extends KernelLib {
 		}
 
 		for (int phase = 1; phase <= m_radix4phases; phase++) {
-			final List<DFEComplex> twiddles = m_twiddleFactory.getTwiddles(phase);
-
-			fftOut = ButterflyLib.createButterfly(fftOut, twiddles, Radix.RADIX_4);
+			fftOut = ButterflyLib.createButterfly(m_fftSize, phase, fftOut, Radix.RADIX_4, m_twiddleType);
 
 			if(phase < m_radix4phases) {
 				fftOut = FftBuffer.buffer(fftOut, depth, Radix.RADIX_4.getRadix(), Radix.RADIX_4.getRadix());
