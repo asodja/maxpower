@@ -1,0 +1,121 @@
+package maxpower.fft;
+
+import static org.junit.Assert.assertArrayEquals;
+
+import java.util.List;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+
+public class BitReverseTest {
+
+	final static int NUM_PIPES = 4;
+
+	private static class BitReverseTestKernel extends Kernel {
+
+		DFEType dataType = dfeFloat(8, 24);
+		DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(dataType, NUM_PIPES);
+
+		BitReverseTestKernel(KernelParameters parameters, int fftSize) {
+			super(parameters);
+
+			DFEVector<DFEVar> inputVector = io.input("input", vectorType);
+
+			DFEComplexType complexType = new DFEComplexType(dataType);
+			DFEVectorType<DFEComplex> complexVectorType = new DFEVectorType<DFEComplex>(complexType, NUM_PIPES);
+
+			DFEVector<DFEComplex> data = complexVectorType.newInstance(this);
+			for (int i = 0; i < NUM_PIPES; i++) {
+				data[i] <== DFEComplexType.newInstance(this, inputVector[i], inputVector[i]);
+			}
+
+			DFEVector<DFEComplex> bitReversedData = Encoder.bitReverseBuffer(data, fftSize);
+
+			DFEVector<DFEVar> result = vectorType.newInstance(this);
+			for (int i = 0; i < NUM_PIPES; i++) {
+				result[i] <== bitReversedData[i].getReal();
+			}
+
+			io.output("output", vectorType) <== result;
+		}
+	}
+
+	@Test public void testBitReverse32()    { testBitReverse(32   ); }
+	@Test public void testBitReverse64()    { testBitReverse(64   ); }
+	@Test public void testBitReverse128()   { testBitReverse(128  ); }
+	@Test public void testBitReverse256()   { testBitReverse(256  ); }
+	@Test public void testBitReverse512()   { testBitReverse(512  ); }
+	@Test public void testBitReverse1024()  { testBitReverse(1024 ); }
+	@Test public void testBitReverse2048()  { testBitReverse(2048 ); }
+	@Test public void testBitReverse4096()  { testBitReverse(4096 ); }
+	@Test public void testBitReverse8192()  { testBitReverse(8192 ); }
+	@Test public void testBitReverse16384() { testBitReverse(16384); }
+
+	private void testBitReverse(final int size) {
+		double input[][]    = new double[size / NUM_PIPES][NUM_PIPES];
+		double actual[][]   = new double[size / NUM_PIPES][NUM_PIPES];
+		Bits inputBits[]    = new Bits[size / NUM_PIPES];
+
+		SimulationManager manager = new SimulationManager("BitReverseTest");
+		BitReverseTestKernel kernel = new BitReverseTestKernel(manager.makeKernelParameters(), size);
+		manager.setKernel(kernel);
+		manager.build();
+
+		for (int i = 0; i < size / NUM_PIPES; i++) {
+			for (int j = 0; j < NUM_PIPES; j++) {
+				input[i][j] = i * NUM_PIPES + j;
+			}
+			inputBits[i] = kernel.vectorType.encodeConstant(input[i]);
+		}
+
+		manager.setKernelCycles(size / NUM_PIPES);
+		manager.setInputDataRaw("input", inputBits);
+		manager.run();
+
+		Bits[] actualBits = manager.getOutputDataRawArray("output");
+		for (int i = 0; i < size / NUM_PIPES; i++) {
+			@SuppressWarnings("rawtypes")
+			List word = kernel.vectorType.decodeConstant(actualBits[i]);
+			for (int j = 0; j < NUM_PIPES; j++) {
+				actual[i][j] = (Double) word[j];
+			}
+		}
+
+		double[][] expected = bitReverseInput(size, input);
+		for (int i = 0; i < size / NUM_PIPES; i++) {
+			assertArrayEquals("BitReverse" + i, expected[i], actual[i], 0);
+		}
+	}
+
+	private double[][] bitReverseInput(final int size, double[][] input) {
+		double expected[][] = new double[size / NUM_PIPES][NUM_PIPES];
+
+		for (int i = 0; i < size; i++) {
+			int address = bitreverse(i, size);
+			expected[i / 4][i % 4] = input[address/ 4][address % 4];
+		}
+
+		return expected;
+	}
+
+	private int bitreverse(int x, final int size) {
+		int logN = (int) (Math.log(size) / Math.log(2));
+		int xr = 0;
+		for (int i = 0; i < logN; i++) {
+			xr <<= 1;
+			xr |= x & 1;
+			x >>= 1;
+		}
+		return xr;
+	}
+}
