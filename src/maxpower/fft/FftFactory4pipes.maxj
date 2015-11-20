@@ -93,8 +93,9 @@ public class FftFactory4pipes extends KernelLib {
 	 * @return a DFEVector containing the FFT outputs.
 	 */
 	public DFEVector<DFEComplex> transform(final DFEVector<DFEComplex> input, int numFFTs) {
-		List<DFEVector<DFEComplex>> codedOutput = transform(Encoder.encodeFftInput(input, numFFTs, 4));
-		return Encoder.decodeFftOutput(this, codedOutput, numFFTs, 4);
+		List<DFEVector<DFEComplex>> codedOutput =
+			transform(Encoder.encodeFftInput(input, numFFTs, NUM_FFT_PIPES));
+		return Encoder.decodeFftOutput(codedOutput, numFFTs, NUM_FFT_PIPES, m_fftSize);
 	}
 
 	/**
