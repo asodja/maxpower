@@ -165,9 +165,8 @@ public class FloatingPointMultiAdder {
 			exponents.add(getExponent(summand));
 		}
 
-		// TODO this seems rather arbitrary
-		int fanoutLimit = (owner.optimization.getPipeliningFactor() == 0)
-		                ? 1024 : (8 + (int)((1 - owner.optimization.getPipeliningFactor()) * 8));
+		// TODO Is this too conservative?
+		int fanoutLimit = 8 + (int)((1 - owner.optimization.getPipeliningFactor()) * 8);
 		return new FanoutLimiter<DFEVar>(TreeReduce.reduce(new Max(), exponents), fanoutLimit);
 	}
 
@@ -296,7 +295,7 @@ public class FloatingPointMultiAdder {
 			owner.optimization.pushEnableBitGrowth(true);
 			DFEVar unusedSum = aVal + bVal;
 			unusedSum.setReportOnUnused(false);
-			DFEType rValType = (unusedSum).getType(); // this addition will be optimised away
+			DFEType rValType = unusedSum.getType(); // this addition will be optimized away
 			owner.optimization.popEnableBitGrowth();
 
 			SMIO sm = owner.addStateMachine("CondAddSubSM"+i++, new SM(owner, rValType.getTotalBits()));
