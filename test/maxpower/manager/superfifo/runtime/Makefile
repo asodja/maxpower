@@ -5,23 +5,23 @@ CC=gcc
 USE_SLIC = 1
 include $(MAXCOMPILERDIR)/lib/Makefile.include
 
-CFLAGS += -std=gnu99 -Wall -Wextra -DDESIGN_NAME=$(DESIGNNAME) 
+CFLAGS += -std=gnu99 -Wall -Wextra -DDESIGN_NAME=$(DESIGNNAME)
 CFLAGS += $(MAXCOMPILER_INC) 
 LDFLAGS += -ggdb $(MAXCOMPILER_LIBS)
-
-%.o: %.max
-	$(SLICCOMPILE) $^ $@ 
-
-TARGETS := $(NAME) 
-
-all: $(TARGETS)
 
 $(NAME): $(NAME).o \
 	$(DESIGNNAME).o 
 	$(CC) $^ $(LDFLAGS) -o $@
 
-restart_sim:
-	$(MAXCOMPILERDIR)/bin/maxcompilersim -c ISCA restart
+$(DESIGNNAME).o: $(DESIGNNAME).max
+	$(SLICCOMPILE) $^ $@ 
+
+%.o : %.c $(DESIGNNAME).o
+	gcc -c $(CFLAGS) $< -o $@
+
+TARGETS := $(NAME) 
+
+all: $(TARGETS)
 
 
 clean:
