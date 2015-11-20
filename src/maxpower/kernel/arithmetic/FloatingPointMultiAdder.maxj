@@ -41,7 +41,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 /**
  * Add several floating-point numbers, without de-normalizing and re-normalizing the intermediate results,
  * thus saving resources.
- *
+ * <p>
  * N.B. The addition will be performed in a binary tree, which may slightly effect the final result, due
  * to the altered order of the additions (floating-point addition is not strictly associative).
  */
@@ -64,7 +64,7 @@ public class FloatingPointMultiAdder {
 
 	/**
 	 * Sum values using the specified number of guard bits.
-	 *
+	 * <p>
 	 * N.B. Increasing the number of guards bits may decrease the numerical error
 	 * from rounding, but may also increase the resource usage on the DFE.
 	 *
@@ -77,9 +77,12 @@ public class FloatingPointMultiAdder {
 
 	/**
 	 * Sum values using the specified number of guard bits.
-	 *
+	 * <p>
 	 * N.B. Increasing the number of guards bits may decrease the numerical error
-	 * from rounding, but may also increase the resource usage on the DFE.
+	 * from rounding, but may also increase the resource usage on the DFE. If the
+	 * number of summands is 2 then this will use the regular floating point addition
+	 * instead. In this case it is advisable to use a pipelining factor of 0.5 on
+	 * MAX4 and 0.8 on MAX3.
 	 *
 	 * @param numGuardBits  Number of extra bits used during summation to improve precision.
 	 * @param summands      Values to sum.
@@ -89,7 +92,10 @@ public class FloatingPointMultiAdder {
 		case 0: throw new MaxCompilerAPIError("Must have at least one float.");
 		case 1: return summands[0];
 		case 2: return summands[0] + summands[1];
-		default: ; // continue
+		}
+
+		if (!(summands[0].getType() instanceof DFEFloat)) {
+			throw new RuntimeException("FloatingPointMultiAdder only supports floating point values. For fixed point addition use TreeReduce.");
 		}
 
 		checkTypesIdentical(summands);
@@ -97,7 +103,7 @@ public class FloatingPointMultiAdder {
 		KernelLib owner = summands[0].getKernel();
 		DFEFloat  type  = (DFEFloat) summands[0].getType();
 
-		DFEVar maxExponent = getMaxExponent(summands);
+		FanoutLimiter<DFEVar> maxExponent = getMaxExponent(summands);
 
 		List<DFEStruct> treeValues = getReductionInputs(numGuardBits, summands, maxExponent);
 
@@ -114,7 +120,7 @@ public class FloatingPointMultiAdder {
 		owner.optimization.popPipeliningFactor();
 
 		// Reinterpret our result as though it has a single integer bit and calculate appropriate exponent.
-		DFEVar sumValExp = maxExponent + (((DFEFix) sumVal.getType()).getIntegerBits() - 1);
+		DFEVar sumValExp = maxExponent.get() + (((DFEFix) sumVal.getType()).getIntegerBits() - 1);
 		int sumValBits = sumVal.getType().getTotalBits();
 		sumVal = reinterpretCast(sumVal, dfeFixOffset(sumValBits, 1-sumValBits, SignMode.UNSIGNED));
 
@@ -151,7 +157,7 @@ public class FloatingPointMultiAdder {
 		return onehotDecode(bitreverse(leading1Detect(v)));
 	}
 
-	private static DFEVar getMaxExponent(List<DFEVar> summands) {
+	private static FanoutLimiter<DFEVar> getMaxExponent(List<DFEVar> summands) {
 		KernelLib owner = summands[0].getKernel();
 
 		List<DFEVar> exponents = new ArrayList<DFEVar>();
@@ -161,8 +167,8 @@ public class FloatingPointMultiAdder {
 
 		// TODO this seems rather arbitrary
 		int fanoutLimit = (owner.optimization.getPipeliningFactor() == 0)
-		                ? 1024 : (8 + (int)((1 - owner.optimization.getPipeliningFactor())*8));
-		return new FanoutLimiter(owner, TreeReduce.reduce(new Max(), exponents), fanoutLimit).get();
+		                ? 1024 : (8 + (int)((1 - owner.optimization.getPipeliningFactor()) * 8));
+		return new FanoutLimiter<DFEVar>(TreeReduce.reduce(new Max(), exponents), fanoutLimit);
 	}
 
 	private static DFEVar getSign(DFEVar val) {
@@ -194,14 +200,14 @@ public class FloatingPointMultiAdder {
 		return KernelMath.min(maxShift, expDelta).cast(dfeUInt(maxShiftBits));
 	}
 
-	private static List<DFEStruct> getReductionInputs(int numGuardBits, List<DFEVar> summands, DFEVar maxExponent) {
+	private static List<DFEStruct> getReductionInputs(int numGuardBits, List<DFEVar> summands, FanoutLimiter<DFEVar> maxExponent) {
 		KernelLib owner = summands[0].getKernel();
 
 		List<DFEStruct> redVals = new ArrayList<DFEStruct>();
 		for (DFEVar summand : summands) {
 			DFEVar mantissa     = getMantissa(numGuardBits, summand);
 			int    maxShiftBits = MathUtils.bitsToRepresent(mantissa.getType().getTotalBits());
-			DFEVar normalized   = (mantissa >> getShift(maxExponent, summand, maxShiftBits));
+			DFEVar normalized   = (mantissa >> getShift(maxExponent.get(), summand, maxShiftBits));
 
 			DFEVar redValue = asSigned(normalized); // convert to signed type
 
@@ -247,20 +253,22 @@ public class FloatingPointMultiAdder {
 	private static class CondAddSubWithBitGrowth implements AssociativeOp<DFEStruct> {
 		// Implement using state machine so we're not unnecessarily creating extra nodes in graph.
 		private static class SM extends KernelStateMachine {
-			private final DFEsmInput a, b, c;
+			private final DFEsmInput a, b, aNeg, bNeg;
 			private final DFEsmOutput r;
 
 			protected SM(KernelLib owner, int bits) {
 				super(owner);
 
-				a = io.input("a", dfeInt(bits));
-				b = io.input("b", dfeInt(bits));
-				c = io.input("c", dfeBool());
-				r = io.output("r", dfeInt(bits));
+				a    = io.input("a",    dfeInt(bits));
+				b    = io.input("b",    dfeInt(bits));
+				aNeg = io.input("aNeg", dfeBool());
+				bNeg = io.input("bNeg", dfeBool());
+				r    = io.output("r",   dfeInt(bits));
 			}
 
 			@Override
 			protected void outputFunction() {
+				DFEsmValue c = aNeg ^ bNeg;
 				r <== a + (b ^ mask(c, r.getType())) + c.cast(r.getType());
 			}
 
@@ -288,13 +296,14 @@ public class FloatingPointMultiAdder {
 			owner.optimization.pushEnableBitGrowth(true);
 			DFEVar unusedSum = aVal + bVal;
 			unusedSum.setReportOnUnused(false);
-			DFEType rValType = (unusedSum).getType(); // this addition will be optimized away
+			DFEType rValType = (unusedSum).getType(); // this addition will be optimised away
 			owner.optimization.popEnableBitGrowth();
 
 			SMIO sm = owner.addStateMachine("CondAddSubSM"+i++, new SM(owner, rValType.getTotalBits()));
 			sm.connectInput("a", reinterpretCast(aVal.cast(rValType), dfeInt(rValType.getTotalBits())));
 			sm.connectInput("b", reinterpretCast(bVal.cast(rValType), dfeInt(rValType.getTotalBits())));
-			sm.connectInput("c", aNeg ^ bNeg);
+			sm.connectInput("aNeg", aNeg);
+			sm.connectInput("bNeg", bNeg);
 
 			DFEStruct result = getReductionType(rValType).newInstance(a.getKernel());
 			result["neg"] <== aNeg;

@@ -16,12 +16,12 @@ public class FanoutLimiterTest {
 		public FanoutLimiterTestKernel(KernelParameters parameters) {
 			super(parameters);
 
-			DFEVar in =io.input("input", dfeUInt(32));
-			FanoutLimiter fl = new FanoutLimiter(this, in, 3);
+			DFEVar in = io.input("input", dfeUInt(32));
+			FanoutLimiter<DFEVar> fl = new FanoutLimiter<DFEVar>(in, 3);
 
 			DFEVar sum = fl.get();
 			int nb = 10;
-			for(int i = 1; i < nb; ++i) {
+			for (int i = 1; i < nb; i++) {
 				sum = sum + stream.offset(fl.get(), i);
 			}
 
@@ -36,7 +36,7 @@ public class FanoutLimiterTest {
 
 		int size = 20;
 		double input[] = new double[size];
-		for(int i = 0; i < size; ++i) {
+		for (int i = 0; i < size; i++) {
 			input[i] = i;
 		}
 		mgr.setInputData("input", input);
