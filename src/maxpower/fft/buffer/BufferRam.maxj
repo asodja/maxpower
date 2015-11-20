@@ -17,7 +17,7 @@ public class BufferRam {
 	/**
 	 * Creates a dual-port RAM instance. Both ports are read and written on each call, the
 	 * existing value being read out before being overwritten by the new value
-	 * (i.e. {@link RamWriteMode#READ_FIRST read-first} mode).
+	 * (i.e. {@link RamWriteMode#Write_FIRST write-first} mode).
 	 *
 	 * @param addrA Input address for port A.
 	 * @param inA Input data for port A.

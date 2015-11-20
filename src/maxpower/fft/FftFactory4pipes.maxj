@@ -42,7 +42,7 @@ public class FftFactory4pipes extends KernelLib {
 	/** @link MixedRadixBuffer Mixed-radix buffer}. */
 	private final MixedRadixBuffer m_mixedBuffer;
 
-	private final Radix4InputBuffer  m_r4InputBuffer;
+	private final Radix4InputBuffer m_r4InputBuffer;
 
 
 	/**
@@ -69,7 +69,7 @@ public class FftFactory4pipes extends KernelLib {
 
 		m_radix4phases = m_exponent / 2;
 		m_radix2phases = m_exponent % 2;
-		m_twiddleType = twiddleType;
+		m_twiddleType  = twiddleType;
 
 		/*
 		 * Enable write all the time we are processing data to make sure all
@@ -77,9 +77,9 @@ public class FftFactory4pipes extends KernelLib {
 		 * when neither input not output is enabled.
 		 */
 		if (m_radix2phases == 1) {
-			m_mixedBuffer    = new MixedRadixBuffer(m_exponent, kernel);
+			m_mixedBuffer = new MixedRadixBuffer(m_exponent, kernel);
 		} else {
-			m_mixedBuffer    = null;
+			m_mixedBuffer = null;
 		}
 	}
 

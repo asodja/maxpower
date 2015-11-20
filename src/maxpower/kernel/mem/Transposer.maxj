@@ -19,6 +19,9 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  */
 public class Transposer {
 
+	// TODO: Add Multi Pipe version
+	// TODO: Add interface with enable mapped to true
+
 	private static int offset_counter = 0;
 
 	/**
@@ -40,9 +43,10 @@ public class Transposer {
 	 * width     fast dimension
 	 * height    slow dimension
 	 **/
-	public static DFEVar transpose(KernelLib owner, DFEVar in, int width, int height, DFEVar enable) {
-		return transpose(owner, in, width, 1, height, enable);
+	public static DFEVar transpose(DFEVar in, int width, int height, DFEVar enable) {
+		return transpose(in, width, 1, height, enable);
 	}
+
 
 	/**
 	 * This one differs from constructor Transposer(KernelLib owner, HWVar in, int width, int height, HWVar enable) in that
@@ -66,7 +70,9 @@ public class Transposer {
 	 * height    medium dimension
 	 * depth     slow dimension
 	 **/
-	public static DFEVar transpose(KernelLib owner, DFEVar in, int width, int height, int depth, DFEVar enable) {
+	public static DFEVar transpose(DFEVar in, int width, int height, int depth, DFEVar enable) {
+		KernelLib owner = in.getKernel();
+
 		final int N = width * height * depth;;
 		final boolean isDoubleBuffered;
 
@@ -82,6 +88,7 @@ public class Transposer {
 			DFEVar isFirst = owner.control.count.pulse(1);
 
 			DFEVar i = owner.control.count.makeCounter(owner.control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
+			owner.debug.simPrintf("isFirst: %d i: %d\n", isFirst, i);
 			DFEVar mul = KernelLib.dfeUInt(nBits).newInstance(owner);
 			owner.optimization.pushEnableBitGrowth(true);
 			ConstDivModResult addressDivMod = ConstDenominator.divMod(i * mul, Nm);

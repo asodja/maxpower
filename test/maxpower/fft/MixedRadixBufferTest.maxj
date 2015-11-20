@@ -2,7 +2,10 @@ package maxpower.fft;
 
 import static org.junit.Assert.assertArrayEquals;
 
+import java.util.ArrayList;
 import java.util.List;
+
+import maxpower.fft.buffer.MixedRadixBuffer;
 
 import org.junit.Test;
 
@@ -16,20 +19,23 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
 import com.maxeler.maxcompiler.v2.utils.Bits;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
-public class BitReverseTest {
+public class MixedRadixBufferTest {
 
 	final static int NUM_PIPES = 4;
 
 	final static int NUM_DATA_RUNS = 4;
 
-	private static class BitReverseTestKernel extends Kernel {
+	private static class MixedRadixBufferTestKernel extends Kernel{
 
 		DFEType dataType = dfeFloat(8, 24);
 		DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(dataType, NUM_PIPES);
 
-		BitReverseTestKernel(KernelParameters parameters, int fftSize) {
+		public MixedRadixBufferTestKernel(KernelParameters parameters, final int fftSize) {
 			super(parameters);
+
+			MixedRadixBuffer buffer = new MixedRadixBuffer(MathUtils.bitsToAddress(fftSize), this);
 
 			DFEVector<DFEVar> inputVector = io.input("input", vectorType);
 
@@ -41,35 +47,49 @@ public class BitReverseTest {
 				data[i] <== DFEComplexType.newInstance(this, inputVector[i], inputVector[i]);
 			}
 
-			DFEVector<DFEComplex> bitReversedData = Encoder.bitReverseBuffer(data, fftSize);
+			List<DFEVector<DFEComplex>> list = new ArrayList<DFEVector<DFEComplex>>();
+			DFEVectorType<DFEComplex> fftType = new DFEVectorType<DFEComplex>(complexType, 1);
 
-			DFEVector<DFEVar> result = vectorType.newInstance(this);
-			for (int i = 0; i < NUM_PIPES; i++) {
-				result[i] <== bitReversedData[i].getReal();
+			int bitsPerPipe = fftType.getTotalBits();
+			for(int i = 0; i < NUM_PIPES; i++){
+				list.add(fftType.unpack(data.pack().slice(i*bitsPerPipe, bitsPerPipe)));
 			}
 
-			io.output("output", vectorType) <== result;
+			List<DFEVector<DFEComplex>> transposedData = buffer.transpose(list);
+
+			DFEVector<DFEComplex> result = complexVectorType.newInstance(this);
+
+			for (int i = 0; i < 4; i++) {
+				result.connect(i, transposedData[i][0]);
+			}
+
+			DFEVector<DFEVar> realResult = vectorType.newInstance(this);
+			for (int i = 0; i < NUM_PIPES; i++) {
+				realResult[i] <== result[i].getReal();
+			}
+
+			io.output("output", vectorType) <== realResult;
 		}
 	}
 
-	@Test public void testBitReverse32()    { testBitReverse(32   ); }
-	@Test public void testBitReverse64()    { testBitReverse(64   ); }
-	@Test public void testBitReverse128()   { testBitReverse(128  ); }
-	@Test public void testBitReverse256()   { testBitReverse(256  ); }
-	@Test public void testBitReverse512()   { testBitReverse(512  ); }
-	@Test public void testBitReverse1024()  { testBitReverse(1024 ); }
-	@Test public void testBitReverse2048()  { testBitReverse(2048 ); }
-	@Test public void testBitReverse4096()  { testBitReverse(4096 ); }
-	@Test public void testBitReverse8192()  { testBitReverse(8192 ); }
-	@Test public void testBitReverse16384() { testBitReverse(16384); }
+	@Test public void testMixedRadixBuffer32()    { testMixedRadixBuffer(32   ); }
+	@Test public void testMixedRadixBuffer64()    { testMixedRadixBuffer(64   ); }
+	@Test public void testMixedRadixBuffer128()   { testMixedRadixBuffer(128  ); }
+	@Test public void testMixedRadixBuffer256()   { testMixedRadixBuffer(256  ); }
+	@Test public void testMixedRadixBuffer512()   { testMixedRadixBuffer(512  ); }
+	@Test public void testMixedRadixBuffer1024()  { testMixedRadixBuffer(1024 ); }
+	@Test public void testMixedRadixBuffer2048()  { testMixedRadixBuffer(2048 ); }
+	@Test public void testMixedRadixBuffer4096()  { testMixedRadixBuffer(4096 ); }
+	@Test public void testMixedRadixBuffer8192()  { testMixedRadixBuffer(8192 ); }
+	@Test public void testMixedRadixBuffer16384() { testMixedRadixBuffer(16384); }
 
-	private void testBitReverse(final int size) {
+	private void testMixedRadixBuffer(final int size) {
 		double input[][]    = new double[NUM_DATA_RUNS * size / NUM_PIPES][NUM_PIPES];
 		double actual[][]   = new double[NUM_DATA_RUNS * size / NUM_PIPES][NUM_PIPES];
 		Bits inputBits[]    = new Bits[NUM_DATA_RUNS * size / NUM_PIPES];
 
-		SimulationManager manager = new SimulationManager("BitReverseTest");
-		BitReverseTestKernel kernel = new BitReverseTestKernel(manager.makeKernelParameters(), size);
+		SimulationManager manager = new SimulationManager("MixedRadixBufferTest");
+		MixedRadixBufferTestKernel kernel = new MixedRadixBufferTestKernel(manager.makeKernelParameters(), size);
 		manager.setKernel(kernel);
 		manager.build();
 
@@ -87,7 +107,7 @@ public class BitReverseTest {
 		manager.run();
 
 		Bits[] actualBits = manager.getOutputDataRawArray("output");
-		for (int i = 0; i < NUM_DATA_RUNS; i++) {
+		for (int i = 0; i < NUM_DATA_RUNS; i++ ) {
 			for (int j = 0; j < size / NUM_PIPES; j++) {
 				@SuppressWarnings("rawtypes")
 				List word = kernel.vectorType.decodeConstant(actualBits[j]);
@@ -97,7 +117,12 @@ public class BitReverseTest {
 			}
 		}
 
-		double[][] expected = bitReverseData(size, input);
+		double[][] expected = createExpectedData(size, input);
+		/*for (int i = 0; i < size / NUM_PIPES; i++) {
+			for (int j = 0; j < NUM_PIPES; j++) {
+				System.out.println("Is: " + actual[i][j] + " Expected " + expected[i][j]);
+			}
+		}*/
 		for (int i = 0; i < NUM_DATA_RUNS; i++) {
 			for (int j = 0; j < size / NUM_PIPES; j++) {
 				assertArrayEquals("BitReverse" + j, expected[j], actual[j + i * size / NUM_PIPES], 0);
@@ -105,25 +130,29 @@ public class BitReverseTest {
 		}
 	}
 
-	private double[][] bitReverseData(final int size, double[][] input) {
+	private double[][] createExpectedData(final int size, double[][] input) {
 		double expected[][] = new double[size / NUM_PIPES][NUM_PIPES];
 
+		int positionLow = 0;
+		int positionHigh = size / 2;
 		for (int i = 0; i < size; i++) {
-			int address = bitreverse(i, size);
+			int address;
+			if (i % 2 == 0) {
+				address = positionLow++;
+			} else {
+				address = positionHigh++;
+			}
+			if (i % 4 == 3){
+				positionLow  += 2;
+				positionHigh += 2;
+				if (positionLow == size / 2){
+					positionLow  = 2;
+					positionHigh = size / 2 + 2;
+				}
+			}
 			expected[i / 4][i % 4] = input[address/ 4][address % 4];
 		}
 
 		return expected;
-	}
-
-	private int bitreverse(int x, final int size) {
-		int logN = (int) (Math.log(size) / Math.log(2));
-		int xr = 0;
-		for (int i = 0; i < logN; i++) {
-			xr <<= 1;
-			xr |= x & 1;
-			x >>= 1;
-		}
-		return xr;
 	}
 }

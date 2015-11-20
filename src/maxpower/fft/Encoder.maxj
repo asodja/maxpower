@@ -53,6 +53,11 @@ public class Encoder {
 	 */
 	protected static DFEVector<DFEComplex> bitReverseBuffer(DFEVector<DFEComplex> input, final int fftSize) {
 		KernelLib owner = input.getKernel();
+
+		if (!MathUtils.isPowerOf2(fftSize)) {
+			throw new RuntimeException("The bit reverse buffer currently only works for 4 pipes and fft sizes of power of 2");
+		}
+
 		final int ramSize = fftSize / FftFactory4pipes.NUM_FFT_PIPES;
 
 		final int N = MathUtils.bitsToAddress(fftSize);

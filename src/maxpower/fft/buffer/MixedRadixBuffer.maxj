@@ -69,7 +69,6 @@ public class MixedRadixBuffer extends KernelLib {
 	 *
 	 * @param owner {@link KernelLib Kernel} object.
 	 * @param exponent Exponent of radix.
-	 * @param startAddressing Indication of whether to start addressing.
 	 */
 	public MixedRadixBuffer(final int exponent, KernelLib owner) {
 		super(owner);
@@ -107,6 +106,8 @@ public class MixedRadixBuffer extends KernelLib {
 			final int index = i;
 			final int invertIndex = m_numBuffers - i - 1;
 
+			System.out.println("Size List: " + input.size() + " Size Vector: " + input[0].getSize());
+
 			final List<DFEVar> addr;
 			final List<DFEVector<DFEComplex>> ramIn;
 
@@ -129,6 +130,7 @@ public class MixedRadixBuffer extends KernelLib {
 				ramIn = input;
 			}
 
+			System.out.println("RamIn: Size List: " + ramIn.size() + " Size Vector: " + ramIn[0].getSize());
 			final List<DFEVector<DFEComplex>> bufferOutput = BufferRam.dualRam(m_bufferSize,
 					m_writeBuffer, addr, ramIn);
 			for (int j = 0; j < bufferOutput.size(); j++) {
