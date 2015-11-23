@@ -1,5 +1,9 @@
 package maxpower.kernel.pipeline;
 
+import java.util.List;
+
+import junit.framework.Assert;
+
 import org.junit.Test;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
@@ -7,44 +11,51 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.managers.SimulationParams;
 import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.photon.core.GraphPassTester;
+import com.maxeler.photon.core.Node;
+import com.maxeler.photon.nodes.NodeRegister;
 
-/**
- * Minimalist test: does it compile and run something? Anything? Don't even check the answer.
- */
 public class FanoutLimiterTest {
 	static class FanoutLimiterTestKernel extends Kernel {
-		public FanoutLimiterTestKernel(KernelParameters parameters) {
+		public FanoutLimiterTestKernel(KernelParameters parameters, int maxFanout, int numValues) {
 			super(parameters);
 
 			DFEVar in = io.input("input", dfeUInt(32));
-			FanoutLimiter<DFEVar> fl = new FanoutLimiter<DFEVar>(in, 3);
+			FanoutLimiter<DFEVar> fl = new FanoutLimiter<DFEVar>(in, maxFanout);
 
-			DFEVar sum = fl.get();
-			int nb = 10;
-			for (int i = 1; i < nb; i++) {
-				sum = sum + stream.offset(fl.get(), i);
+			DFEVar catted = fl.get();
+			for (int i = 1; i < numValues; i++) {
+				catted = catted # fl.get();
 			}
 
-			io.output("output", dfeUInt(32)) <== sum;
+			io.output("output", catted.getType()) <== catted;
 		}
 	}
 
-	@Test
-	public void testSuccessfulBuild() {
+	@Test public void testMaxFanout3NumValues9()  { doTest(3,  9, 3); }
+	@Test public void testMaxFanout3NumValues10() { doTest(3, 10, 4); }
+	@Test public void testMaxFanout3NumValues20() { doTest(3, 20, 9); }
+	@Test public void testMaxFanout4NumValues10() { doTest(4, 10, 3); }
+	@Test public void testMaxFanout4NumValues16() { doTest(4, 16, 4); }
+	@Test public void testMaxFanout4NumValues20() { doTest(4, 20, 6); }
+
+	private void doTest(int maxFanout, int numValues, int expectedNumRegs) {
 		SimulationManager mgr = new SimulationManager("FanoutLimiterTest", SimulationParams.HDLSIM);
-		mgr.setKernel(new FanoutLimiterTestKernel(mgr.makeKernelParameters()));
+		Kernel k = new FanoutLimiterTestKernel(mgr.makeKernelParameters(), maxFanout, numValues);
+		mgr.setKernel(k);
+		mgr.build();
 
-		int size = 20;
-		double input[] = new double[size];
-		for (int i = 0; i < size; i++) {
-			input[i] = i;
+		GraphPassTester tester = new GraphPassTester("FanoutLimiterTest");
+		tester.setKernel(k);
+
+		Assert.assertEquals(expectedNumRegs, numRegisterNodes(tester.getNodes()));
+	}
+
+	private static int numRegisterNodes(List<Node> nodes) {
+		int count = 0;
+		for (Node n : nodes) {
+			if (n instanceof NodeRegister) count++;
 		}
-		mgr.setInputData("input", input);
-		mgr.setKernelCycles(size);
-		mgr.setScalarInput("io_input_force_disabled", 0);//avoiding warning message that only appears with HDL sim.
-		mgr.setScalarInput("io_output_force_disabled", 0);
-		mgr.runTest();
-
-		mgr.dumpOutput();
+		return count;
 	}
 }

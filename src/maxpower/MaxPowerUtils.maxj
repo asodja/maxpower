@@ -1,0 +1,23 @@
+package maxpower;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class MaxPowerUtils {
+	/**
+	 * Splits the given list in groups of elements of size n.
+	 *
+	 * The last group may have fewer than n elements.
+	 */
+	public static <T> List<List<T>> grouped(List<T> values, int n) {
+		List<List<T>> grouped = new ArrayList<List<T>>();
+
+		while (!values.isEmpty()) {
+			int split = Math.min(n, values.size());
+			grouped.add(values.subList(0, split));
+			values = values.subList(split, values.size());
+		}
+
+		return grouped;
+	}
+}
