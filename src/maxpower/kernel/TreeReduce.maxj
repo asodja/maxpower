@@ -3,9 +3,11 @@ package maxpower.kernel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.ListIterator;
 
 import maxpower.ops.AssociativeOp;
 
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
 
 /**
@@ -28,28 +30,96 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
  *     reduction may affect the result slightly as the order of operations is altered.
  */
 public class TreeReduce {
-	public static <T extends KernelObjectVectorizable<T, T>> T reduce(AssociativeOp<T> op, T... inputs) {
-		return reduce(op, Arrays.asList(inputs));
+	/**
+	 * Reduce the given values using a binary tree and the specified associative operation.
+	 */
+	public static <T extends KernelObjectVectorizable<T, T>> T reduce(AssociativeOp<T> op, T... values) {
+		return reduce(op, Arrays.asList(values));
 	}
 
-	public static <T extends KernelObjectVectorizable<T, T>> T reduce(AssociativeOp<T> op, List<T> inputs) {
-		if (inputs.isEmpty())
-			throw new RuntimeException("Input length for reduction needs to be >= 1.");
+	/**
+	 * Reduce the given values using a binary tree and the specified associative operation.
+	 */
+	public static <T extends KernelObjectVectorizable<T, T>> T reduce(AssociativeOp<T> op, List<T> values) {
+		return reduce(2, new OpReducer<T>(op), values);
+	}
 
-		List<T> current = inputs;
-		while (current.size() > 1) {
-			List<T> next = new ArrayList<T>(current.size()/2 + 1);
+	/**
+	 * Reduce the given values using an n-ary tree.
+	 *
+	 * @param n the degree of the reduction tree (maximum inputs to node in tree)
+	 * @param reducer functor to perform the reduction at each node in tree
+	 * @param values values to reduce
+	 */
+	public static <T> T reduce(int n, Reducer<T> reducer, T... values) {
+		return reduce(n, reducer, Arrays.asList(values));
+	}
 
-			for (int i = 0; i < current.size(); i += 2) {
-				if (i + 1 < current.size())
-					next.add(op.op(current[i], current[i+1]));
-				else
-					next.add(current[i]);
-			}
+	/**
+	 * Reduce the given values using an n-ary tree.
+	 *
+	 * @param n the degree of the reduction tree (maximum inputs to node in tree)
+	 * @param reducer functor to perform the reduction at each node in tree
+	 * @param values values to reduce
+	 */
+	public static <T> T reduce(int n, Reducer<T> reducer, List<T> values) {
+		if (values.isEmpty())
+			throw new MaxCompilerAPIError("Cannot reduce zero values");
 
-			current = next;
+		if (n < 2)
+			throw new MaxCompilerAPIError("Reduction tree must have degree of at least 2");
+
+		List<T> reduced = new ArrayList<T>();
+		for (List<T> group : grouped(values, n)) {
+			reduced.add(reducer.reduce(group));
 		}
 
-		return current[0];
+		return (reduced.size() == 1) ? reduced[0] : reduce(n, reducer, reduced);
+	}
+
+	/**
+	 * Split the given list in chunks of size n.
+	 */
+	private static <T> List<List<T>> grouped(List<T> values, int n) {
+		List<List<T>> grouped = new ArrayList<List<T>>();
+
+		while (!values.isEmpty()) {
+			int split = Math.min(n, values.size());
+			grouped.add(values.subList(0, split));
+			values = values.subList(split, values.size());
+		}
+
+		return grouped;
+	}
+
+	/**
+	 * A functor, which can take a list of values and reduce down to a single value.
+	 */
+	public interface Reducer<T> {
+		T reduce(List<T> values);
+	}
+
+	/**
+	 * A reducer using a binary operator to perform a simple linear reduction.
+	 */
+	public static class OpReducer<T extends KernelObjectVectorizable<T, T>> implements Reducer<T> {
+		private final AssociativeOp<T> op;
+
+		public OpReducer(AssociativeOp<T> op) {
+			this.op = op;
+		}
+
+		@Override
+		public T reduce(List<T> values) {
+			if (values.isEmpty())
+				throw new MaxCompilerAPIError("Cannot reduce zero values");
+
+			T acc = values[0];
+			for (ListIterator<T> it = values.listIterator(1); it.hasNext(); ) {
+				acc = op.op(acc, it.next());
+			}
+
+			return acc;
+		}
 	}
 }
