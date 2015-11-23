@@ -20,9 +20,31 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 public class Transposer {
 
 	// TODO: Add Multi Pipe version
-	// TODO: Add interface with enable mapped to true
 
 	private static int offset_counter = 0;
+
+	/**
+	 * For minimal resource usage, choose width and height such that
+	 * (width*height-1) is an exact power of two.
+	 *
+	 * Note that you must have width*height>=17
+	 *
+	 * Example:
+	 * Assume width of 4 and height of 3, with values
+	 *
+	 *	0	|	1	|	2	|	3
+	 *	4	|	5	|	6	|	7
+	 *	8	|	9	|	10	|	11
+	 *
+	 *	Then the output will return (after 12 cycles since the output does not hide the latency)
+	 *		0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11
+	 *
+	 * width     fast dimension
+	 * height    slow dimension
+	 **/
+	public static DFEVar transpose(DFEVar in, int width, int height) {
+		return transpose(in, width, 1, height, in.getKernel().constant.var(true));
+	}
 
 	/**
 	 * For minimal resource usage, choose width and height such that
@@ -47,7 +69,6 @@ public class Transposer {
 		return transpose(in, width, 1, height, enable);
 	}
 
-
 	/**
 	 * This one differs from constructor Transposer(KernelLib owner, HWVar in, int width, int height, HWVar enable) in that
 	 * movement in the horizontal directions, when transposing, are not by one column but by a user defined amount.
@@ -65,6 +86,32 @@ public class Transposer {
 	 *
 	 *	Then the output will return
 	 *		0, 5, 10, 15, 20, 25, 1, 6, 11, 16, ...
+	 *
+	 * width     fast dimension
+	 * height    medium dimension
+	 * depth     slow dimension
+	 **/
+	public static DFEVar transpose(DFEVar in, int width, int height, int depth) {
+		return transpose(in, width, height, depth, in.getKernel().constant.var(true));
+	}
+
+	/**
+	 * This one differs from constructor Transposer(KernelLib owner, HWVar in, int width, int height, HWVar enable) in that
+	 * movement in the horizontal directions, when transposing, are not by one column but by a user defined amount.
+	 *
+	 * Example:
+	 * Assume width (fast) of 5 and height (medium) of 3 and depth (slow) of 2, with values
+	 *
+	 *	0	|	1	|	2	|	3	|	4
+	 *	5	|	6	|	7	|	8	|	9
+	 *	10	|	11	|	12	|	13	|	14
+	 *
+	 *	15	|	16	|	17	|	18	|	19
+	 *	20	|	21	|	22	|	23	|	24
+	 *	25	|	26	|	27	|	28	|	29
+	 *
+	 *	Then the output will return
+	 *		0, 15, 5, 20, 10, 25, 1, 16, 6, 21, ...
 	 *
 	 * width     fast dimension
 	 * height    medium dimension
@@ -88,7 +135,6 @@ public class Transposer {
 			DFEVar isFirst = owner.control.count.pulse(1);
 
 			DFEVar i = owner.control.count.makeCounter(owner.control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
-			owner.debug.simPrintf("isFirst: %d i: %d\n", isFirst, i);
 			DFEVar mul = KernelLib.dfeUInt(nBits).newInstance(owner);
 			owner.optimization.pushEnableBitGrowth(true);
 			ConstDivModResult addressDivMod = ConstDenominator.divMod(i * mul, Nm);

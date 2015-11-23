@@ -15,7 +15,7 @@ public class TransposerTest {
 
 	final static int NUM_RUNS = 5;
 
-	final static int NUM_DATA_RUNS = 4;
+	final static int NUM_DATA_RUNS = 5;
 
 	private static class TransposerTestKernel extends Kernel{
 
@@ -46,7 +46,7 @@ public class TransposerTest {
 	public void test3DTransposerWrapper() {
 		long seed = System.currentTimeMillis();
 		Random rng = new Random(seed);
-		for (int i = 0; i < 1; i++) {
+		for (int i = 0; i < NUM_RUNS; i++) {
 			final int width  = Math.abs(rng.nextInt()) % 32 + 1;
 			final int height = Math.abs(rng.nextInt()) % 32 + 1;
 			final int depth = Math.abs(rng.nextInt()) % 32 + 1;
@@ -59,11 +59,19 @@ public class TransposerTest {
 		double actual[]   = new double[NUM_DATA_RUNS * height * width];
 		double expected[] = new double[NUM_DATA_RUNS * height * width];
 
+		int pos = 0;
 		for (int i = 0; i < NUM_DATA_RUNS; i++) {
 			for (int j = 0; j < height; j++) {
 				for (int k = 0; k < width; k++) {
-					input[i * height * width + j * width + k] = j * height + k;
-					expected[i * height * width + k * height + j] = j * height + k;
+					input[pos++] = j * width + k;
+				}
+			}
+		}
+		pos = 0;
+		for (int i = 0; i < NUM_DATA_RUNS; i++) {
+			for(int j = 0; j < width; j++) {
+				for(int k = 0; k < height; k++) {
+					expected[pos++] = j + k * width;
 				}
 			}
 		}
@@ -80,13 +88,12 @@ public class TransposerTest {
 
 		actual = manager.getOutputDataArray("output");
 
-		/*System.out.println("Width: " + width + " Height: " + height);
-		for (int i = 0; i < height; i++) {
+		/*for (int i = 0; i < height; i++) {
 			for (int j = 0; j < width; j++) {
 				System.out.println("Is: " + actual[i * width + j] + " Expected " + expected[i * width + j]);
 			}
 		}*/
-		assertArrayEquals("BitReverse", expected, actual, 0);
+		assertArrayEquals("Transposer", expected, actual, 0);
 	}
 
 	private void test3DTransposer(final int width, final int height, int depth, final long seed) {
@@ -94,14 +101,22 @@ public class TransposerTest {
 		double actual[]   = new double[NUM_DATA_RUNS * height * width *  depth];
 		double expected[] = new double[NUM_DATA_RUNS * height * width *  depth];
 
+		int pos = 0;
+		for (int i = 0; i < NUM_DATA_RUNS; i++) {
+			for (int j = 0; j < depth; j++) {
+				for (int k = 0; k < height; k++) {
+					for (int l = 0; l < width; l++) {
+						input[pos++] = l + k * width + j * width * height;
+					}
+				}
+			}
+		}
+		pos = 0;
 		for (int i = 0; i < NUM_DATA_RUNS; i++) {
 			for (int j = 0; j < width; j++) {
 				for (int k = 0; k < height; k++) {
 					for (int l = 0; l < depth; l++) {
-						input[i * height * width * depth + j * height * depth + k * depth + l] =
-							j * height * depth + k * depth + l;
-						expected[i * height * width * depth + j * height * depth + k * depth + l] =
-							j + k * width + l * height * width;
+						expected[pos++] = j + k * width + l * width * height;
 					}
 				}
 			}
@@ -119,15 +134,15 @@ public class TransposerTest {
 
 		actual = manager.getOutputDataArray("output");
 
-		/*System.out.println("Width: " + width + " Height: " + height);
+		/*pos = 0;
 		for (int i = 0; i < width; i++) {
 			for (int j = 0; j < height; j++) {
 				for (int k = 0; k < depth; k++) {
-					System.out.println("Is: " + actual[i * height * depth + j * depth + k] +
-							" Expected " + expected[i * height * depth + j * depth + k]);
+					System.out.println("Is: " + actual[pos] +
+							" Expected " + expected[pos++]);
 				}
 			}
 		}*/
-		assertArrayEquals("BitReverse", expected, actual, 0);
+		assertArrayEquals("Transposer", expected, actual, 0);
 	}
 }
