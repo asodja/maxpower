@@ -3,7 +3,6 @@ package maxpower.kernel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.ListIterator;
 
 import maxpower.MaxPowerUtils;
 import maxpower.ops.AssociativeOp;
@@ -41,8 +40,19 @@ public class TreeReduce {
 	/**
 	 * Reduce the given values using a binary tree and the specified associative operation.
 	 */
-	public static <T extends KernelObjectVectorizable<T, T>> T reduce(AssociativeOp<T> op, List<T> values) {
-		return reduce(2, new OpReducer<T>(op), values);
+	public static <T extends KernelObjectVectorizable<T, T>> T reduce(final AssociativeOp<T> op, List<T> values) {
+		Reducer<T> reducer = new Reducer<T>() {
+			@Override
+			public T reduce(List<T> values) {
+				switch (values.size()) {
+				case 1: return values[0];
+				case 2: return op.op(values[0], values[1]);
+				default: throw new MaxCompilerAPIError("Expecting exactly 1 or 2 values");
+				}
+			}
+		};
+
+		return reduce(2, reducer, values);
 	}
 
 	/**
@@ -83,29 +93,5 @@ public class TreeReduce {
 	 */
 	public interface Reducer<T> {
 		T reduce(List<T> values);
-	}
-
-	/**
-	 * A reducer using a binary operator to perform a simple linear reduction.
-	 */
-	public static class OpReducer<T extends KernelObjectVectorizable<T, T>> implements Reducer<T> {
-		private final AssociativeOp<T> op;
-
-		public OpReducer(AssociativeOp<T> op) {
-			this.op = op;
-		}
-
-		@Override
-		public T reduce(List<T> values) {
-			if (values.isEmpty())
-				throw new MaxCompilerAPIError("Cannot reduce zero values");
-
-			T acc = values[0];
-			for (ListIterator<T> it = values.listIterator(1); it.hasNext(); ) {
-				acc = op.op(acc, it.next());
-			}
-
-			return acc;
-		}
 	}
 }
