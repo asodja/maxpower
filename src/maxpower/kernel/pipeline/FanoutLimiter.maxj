@@ -1,17 +1,81 @@
 package maxpower.kernel.pipeline;
 
+import java.util.ArrayList;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelFinalizer;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 
 /**
- * Create tree of pipelined values to limit the fanout of an HWVar to a
- * maximum specified value.
- *
+ * Create tree of pipelined values to limit the fan out of a KernelObject to a
+ * maximum specified value. This can help timing when a large fan-out is causing
+ * problems by forcing many things to be close together.
+ * <p>
  * The construction of the tree is achieved in the KernelFinalizer.
- * @see KFanoutLimiter
  */
-public class FanoutLimiter extends KFanoutLimiter<DFEVar> {
-	public FanoutLimiter(KernelLib owner, DFEVar x, int maxFanout) {
-		super(owner, x, maxFanout);
+public class FanoutLimiter<T extends KernelObject<T>> extends KernelLib implements KernelFinalizer {
+
+	private final T x;
+	private final int max;
+
+	ArrayList<T> requested = new ArrayList<T>();
+
+	public T get() {
+		requested.add(x.getType().newInstance(this));
+		return requested[requested.size() - 1];
+	}
+
+	/**
+	 * Creates an object which can be used to limit the fan out of a KernelObject.
+	 * To use this create the FanoutLimiter and then call get() every time you
+	 * want to use it. It will then keep track of how many times you call get()
+	 * and create a tree of registers to limit the fan out in the finaliser.
+	 * <p>
+	 * e.g. If maxFanout is 4 and we call get() 64 times then it will create 4
+	 * registers that are connected to the source, and then 4 more registers will
+	 * be connected to each of those (16 in total). Each of the 16 registers on
+	 * the second level will be connected to 4 outputs.
+	 * <p>
+	 * A common mistake is to only call get() once and then pass around the
+	 * KernelObject. This means that FanoutLimiter will be unaware of how many
+	 * times the object has been used, so it will not add any registers.
+	 *
+	 * @param source The KernelObject you wish to fan out.
+	 * @param maxFanout The maximum number of places to fan out to without adding a register.
+	 */
+	public FanoutLimiter(T source, int maxFanout) {
+		super(source.getKernel());
+		if (maxFanout < 2) {
+			throw new MaxCompilerAPIError("MaxFanout should be 2 at least, not " + maxFanout);
+		}
+		x   = source;
+		max = maxFanout;
+		getKernel().addKernelFinalizer(this);
+	}
+
+	@Override
+	public void finalizeKernel(Kernel kernelDesign) {
+		ArrayList<T> current = new ArrayList<T>(max);
+		for (int f = 0; f < max; f++) {
+			current.add(x);
+		}
+
+		while (current.size() < requested.size()) {
+			ArrayList<T> next = new ArrayList<T>(current.size() * max);
+			for (T h : current) {
+				T v = optimization.pipeline(h);
+				v.setReportOnUnused(false); // The unused ones will be optimized away
+				for (int f = 0; f < max; f++) {
+					next.add(v);
+				}
+			}
+			current = next;
+		}
+
+		for (int i = 0; i < requested.size(); i++) {
+			requested[i] <== current[i];
+		}
 	}
 }

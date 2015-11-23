@@ -23,6 +23,10 @@ A (non-exhaustive) list of the contents of the MaxPower library.
     - `ZeroLatencyMemory` - hide latency of FMem, allowing values to be read back on the next cycle
   - `LargeStreamOffset` - large, negative stream offset backed by LMem to save FMem
   - `TreeReduce` - reduce latency and save resources by reducing via a binary tree
+  * `pipeline`
+    - `FanoutLimiter` - Creates a tree of registers to minimise the fan-out of a KernelObect and improve timing
+  * `sort`
+    - `BitonicSort`  - Sorts a list of DFEVars using a bitonic sort
 * `lmem/`
   * `cpuaccess/` - simplified access to LMem from CPU
   - `MultiDimensionalAddressGenerator` - memory address generator in N dimensions
