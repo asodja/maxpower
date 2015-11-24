@@ -1,14 +1,12 @@
-package maxpower.kernel;
+package maxpower;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import maxpower.MaxPowerUtils;
 import maxpower.ops.AssociativeOp;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
 
 /**
  * A set of static methods to perform a reduction in a tree-like manner.
@@ -33,14 +31,14 @@ public class TreeReduce {
 	/**
 	 * Reduce the given values using a binary tree and the specified associative operation.
 	 */
-	public static <T extends KernelObjectVectorizable<T, T>> T reduce(AssociativeOp<T> op, T... values) {
+	public static <T> T reduce(AssociativeOp<T> op, T... values) {
 		return reduce(op, Arrays.asList(values));
 	}
 
 	/**
 	 * Reduce the given values using a binary tree and the specified associative operation.
 	 */
-	public static <T extends KernelObjectVectorizable<T, T>> T reduce(final AssociativeOp<T> op, List<T> values) {
+	public static <T> T reduce(final AssociativeOp<T> op, List<T> values) {
 		Reducer<T> reducer = new Reducer<T>() {
 			@Override
 			public T reduce(List<T> values) {

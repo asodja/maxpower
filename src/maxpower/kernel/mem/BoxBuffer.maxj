@@ -3,8 +3,8 @@ package maxpower.kernel.mem;
 import java.util.ArrayList;
 import java.util.List;
 
+import maxpower.TreeReduce;
 import maxpower.kernel.KernelBinaryOp.Add;
-import maxpower.kernel.TreeReduce;
 import maxpower.kernel.arithmetic.ConstDenominator;
 import maxpower.kernel.arithmetic.ConstDenominator.ConstDivModResult;
 
