@@ -36,11 +36,11 @@ public class VariableWidthIO extends KernelLib {
 		int maxWidth = wideInputType.getSize();
 		int shiftBits = MathUtils.bitsToAddress(maxWidth);
 		DFEType shiftType = dfeUInt(shiftBits);
-		DFEType doubleShiftType = dfeUInt(shiftBits + 1);
+		DFEType carryType = dfeUInt(shiftBits + 1);
 		DFEVar isFirstTick = control.count.pulse(1);
-		DFEVar need = numToRead.cast(doubleShiftType);
+		DFEVar need = numToRead.cast(carryType);
 
-		DFEVar carried = doubleShiftType.newInstance(this);
+		DFEVar carried = carryType.newInstance(this);
 		DFEVar used = isFirstTick ?  0 : stream.offset(carried,-1);
 		optimization.pushPipeliningFactor(0);
 		DFEVar neededWidth = used + need;
@@ -55,8 +55,6 @@ public class VariableWidthIO extends KernelLib {
 		DFEVector<T> prev = neededWidth > maxWidth ?  stream.offset(remainder, -1) : wideInput ;
 		for (int i = 0; i < maxWidth; i++) {
 			output[i] <== (i < used) ?  wideInput[i] : prev[i];
-			prev[i].setReportOnUnused(false);
-			wideInput[i].setReportOnUnused(false);
 		}
 		optimization.pushPipeliningFactor(0);
 		remainder <==  needToGet ? wideInput: prev;
@@ -70,7 +68,7 @@ public class VariableWidthIO extends KernelLib {
 	 * Create an output which will accumulate a variable amount of input data each cycle and output it through a fixed width io port.
 	 * @param name The name of the output as referenced in the manager
 	 * @param wideData A DFEVector of incoming data, with valid data at the beginning
-	 * @param numToRead The amount of valid data this cycle
+	 * @param numToWrite The amount of valid data received this cycle
 	 */
 	public <T extends KernelObjectVectorizable<T,?>> void output(String name, DFEVector<T> wideData, DFEVar numToWrite) {
 
@@ -78,12 +76,12 @@ public class VariableWidthIO extends KernelLib {
 		int maxWidth = wideDataType.getSize();
 		int shiftBits = MathUtils.bitsToAddress(maxWidth);
 		DFEType shiftType = dfeUInt(shiftBits);
-		DFEType doubleShiftType = dfeUInt(shiftBits + 1);
+		DFEType carryType = dfeUInt(shiftBits + 1);
 		DFEVar isFirstTick = control.count.pulse(1);
-		DFEVar receiving = numToWrite.cast(doubleShiftType);
+		DFEVar receiving = numToWrite.cast(carryType);
 
 
-		DFEVar carried = doubleShiftType.newInstance(this);
+		DFEVar carried = carryType.newInstance(this);
 		DFEVar used = isFirstTick ?  0 : stream.offset(carried,-1);
 		optimization.pushPipeliningFactor(0);
 		DFEVar neededWidth = used + receiving;
@@ -96,9 +94,6 @@ public class VariableWidthIO extends KernelLib {
 		DFEVector<T> prev = stream.offset(remainder, -1);
 		for (int i = 0; i < maxWidth; i++) {
 			output[i] <== (i < used) ? prev[i] : wideDataRotated[i];
-
-			prev[i].setReportOnUnused(false);
-			wideDataRotated[i].setReportOnUnused(false);
 		}
 
 		DFEVar needToWrite = neededWidth >= maxWidth;
