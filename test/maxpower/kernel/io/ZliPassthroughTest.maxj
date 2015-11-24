@@ -1,0 +1,83 @@
+package maxpower.kernel.io;
+
+import static org.junit.Assert.assertEquals;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+/**
+ * Test that ZeroLatencyInput behaviour matches that of a normal input
+ * in the case of a basic passthough.
+ *
+ * @author Chris Jones
+ */
+public class ZliPassthroughTest {
+	private static final int N = 100000; // length of test input data
+
+	static class ZLIPassthroughTestKernel extends Kernel {
+
+		protected ZLIPassthroughTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			DFEType intType = DFETypeFactory.dfeInt(32);
+
+			DFEVar enable = io.input("enable", dfeBool());
+
+			DFEVar std_in = io.input("std_in", intType, enable);
+			DFEVar zli_in = ZeroLatencyInput.input("zli_in", intType, enable);
+
+			// input is undefined until first enable
+			DFEVar hasRead = Reductions.streamHold(constant.var(true), enable);
+
+			io.output("std_out", intType, hasRead) <== std_in;
+			io.output("zli_out", intType, hasRead) <== zli_in;
+		}
+	}
+
+	@Test
+	public void testPassthrough() {
+		SimulationManager m = new SimulationManager("ZLIPassthroughTest");
+		m.setKernel(new ZLIPassthroughTestKernel(m.makeKernelParameters()));
+
+		long seed = System.currentTimeMillis();
+		m.logMsg("Using random seed: %d", seed);
+		Random rng = new Random(seed);
+
+		double[] input = new double[N];
+		for (int i = 0; i < N; ++i)
+			input[i] = rng.nextInt(100)+1;
+
+		List<Double> enable = new ArrayList<Double>(2*N);
+		int trueCount = 0;
+		while (trueCount < N) {
+			boolean enableVal = rng.nextBoolean();
+			enable.add(enableVal ? 1. : 0.);
+			if (enableVal) ++trueCount;
+		}
+
+		m.setInputData("std_in", input);
+		m.setInputData("zli_in", input);
+		m.setInputData("enable", enable);
+
+		m.setScalarInput("zli_in_ZLI_inputLength", N);
+
+		m.setKernelCycles(enable.size());
+
+		m.runTest();
+
+		List<Double> expected = m.getOutputData("std_out");
+		List<Double> actual   = m.getOutputData("zli_out");
+		assertEquals("output", expected, actual);
+	}
+}

@@ -1,0 +1,69 @@
+package maxpower.kernel;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+import junit.framework.Assert;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class BitUtilsTest {
+	static class BitUtilsTestKernel extends Kernel {
+		BitUtilsTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			DFEVar x = io.input("x", dfeInt(64));
+			io.output("all_out", dfeBool()) <== BitUtils.all(x);
+			io.output("any_out", dfeBool()) <== BitUtils.any(x);
+		}
+	}
+
+	@Test
+	public void testAnyAndAll() {
+		SimulationManager m = new SimulationManager("BitUtilsTest");
+		m.setKernel(new BitUtilsTestKernel(m.makeKernelParameters()));
+
+		List<Long> x      = new ArrayList<Long>();
+		List<Long> expAll = new ArrayList<Long>();
+		List<Long> expAny = new ArrayList<Long>();
+
+		x.add(0l);
+		expAll.add(0l);
+		expAny.add(0l);
+
+		x.add(42l);
+		expAll.add(0l);
+		expAny.add(1l);
+
+		x.add(-1l);
+		expAll.add(1l);
+		expAny.add(1l);
+
+		long seed = System.currentTimeMillis();
+		m.logMsg("Using random seed: %d", seed);
+
+		Random rng = new Random(seed);
+		for (int i = 0; i < 10000; ++i) {
+			long v = rng.nextLong();
+			x.add(v);
+			expAll.add((v == -1) ? 1l : 0l);
+			expAny.add((v !=  0) ? 1l : 0l);
+		}
+
+		m.setKernelCycles(x.size());
+		m.setInputDataLong("x", x);
+		m.runTest();
+
+		List<Long> all = m.getOutputDataLong("all_out");
+		List<Long> any = m.getOutputDataLong("any_out");
+
+		Assert.assertEquals(expAll, all);
+		Assert.assertEquals(expAny, any);
+	}
+}

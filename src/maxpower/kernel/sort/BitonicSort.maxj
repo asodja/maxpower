@@ -1,0 +1,127 @@
+package maxpower.kernel.sort;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+/**
+ * Class providing simple interfaces to sort DFEVars using bitonic sort
+ * @author Nils Voss
+ *
+ */
+public class BitonicSort {
+
+	/**
+	 * Sorts DFEVars
+	 * @param input DFEVars to sort
+	 * @return Sorted DFEVars
+	 */
+	public static List<DFEVar> sort(DFEVar... input) {
+		return sort(Arrays.asList(input));
+	}
+
+	/**
+	 * Sorts DFEVars
+	 * @param input DFEVars to sort
+	 * @return Sorted DFEVars
+	 */
+	public static DFEVector<DFEVar> sort(DFEVector<DFEVar> input) {
+		return input.getType().newInstance(input.getKernel(), sort(input.getElementsAsList()));
+	}
+
+	/**
+	 * Sorts DFEVars
+	 * @param input DFEVars to sort
+	 * @return Sorted DFEVars
+	 */
+	public static List<DFEVar> sort(List<DFEVar> input) {
+		return SortableDFEVar.dfeVarFromList(sortSortable(SortableDFEVar.dfeVarAsList(input)));
+	}
+
+	/**
+	 * Sorts Sortable objects
+	 * @param input SortObjects to sort
+	 * @return Sorted SortObjects
+	 */
+	public static <T extends Sortable<T>> List<T> sortSortable(T... input) {
+		return sortSortable(Arrays.asList(input));
+	}
+
+	/**
+	 * Sorts Sortable objects
+	 * @param input SortObjects to sort
+	 * @return Sorted SortObjects
+	 */
+	public static <T extends Sortable<T>> List<T> sortSortable(List<T> input) {
+		List<T> values = new ArrayList<T>(input);
+		if (!MathUtils.isPowerOf2(input.size())) {
+			for (int i = 0; i < MathUtils.getPadding(input.size(), MathUtils.nextPowerOfTwo(input.size())); i++){
+				values.add(null);
+			}
+		}
+
+		return bitonicSort(true, values).subList(0, input.size());
+	}
+
+
+
+	private static <T extends Sortable<T>> List<T> bitonicSort(boolean up, List<T> sortObjects) {
+		if (sortObjects.size() == 1) {
+			return sortObjects;
+		} else {
+			List<T> firstHalf  = bitonicSort(true,  sortObjects.subList(0, sortObjects.size() / 2));
+			List<T> secondHalf = bitonicSort(false, sortObjects.subList(sortObjects.size() / 2,
+					sortObjects.size()));
+			List<T> combined = new ArrayList<T>(firstHalf);
+			combined.addAll(secondHalf);
+			return bitonicMerge(up, combined);
+		}
+	}
+
+	private static <T extends Sortable<T>> List<T> bitonicMerge(boolean up, List<T> sortObjects) {
+		if (sortObjects.size() == 1) {
+			return sortObjects;
+		} else {
+			bitonicCompare(up, sortObjects);
+			List<T> firstHalf  = bitonicMerge(up, sortObjects.subList(0, sortObjects.size() / 2));
+			List<T> secondHalf = bitonicMerge(up, sortObjects.subList(sortObjects.size() / 2,
+					sortObjects.size()));
+			List<T> combined = new ArrayList<T>(firstHalf);
+			combined.addAll(secondHalf);
+			return combined;
+		}
+	}
+
+	private static <T extends Sortable<T>> void bitonicCompare(boolean up, List<T> sortObjects) {
+		int distance = sortObjects.size() / 2;
+
+		for (int i = 0; i < distance; i++) {
+			if (sortObjects[i] == null || sortObjects[i + distance] == null) {
+				if (sortObjects[i] != null && sortObjects[i + distance] == null && !up){
+					sortObjects.set(i + distance, sortObjects[i]);
+					sortObjects.set(i, null);
+				}
+				if (sortObjects[i] == null && sortObjects[i + distance] != null && up){
+					sortObjects.set(i, sortObjects[i + distance]);
+					sortObjects.set(i + distance, null);
+				}
+			} else {
+				DFEVar change;
+				if (up) {
+					change = sortObjects[i] > sortObjects[i + distance];
+				} else {
+					change = sortObjects[i] < sortObjects[i + distance];
+				}
+				DFEVar tmp = sortObjects[i].pack();
+				sortObjects.set(i,
+						sortObjects[i].unpack(change ? sortObjects[i + distance].pack() : sortObjects[i].pack()));
+				sortObjects.set(i + distance,
+						sortObjects[i].unpack(change ? tmp : sortObjects[i + distance].pack()));
+			}
+		}
+	}
+}

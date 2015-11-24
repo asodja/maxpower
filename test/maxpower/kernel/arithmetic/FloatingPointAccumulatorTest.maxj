@@ -89,9 +89,9 @@ public class FloatingPointAccumulatorTest {
 			}
 			for(int i = 0; i < numOutputs; i++) {
 				double error = Math.abs(expected[i] - hwSum[i]) / expected[i];
-				System.out.printf("expected sum %22.16g\t\thw sum %22.16g\t\trelative error %g\t\t1 ulp %g\n",
-						expected[i], hwSum[i], error, ulp);
 				if(error > maxError) {
+					System.out.printf("expected sum %22.16g\t\thw sum %22.16g\t\trelative error %g\t\t1 ulp %g\n",
+									expected[i], hwSum[i], error, ulp);
 					return false;
 				}
 			}

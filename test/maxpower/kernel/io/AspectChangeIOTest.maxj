@@ -181,10 +181,6 @@ public class AspectChangeIOTest {
 		Double[] output = data.decodeOutput(m.getOutputDataRaw("output"), type);
 		Double[] goldenOutput = data.getGoldenOuput();
 		for (int i = 0; i < output.length; i++) {
-			System.out.println("Expected " + goldenOutput[i].intValue());
-			System.out.println("Got " + output[i].intValue());
-		}
-		for (int i = 0; i < output.length; i++) {
 			assertEquals(goldenOutput[i].intValue(), output[i].intValue());
 		}
 	}

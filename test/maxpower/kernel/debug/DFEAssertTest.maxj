@@ -1,0 +1,77 @@
+package maxpower.kernel.debug;
+
+import static org.junit.Assert.fail;
+
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.ExpectedException;
+
+import com.maxeler.maxcompiler.v2.build.EngineParameters;
+import com.maxeler.maxcompiler.v2.build.EngineParameters.Target;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.managers.DFEModel;
+import com.maxeler.maxcompiler.v2.managers.standard.Manager;
+import com.maxeler.maxcompiler.v2.managers.standard.Manager.IOType;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.photon.core.PhotonException;
+import com.maxeler.photon.maxcompilersim.SimCodeException;
+
+public class DFEAssertTest {
+
+	private class AssertTestKernel extends Kernel {
+		protected AssertTestKernel(KernelParameters parameters, int length) {
+			super(parameters);
+			DFEType type = dfeInt(32);
+			DFEVar input = io.input("input", type);
+			DFEAssert.simAssert(input > length / 2, "Input too large! %d > " + (length / 2) + "\n", input);
+			DFEAssert.simAssert(input < 0, "Input negative! %d < 0\n", input);
+			io.output("output", input, input.getType());
+		}
+	}
+
+	@Rule public ExpectedException thrown = ExpectedException.none();
+
+
+	@Test public void testFirstExceptionThrown()  { testAssertion(true, false); }
+	@Test public void testSecondExceptionThrown() { testAssertion(false, true); }
+	@Test public void testExceptionNotThrown()    { testAssertion(false, false); }
+
+	private void testAssertion(boolean failFirstException, boolean failSecondException) {
+		int length = 100;
+		double[] input = new double[length];
+		for (int i = 0; i < length; i++) {
+			input[i] = i;
+		}
+		if (failSecondException) {
+			input[length / 2] = -1;
+		}
+		if (failFirstException || failSecondException) {
+			thrown.expect(SimCodeException.class);
+		}
+
+		SimulationManager m = new SimulationManager("DFEAssertTest_"+failFirstException+"_"+failSecondException);
+		m.setKernel(new AssertTestKernel(m.makeKernelParameters(), failFirstException ? length : length * 2));
+		m.setKernelCycles(length);
+		m.setInputData("input", input);
+		m.build();
+		m.run();
+	}
+
+	//Test disabled by default, as it requires Quartus to run
+	//@Test
+	public void testHardware() {
+		EngineParameters params = new EngineParameters("DFEAssert", DFEModel.MAIA, Target.DFE);
+		Manager manager = new Manager(params);
+		manager.setKernel(new AssertTestKernel(manager.makeKernelParameters("noassert"), 100));
+		manager.setIO(IOType.NOIO);
+		manager.setClockFrequency(100);
+		try {
+			manager.build();
+		} catch (PhotonException e) {
+			fail("Node was created in a hardware build.");
+		}
+	}
+}

@@ -305,7 +305,6 @@ public class FloatingPointAccumulator {
 			DFEVar index = chain.addCounter(fastDim,     1).cast(addressType);
 			DFEVar batch = chain.addCounter(bufferDepth, fastDim).cast(addressType);
 
-			index.add(batch);
 			DFEVar offset = index + batch - linear.cast(addressType);
 
 			return stream.offset(input, offset, -bufferDepth, bufferDepth);
