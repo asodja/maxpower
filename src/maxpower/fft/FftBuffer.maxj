@@ -1,0 +1,208 @@
+package maxpower.fft;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import maxpower.kernel.mem.Transposer;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Params;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+/**
+ * Containing all buffer used in the fft
+ */
+public class FftBuffer {
+
+	/**
+	 * Creates a buffer to store data between two stages in the fft.
+	 *
+	 * @param input Data from the previous fft stage.
+	 * @param fftSize Size of the fft and by this also size of the buffer.
+	 * @param radix Radix of the fft stage feeding into the buffer.
+	 * @param numOutputs Radix of the fft stage consuming data from the buffer.
+	 * @return Data to be feed into the next fft stage.
+	 */
+	public static <T extends KernelObject<T>> List<T> interStageBuffer(List<T> input, int fftSize, int radix,
+			int numOutputs) {
+		int numPipes = FftFactory4pipes.NUM_FFT_PIPES;
+
+		KernelLib kernel = input[0].getKernel();
+		if (fftSize % (numPipes * numOutputs) != 0) {
+			throw new RuntimeException("fftSize must be divisible by both numPipes and numOutputs.");
+		}
+		int bufferDepth = fftSize / numPipes;
+
+		List<DFEVar> packedInput = packInput(input);
+		DFEVector<DFEVar> output;
+		final int height = bufferDepth / numOutputs / radix;
+		if (height > 0) {
+			List<DFEVar> transposedInput = new ArrayList<DFEVar>(numPipes);
+			ArrayList<DFEVar> slicedInput = new ArrayList<DFEVar>(numPipes);
+			for (int j = 0; j < packedInput.size(); j++) {
+				slicedInput.add(packedInput[j]);
+			}
+			transposedInput.addAll(transpose(slicedInput, numPipes));
+			DFEVector<DFEVar> packedData = DFEVectorType.newInstance(transposedInput);
+			DFEVectorType<DFEVar> packedType = packedData.getType();
+
+			output = packedType.unpack(Transposer.transpose(packedData.pack(), radix,
+					height, numOutputs));
+		} else {
+			DFEVector<DFEVar> packedData = DFEVectorType.newInstance(packedInput);
+			DFEVectorType<DFEVar> packedType = packedData.getType();
+
+			output = packedType.unpack(Transposer.transpose(packedData.pack(),
+					bufferDepth / numOutputs, numOutputs));
+		}
+
+		DFEVector<DFEVar> offsetOutput = kernel.stream.offset(output, fftSize / numPipes);
+
+		List<DFEVar> transposedOutput = transpose(offsetOutput.getElementsAsList(), numOutputs);
+
+		return unpackOutput(transposedOutput, input[0].getType());
+	}
+
+	private static <T extends KernelObject<T>> List<T>transpose(List<T> input, int numOutputs) {
+		KernelLib kernel = input[0].getKernel();
+
+		List<DFEVar> packedInput = packInput(input);
+
+		final List<DFEVector<DFEVar>> inputToMux = new ArrayList<DFEVector<DFEVar>>(numOutputs);
+
+		for (int i = 0; i < input.size(); i++) {
+			DFEVectorType<DFEVar> arrayType = new DFEVectorType<DFEVar>(packedInput[i].getType(), numOutputs);
+			final DFEVector<DFEVar> array = arrayType.newInstance(kernel);
+			for (int j = 0; j < numOutputs; j++) {
+				array.connect(j, kernel.stream.offset(packedInput[i], j));
+			}
+			inputToMux.add(kernel.stream.offset(array, -i));
+		}
+		Params params = kernel.control.count.makeParams(MathUtils.bitsToAddress(input.size()))
+				.withMax(input.size());
+		DFEVar  select = kernel.control.count.makeCounter(params).getCount();
+		final DFEVector<DFEVar> packedOutput = kernel.control.mux(select, inputToMux);
+
+		return unpackOutput(packedOutput, input[0].getType());
+	}
+
+	private static <T extends KernelObject<T>> List<DFEVar>packInput(List<T> input) {
+		List<DFEVar> packedInput = new ArrayList<DFEVar>(input.size());
+		for (int i = 0; i < input.size(); i++) {
+			packedInput.add(input[i].pack());
+		}
+		return packedInput;
+	}
+
+	private static <T extends KernelObject<T>> List<T>unpackOutput(DFEVector<DFEVar> packedOutput,
+			KernelType<T> type) {
+		return unpackOutput(packedOutput.getElementsAsList(), type);
+	}
+
+	private static <T extends KernelObject<T>> List<T>unpackOutput(List<DFEVar> packedOutput,
+			KernelType<T> type) {
+		List<T> output = new ArrayList<T>(packedOutput.size());
+		for (int i = 0; i < packedOutput.size(); i++) {
+			output.add(type.unpack(packedOutput[i]));
+		}
+		return output;
+	}
+
+	/**
+	 * Buffer used to arrange the input data for the fft
+	 * Only tested for 4 Pipes and a Radix of 4.
+	 * @param input Input data
+	 * @param fftSize Size of the fft
+	 * @return Data ready to be feed in the first fft stage
+	 */
+	public static <T extends KernelObject<T>> List<T> inputBuffer(List<T> input, final int fftSize) {
+		final int numPipes = FftFactory4pipes.NUM_FFT_PIPES;
+		KernelLib owner = input[0].getKernel();
+
+		List<DFEVar> packedInput = packInput(input);
+
+		DFEVector<DFEVar> transposerInput = DFEVectorType.newInstance(packedInput);
+
+		DFEVector<DFEVar> transposerResult =
+			transposerInput.getType().unpack(Transposer.transpose(transposerInput.pack(),
+					fftSize / numPipes / numPipes, numPipes));
+
+		DFEVector<DFEVar> transposerResultOffset = owner.stream.offset(transposerResult, fftSize / numPipes);
+
+		// Now we finish with a small 4 x 4 transpose in the end
+		List<DFEVar> outputTranspose = transpose(transposerResultOffset.getElementsAsList(), numPipes);
+
+		return unpackOutput(outputTranspose, input[0].getType());
+	}
+
+	/**
+	 * Buffer used to rearrange the date between the dual radix 2 stage and the first radix 4 stage
+	 * Only tested for 4 Pipes.
+	 * @param input Input data
+	 * @param fftSize Size of the fft
+	 * @return Data ready to be feed in the first fft stage
+	 */
+	public static <T extends KernelObject<T>> List<T> mixedRadixBuffer(List<T> input, final int fftSize) {
+		final int numPipes = FftFactory4pipes.NUM_FFT_PIPES;
+		KernelLib owner = input[0].getKernel();
+
+		List<DFEVar> packedInput = packInput(input);
+
+		DFEVector<DFEVar> transposerInput = DFEVectorType.newInstance(packedInput);
+		DFEVector<DFEVar> transposerResult =
+			transposerInput.getType().unpack(Transposer.transpose(transposerInput.pack(),
+					fftSize / numPipes / (numPipes / 2), numPipes / 2));
+
+		DFEVector<DFEVar> transposerResultOffset = owner.stream.offset(transposerResult, fftSize / numPipes);
+
+		// Rearrange input a bit
+		List<DFEVector<DFEVar>> inputRearranged =
+			transpose(convertToTuples(transposerResultOffset.getElementsAsList()), 2);
+
+		DFEVector<DFEVar> transposer2Input = DFEVectorType.newInstance(convertFromTuple(inputRearranged));
+
+		// Do 2D transpose
+		DFEVector<DFEVar> transposer2Result =
+			transposerInput.getType().unpack(Transposer.transpose(transposer2Input.pack(),
+					numPipes / 2, fftSize / numPipes / (numPipes / 2)));
+
+		DFEVector<DFEVar> transposer2ResultOffset = owner.stream.offset(transposer2Result, fftSize / numPipes);
+
+		// Rearrange output
+
+		List<DFEVar> outputList = new ArrayList<DFEVar>();
+		outputList.addAll(transposer2ResultOffset.getElementsAsList());
+
+		// Switch element 1 and 2 in List
+		DFEVar tmp = outputList[1];
+		outputList.set(1, outputList[2]);
+		outputList.set(2, tmp);
+
+		return unpackOutput(outputList, input[0].getType());
+	}
+
+	private static List<DFEVector<DFEVar>> convertToTuples(List<DFEVar> input) {
+		DFEVectorType<DFEVar> twoInputsVectorType = new DFEVectorType<DFEVar>(input[0].getType(), 2);
+		List<DFEVector<DFEVar>> data = new ArrayList<DFEVector<DFEVar>>();
+		for (int i = 0; i < input.size() / 2; i++) {
+			DFEVector<DFEVar> tuppel = twoInputsVectorType.newInstance(input[0].getKernel());
+			tuppel[0] <== input[i * 2];
+			tuppel[1] <== input[i * 2 + 1];
+			data.add(tuppel);
+		}
+		return data;
+	}
+
+	private static List<DFEVar> convertFromTuple(List<DFEVector<DFEVar>> input) {
+		List<DFEVar> data = new ArrayList<DFEVar>();
+		for (int i = 0; i < input.size(); i++) {
+			data.addAll(input[i].getElementsAsList());
+		}
+		return data;
+	}
+}
