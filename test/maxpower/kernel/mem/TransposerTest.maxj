@@ -15,7 +15,7 @@ public class TransposerTest {
 
 	final static int NUM_RUNS = 5;
 
-	final static int NUM_DATA_RUNS = 5;
+	final static int NUM_DATA_RUNS = 10;
 
 	private static class TransposerTestKernel extends Kernel{
 
@@ -35,7 +35,7 @@ public class TransposerTest {
 	public void test2DTransposerWrapper() {
 		long seed = System.currentTimeMillis();
 		Random rng = new Random(seed);
-		for (int i = 0; i < NUM_RUNS; i++) {
+		for (int i = 0; i < 1; i++) {
 			final int width  = Math.abs(rng.nextInt()) % 32 + 1;
 			final int height = Math.abs(rng.nextInt()) % 32 + 1;
 			test2DTransposer(width, height, seed);
@@ -47,10 +47,21 @@ public class TransposerTest {
 		long seed = System.currentTimeMillis();
 		Random rng = new Random(seed);
 		for (int i = 0; i < NUM_RUNS; i++) {
-			final int width  = Math.abs(rng.nextInt()) % 32 + 1;
-			final int height = Math.abs(rng.nextInt()) % 32 + 1;
-			final int depth = Math.abs(rng.nextInt()) % 32 + 1;
+			final int width  = Math.abs(rng.nextInt()) % 32 + 2;
+			final int height = Math.abs(rng.nextInt()) % 32 + 2;
+			final int depth = Math.abs(rng.nextInt()) % 32 + 2;
 			test3DTransposer(width, height, depth, seed);
+		}
+	}
+
+	@Test
+	public void test3DTransposerWidthEqualsHeightWrapper() {
+		long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		for (int i = 0; i < NUM_RUNS; i++) {
+			final int width  = Math.abs(rng.nextInt()) % 32 + 2;
+			final int depth = Math.abs(rng.nextInt()) % 32 + 2;
+			test3DTransposer(width, width, depth, seed);
 		}
 	}
 

@@ -2,9 +2,6 @@ package maxpower.fft;
 
 import java.util.List;
 
-import maxpower.fft.buffer.FftBuffer;
-import maxpower.fft.buffer.MixedRadixBuffer;
-import maxpower.fft.buffer.Radix4InputBuffer;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
@@ -39,12 +36,6 @@ public class FftFactory4pipes extends KernelLib {
 	/** {@link DFEType Type} of twiddle factors. */
 	private final DFEType m_twiddleType;
 
-	/** @link MixedRadixBuffer Mixed-radix buffer}. */
-	private final MixedRadixBuffer m_mixedBuffer;
-
-	private final Radix4InputBuffer m_r4InputBuffer;
-
-
 	/**
 	 * Default constructor creating an {@link FftFactory4pipes FFT factory}.
 	 *
@@ -64,23 +55,11 @@ public class FftFactory4pipes extends KernelLib {
 		if (m_fftSize < 32 || !MathUtils.isPowerOf2(m_fftSize)) {
 			throw new RuntimeException("4 pipe FFT currently only supports sizes that are 2^N for N > 5.");
 		}
-		m_r4InputBuffer  = new Radix4InputBuffer(this, m_fftSize);
 		m_exponent       = MathUtils.bitsToAddress(N);
 
 		m_radix4phases = m_exponent / 2;
 		m_radix2phases = m_exponent % 2;
 		m_twiddleType  = twiddleType;
-
-		/*
-		 * Enable write all the time we are processing data to make sure all
-		 * buffer phases get completed. Note that we may be processing data
-		 * when neither input not output is enabled.
-		 */
-		if (m_radix2phases == 1) {
-			m_mixedBuffer = new MixedRadixBuffer(m_exponent, kernel);
-		} else {
-			m_mixedBuffer = null;
-		}
 	}
 
 	/**
@@ -113,12 +92,12 @@ public class FftFactory4pipes extends KernelLib {
 	public List<DFEVector<DFEComplex>> transform(final List<DFEVector<DFEComplex>> input) {
 		int depth = m_fftSize;
 		final List<DFEVector<DFEComplex>> rdx4input;
-		rdx4input = m_r4InputBuffer.transpose(input);
+		rdx4input = FftBuffer.inputBuffer(input, m_fftSize);
 
 		List<DFEVector<DFEComplex>> fftOut;
 		if (m_radix2phases == 1) {
 			fftOut = ButterflyLib.createButterfly(m_fftSize, 0, rdx4input, Radix.RADIX_2, m_twiddleType);
-			fftOut = m_mixedBuffer.transpose(fftOut);
+			fftOut = FftBuffer.mixedRadixBuffer(fftOut, m_fftSize);
 			depth /= 2;
 		} else if (m_radix2phases == 0) {
 			fftOut = rdx4input;
@@ -130,7 +109,7 @@ public class FftFactory4pipes extends KernelLib {
 			fftOut = ButterflyLib.createButterfly(m_fftSize, phase, fftOut, Radix.RADIX_4, m_twiddleType);
 
 			if(phase < m_radix4phases) {
-				fftOut = FftBuffer.buffer(fftOut, depth, Radix.RADIX_4.getRadix(), Radix.RADIX_4.getRadix());
+				fftOut = FftBuffer.interStageBuffer(fftOut, depth, Radix.RADIX_4.getRadix(), Radix.RADIX_4.getRadix());
 				depth /= 4;
 			}
 		}

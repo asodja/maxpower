@@ -137,14 +137,14 @@ public class Transposer {
 			DFEVar i = owner.control.count.makeCounter(owner.control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
 			DFEVar mul = KernelLib.dfeUInt(nBits).newInstance(owner);
 			owner.optimization.pushEnableBitGrowth(true);
-			ConstDivModResult addressDivMod = ConstDenominator.divMod(i * mul, Nm);
+			ConstDivModResult addressDivMod = ConstDenominator.divMod(i * mul, Nm, nBits);
 			addressDivMod.getQuotient().setReportOnUnused(false);
 			DFEVar address = i === Nm ? Nm : addressDivMod.getRemainder().cast(KernelLib.dfeUInt(nBits));
 
 			DFEVar nextMul = mul * KernelLib.dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(owner, width);
 			owner.optimization.popEnableBitGrowth();
 
-			ConstDivModResult nextMulDivMod = ConstDenominator.divMod(nextMul, Nm);
+			ConstDivModResult nextMulDivMod = ConstDenominator.divMod(nextMul, Nm, nBits);
 			nextMulDivMod.getQuotient().setReportOnUnused(false);
 			nextMul = nextMulDivMod.getRemainder().cast(KernelLib.dfeUInt(nBits));
 
