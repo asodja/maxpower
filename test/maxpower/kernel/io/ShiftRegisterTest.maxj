@@ -17,7 +17,7 @@ import com.maxeler.maxcompiler.v2.utils.Bits;
 
 public class ShiftRegisterTest {
 	private static final int N = 10;
-	private static final int ITER = 10;
+	private static final int ITER = 1000;
 	private static final DFEType TYPE = DFETypeFactory.dfeUInt(32);
 	private static final DFEVectorType<DFEVar> VEC_TYPE = new DFEVectorType<DFEVar>(TYPE, N);
 
