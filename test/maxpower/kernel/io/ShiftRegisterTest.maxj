@@ -27,10 +27,8 @@ public class ShiftRegisterTest {
 
 			DFEVar enable = (control.count.makeCounterChain().addCounter(N, 1) === 0);
 
-			io.output("serialOut", TYPE) <== ShiftRegister.parallelToSerial(io.input("vecIn", VEC_TYPE, enable));
-
-			io.output("vecOut", VEC_TYPE, enable) <==
-				DFEVectorType.newInstance(ShiftRegister.serialToParallel(N, io.input("serialIn", TYPE)));
+			io.output("serialOut", TYPE) <== ShiftRegister.parallelToSerial(io.input("vecIn", VEC_TYPE, enable), enable);
+			io.output("vecOut", VEC_TYPE, enable) <== ShiftRegister.serialToParallel(N, io.input("serialIn", TYPE));
 		}
 	}
 
