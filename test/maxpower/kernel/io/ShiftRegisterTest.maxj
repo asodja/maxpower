@@ -1,0 +1,65 @@
+package maxpower.kernel.io;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.junit.Assert;
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+
+public class ShiftRegisterTest {
+	private static final int N = 10;
+	private static final int ITER = 10;
+	private static final DFEType TYPE = DFETypeFactory.dfeUInt(32);
+	private static final DFEVectorType<DFEVar> VEC_TYPE = new DFEVectorType<DFEVar>(TYPE, N);
+
+	static class ShiftRegisterTestKernel extends Kernel {
+		ShiftRegisterTestKernel(KernelParameters params) {
+			super(params);
+
+			DFEVar enable = (control.count.makeCounterChain().addCounter(N, 1) === 0);
+
+			io.output("serialOut", TYPE) <== ShiftRegister.parallelToSerial(io.input("vecIn", VEC_TYPE, enable));
+
+			io.output("vecOut", VEC_TYPE, enable) <==
+				DFEVectorType.newInstance(ShiftRegister.serialToParallel(N, io.input("serialIn", TYPE)));
+		}
+	}
+
+	@Test
+	public void testShiftRegister() {
+		SimulationManager m = new SimulationManager("ShiftRegisterTest");
+		m.setKernel(new ShiftRegisterTestKernel(m.makeKernelParameters()));
+
+		long[] serialData = new long[N*ITER];
+		Bits[] vecData    = new Bits[ITER];
+
+		for (int i = 0; i < ITER; ++i) {
+			List<Long> vecVals = new ArrayList<Long>();
+
+			for (int n = 0; n < N; ++n) {
+				int val = i*N + n;
+				serialData[val] = val;
+				vecVals.add((long) val);
+			}
+
+			vecData[i] = VEC_TYPE.encodeConstant(vecVals);
+		}
+
+		m.setInputDataLong("serialIn", serialData);
+		m.setInputDataRaw("vecIn", vecData);
+		m.setKernelCycles(N*ITER);
+		m.runTest();
+
+		Assert.assertArrayEquals("parallel to serial mismatch", serialData, m.getOutputDataLongArray("serialOut"));
+		Assert.assertArrayEquals("serial to parallel mismatch", vecData, m.getOutputDataRawArray("vecOut"));
+	}
+}

@@ -1,0 +1,71 @@
+package maxpower.kernel.io;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+
+public class ShiftRegister {
+	public static <T extends KernelObject<T>> List<T> serialToParallel(int n, T input) {
+		Kernel owner = input.getKernel();
+
+		List<T> output = new ArrayList<T>(n);
+		for (T val : serialToParallel(n, input, owner.constant.var(true))) {
+			output.add(owner.stream.offset(val, +n-1));
+		}
+		return output;
+	}
+
+	public static <T extends KernelObject<T>> List<T> serialToParallel(int n, T input, DFEVar inputValid) {
+		Kernel owner = input.getKernel();
+
+		List<T> output = new ArrayList<T>(n);
+
+		output.add(Reductions.streamHold(input, inputValid));
+		for (int i = 1; i < n; ++i) {
+			output.add(Reductions.streamHold(owner.stream.offset(output[i-1], -1), inputValid));
+		}
+
+		// We want the earliest data to appear at index 0.
+		Collections.reverse(output);
+		return output;
+	}
+
+	public static <T extends KernelObjectVectorizable<T, T>> T parallelToSerial(DFEVector<T> input) {
+		return parallelToSerial(input.getElementsAsList());
+	}
+
+	public static <T extends KernelObject<T>> T parallelToSerial(List<T> input) {
+		Kernel owner = input[0].getKernel();
+		DFEVar inputValid = (owner.control.count.makeCounterChain().addCounter(input.size(), 1) === 0);
+		return parallelToSerial(input, inputValid, owner.constant.var(true));
+	}
+
+	public static <T extends KernelObjectVectorizable<T, T>>
+		T parallelToSerial(DFEVector<T> input, DFEVar inputValid, DFEVar shift)
+	{
+		return parallelToSerial(input.getElementsAsList(), inputValid, shift);
+	}
+
+	public static <T extends KernelObject<T>> T parallelToSerial(List<T> input, DFEVar inputValid, DFEVar shift) {
+		Kernel owner = inputValid.getKernel();
+
+		DFEVar enable = inputValid | shift;
+
+		int n = input.size();
+		List<T> regs = new ArrayList<T>(n);
+		regs.add(Reductions.streamHold(input[n-1], enable));
+
+		for (int i = 1; i < n; ++i) {
+			regs.add(Reductions.streamHold(inputValid ? input[n-i-1] : owner.stream.offset(regs[i-1], -1), enable));
+		}
+
+		return regs[n-1];
+	}
+}
