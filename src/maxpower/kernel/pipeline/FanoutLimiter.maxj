@@ -3,7 +3,7 @@ package maxpower.kernel.pipeline;
 import java.util.ArrayList;
 import java.util.List;
 
-import maxpower.MaxPowerUtils;
+import maxpower.utils.CollectionUtils;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
@@ -64,7 +64,7 @@ public class FanoutLimiter<T extends KernelObject<T>> extends KernelLib implemen
 
 		while (values.size() > maxFanout) {
 			List<T> reduced = new ArrayList<T>();
-			for (List<T> group : MaxPowerUtils.grouped(values, maxFanout)) {
+			for (List<T> group : CollectionUtils.grouped(values, maxFanout)) {
 				if (group.size() == 1) {
 					reduced.add(group[0]);
 				} else {

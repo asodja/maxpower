@@ -1,4 +1,4 @@
-package maxpower;
+package maxpower.utils;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -79,7 +79,7 @@ public class TreeReduce {
 			throw new MaxCompilerAPIError("Reduction tree must have degree of at least 2");
 
 		List<T> reduced = new ArrayList<T>();
-		for (List<T> group : MaxPowerUtils.grouped(values, n)) {
+		for (List<T> group : CollectionUtils.grouped(values, n)) {
 			reduced.add(reducer.reduce(group));
 		}
 
