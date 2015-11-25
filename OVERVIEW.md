@@ -21,9 +21,9 @@ A (non-exhaustive) list of the contents of the MaxPower library.
     - `BoxBuffer` - Buffer an N-dimensional stream of data in FMem and then read contiguous blocks out of it
     - `BoxBuffer1D` - Buffer a stream of data in FMem and read contiguous sections out of it
     - `ZeroLatencyMemory` - hide latency of FMem, allowing values to be read back on the next cycle
-  * `pipeline`
+  * `pipeline/`
     - `FanoutLimiter` - Creates a tree of registers to minimise the fan-out of a KernelObect and improve timing
-  * `sort`
+  * `sort/`
     - `BitonicSort`  - Sorts a list of DFEVars using a bitonic sort
   - `LargeStreamOffset` - large, negative stream offset backed by LMem to save FMem
 * `lmem/`
