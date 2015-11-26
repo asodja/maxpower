@@ -41,6 +41,9 @@ public class TreeReduce {
 	public static <T> T reduce(final AssociativeOp<T> op, List<T> values) {
 		Reducer<T> reducer = new Reducer<T>() {
 			@Override
+			public int getMaxNumValues() { return 2; }
+
+			@Override
 			public T reduce(List<T> values) {
 				switch (values.size()) {
 				case 1: return values[0];
@@ -50,7 +53,7 @@ public class TreeReduce {
 			}
 		};
 
-		return reduce(2, reducer, values);
+		return reduce(reducer, values);
 	}
 
 	/**
@@ -60,8 +63,8 @@ public class TreeReduce {
 	 * @param reducer functor to perform the reduction at each node in tree
 	 * @param values values to reduce
 	 */
-	public static <T> T reduce(int n, Reducer<T> reducer, T... values) {
-		return reduce(n, reducer, Arrays.asList(values));
+	public static <T> T reduce(Reducer<T> reducer, T... values) {
+		return reduce(reducer, Arrays.asList(values));
 	}
 
 	/**
@@ -71,25 +74,36 @@ public class TreeReduce {
 	 * @param reducer functor to perform the reduction at each node in tree
 	 * @param values values to reduce
 	 */
-	public static <T> T reduce(int n, Reducer<T> reducer, List<T> values) {
+	public static <T> T reduce(Reducer<T> reducer, List<T> values) {
 		if (values.isEmpty())
 			throw new MaxCompilerAPIError("Cannot reduce zero values");
 
-		if (n < 2)
+		if (reducer.getMaxNumValues() < 2)
 			throw new MaxCompilerAPIError("Reduction tree must have degree of at least 2");
 
 		List<T> reduced = new ArrayList<T>();
-		for (List<T> group : CollectionUtils.grouped(values, n)) {
+		for (List<T> group : CollectionUtils.grouped(values, reducer.getMaxNumValues())) {
 			reduced.add(reducer.reduce(group));
 		}
 
-		return (reduced.size() == 1) ? reduced[0] : reduce(n, reducer, reduced);
+		return (reduced.size() == 1) ? reduced[0] : reduce(reducer, reduced);
 	}
 
 	/**
 	 * A functor, which can take a list of values and reduce down to a single value.
 	 */
 	public interface Reducer<T> {
+		/**
+		 * @return Maximum number of values which may be passed to the {@code reduce} method.
+		 */
+		int getMaxNumValues();
+
+		/**
+		 * Reduce values to a single value.
+		 *
+		 * This function should be capable of reducing any list with size between
+		 * 1 and {@code getMaxNumValues()} inclusive.
+		 */
 		T reduce(List<T> values);
 	}
 }

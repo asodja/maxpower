@@ -16,6 +16,9 @@ public class TreeReduceTest {
 		}
 
 		@Override
+		public int getMaxNumValues() { return n; }
+
+		@Override
 		public Integer reduce(List<Integer> values) {
 			if (values.isEmpty())
 				throw new RuntimeException("Received empty list");
@@ -52,7 +55,7 @@ public class TreeReduceTest {
 
 			for (int n = 2; n < 5; ++n) {
 				TestAdder adder = new TestAdder(n);
-				Assert.assertEquals("tree reduce, n = "+n, expected, (int) TreeReduce.reduce(n, adder, values));
+				Assert.assertEquals("tree reduce, n = "+n, expected, (int) TreeReduce.reduce(adder, values));
 			}
 		}
 	}
