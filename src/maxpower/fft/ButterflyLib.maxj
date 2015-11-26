@@ -34,7 +34,7 @@ public class ButterflyLib {
 	 * @param input Input values.
 	 * @return Output values.
 	 */
-	public static List<DFEVector<DFEComplex>> applyButterfly(final int fftSize, final int phase,
+	protected static List<DFEVector<DFEComplex>> applyButterfly(final int fftSize, final int phase,
 			List<DFEVector<DFEComplex>> input, final int radix, DFEType twiddleType) {
 
 		KernelLib owner = input[0].getKernel();

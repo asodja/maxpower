@@ -7,6 +7,8 @@ import maxpower.kernel.mem.Transposer;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Params;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
@@ -203,5 +205,121 @@ public class FftBuffer {
 			data.addAll(input[i].getElementsAsList());
 		}
 		return data;
+	}
+
+	/**
+	 * Bit reverse the result of the FFT. ATTENTION: This will break for not equal to 4 pipes and non power of 2
+	 * input sizes
+	 * @param input fft results.
+	 * @param fftSize Size of the fft.
+	 * @return bit reversed result of the fft.
+	 */
+	protected static  <T extends KernelObject<T>> List<T> applyBitReverseBuffer(List<T> input, final int fftSize) {
+		KernelLib owner = input[0].getKernel();
+
+		DFEVector<DFEVar> packedInput = DFEVectorType.newInstance(packInput(input));
+
+		if (!MathUtils.isPowerOf2(fftSize)) {
+			throw new RuntimeException("The bit reverse buffer currently only works for 4 pipes and fft sizes of power of 2");
+		}
+
+		final int ramSize = fftSize / FftFactory4pipes.NUM_FFT_PIPES;
+
+		final int N = MathUtils.bitsToAddress(fftSize);
+
+		CounterChain counterChain = owner.control.count.makeCounterChain();
+		// if we write in linear order or in our crazy pattern
+		DFEVar state       = counterChain.addCounter(2, 1);
+		// We have for states that determine rotates, swaps and addresses
+		DFEVar bufferState = counterChain.addCounter(4, 1);
+		DFEVar position    = counterChain.addCounter(1 << (N - 4), 1);
+
+		ArrayList<Memory<DFEVar>> buffer = new ArrayList<Memory<DFEVar>>();
+		for (int i = 0; i < 4; i++) {
+			buffer.add(owner.mem.alloc(packedInput[0].getType(), ramSize));
+		}
+
+		// First we write to the buffer. We have to rotate buffer state times
+		packedInput = packedInput.rotateElementsLeft(bufferState);
+
+		// Now we have to calculate the addresses
+		ArrayList<DFEVar> ramAddressUpperBitsMuxInput = getStartingPointsForAddressingBitReverse(owner);
+		DFEVar ramAddressUpperBits = owner.control.mux(bufferState, ramAddressUpperBitsMuxInput);
+
+		DFEVar addresses[] = new DFEVar[4];
+		for (int i = 0; i < 4; i++) {
+			addresses[i] = ramAddressUpperBits + i # bitReverse(position);
+			addresses[i] = addresses[i].cast(KernelLib.dfeUInt(2 + N - 4));
+		}
+
+		// Now we can finally access the RAM and do some reading and writing
+		ArrayList<DFEVar> lookupResults = new ArrayList<DFEVar>();
+		DFEVar dataCount = bufferState.cast(KernelLib.dfeUInt(2 + N - 4)) * (1 << (N - 4)) +
+				position.cast(KernelLib.dfeUInt(2 + N - 4));
+		for (int i = 0; i < 4; i++) {
+			DFEVar finalAddress = state ? addresses[i] : dataCount;
+			lookupResults.add(buffer[i].read(finalAddress));
+			buffer[i].write(finalAddress, packedInput[i], owner.constant.var(true));
+		}
+
+		// Now we still have to swap the output a bit
+		ArrayList<ArrayList<DFEVar>> swapMuxSelectMuxInput = getMagicNumbersForSwappingBitReverse(owner);
+
+		DFEVector<DFEVar> result = packedInput.getType().newInstance(owner);
+		for (int i = 0; i < 4; i++) {
+			DFEVar swapMuxSelect = owner.control.mux(bufferState, swapMuxSelectMuxInput[i]);
+			result[i] <== owner.control.mux(swapMuxSelect, lookupResults);
+		}
+
+		return unpackOutput(owner.stream.offset(result, ramSize), input[0].getType());
+	}
+
+	/**
+	 * Function to reverse the bits of a given DFEVar.
+	 * @param x DFEVar to revert the bits of.
+	 * @return Bit reversed DFEVar
+	 */
+	private static DFEVar bitReverse(DFEVar x) {
+		DFEVar result = x.slice(0);
+
+		for (int i = 1; i < x.getType().getTotalBits(); i++) {
+			result = result # x.slice(i);
+		}
+
+		return result.cast(x.getType());
+	}
+
+	private static ArrayList<DFEVar> getStartingPointsForAddressingBitReverse(KernelLib owner) {
+		ArrayList<DFEVar> ramAddressUpperBitsMuxInput = new ArrayList<DFEVar>();
+		ramAddressUpperBitsMuxInput.add(owner.constant.var(KernelLib.dfeUInt(2), 0));
+		ramAddressUpperBitsMuxInput.add(owner.constant.var(KernelLib.dfeUInt(2), 2));
+		ramAddressUpperBitsMuxInput.add(owner.constant.var(KernelLib.dfeUInt(2), 3));
+		ramAddressUpperBitsMuxInput.add(owner.constant.var(KernelLib.dfeUInt(2), 1));
+		return ramAddressUpperBitsMuxInput;
+	}
+
+	private static ArrayList<ArrayList<DFEVar>> getMagicNumbersForSwappingBitReverse(KernelLib owner) {
+		ArrayList<ArrayList<DFEVar>> swapMuxSelectMuxInput = new ArrayList<ArrayList<DFEVar>>();
+		for (int i = 0; i < 4; i++) {
+			swapMuxSelectMuxInput.add(new ArrayList<DFEVar>());
+		}
+		swapMuxSelectMuxInput[0].add(owner.constant.var(KernelLib.dfeUInt(2), 0));
+		swapMuxSelectMuxInput[0].add(owner.constant.var(KernelLib.dfeUInt(2), 2));
+		swapMuxSelectMuxInput[0].add(owner.constant.var(KernelLib.dfeUInt(2), 1));
+		swapMuxSelectMuxInput[0].add(owner.constant.var(KernelLib.dfeUInt(2), 3));
+		swapMuxSelectMuxInput[1].add(owner.constant.var(KernelLib.dfeUInt(2), 2));
+		swapMuxSelectMuxInput[1].add(owner.constant.var(KernelLib.dfeUInt(2), 0));
+		swapMuxSelectMuxInput[1].add(owner.constant.var(KernelLib.dfeUInt(2), 3));
+		swapMuxSelectMuxInput[1].add(owner.constant.var(KernelLib.dfeUInt(2), 1));
+		swapMuxSelectMuxInput[2].add(owner.constant.var(KernelLib.dfeUInt(2), 1));
+		swapMuxSelectMuxInput[2].add(owner.constant.var(KernelLib.dfeUInt(2), 3));
+		swapMuxSelectMuxInput[2].add(owner.constant.var(KernelLib.dfeUInt(2), 2));
+		swapMuxSelectMuxInput[2].add(owner.constant.var(KernelLib.dfeUInt(2), 0));
+		swapMuxSelectMuxInput[3].add(owner.constant.var(KernelLib.dfeUInt(2), 3));
+		swapMuxSelectMuxInput[3].add(owner.constant.var(KernelLib.dfeUInt(2), 1));
+		swapMuxSelectMuxInput[3].add(owner.constant.var(KernelLib.dfeUInt(2), 0));
+		swapMuxSelectMuxInput[3].add(owner.constant.var(KernelLib.dfeUInt(2), 2));
+
+		return swapMuxSelectMuxInput;
 	}
 }

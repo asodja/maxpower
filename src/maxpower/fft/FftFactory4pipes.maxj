@@ -1,11 +1,13 @@
 package maxpower.fft;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 /**
@@ -72,8 +74,8 @@ public class FftFactory4pipes extends KernelLib {
 	 */
 	public DFEVector<DFEComplex> transform(final DFEVector<DFEComplex> input, int numFFTs) {
 		List<DFEVector<DFEComplex>> codedOutput =
-			transform(Encoder.encodeFftInput(input, numFFTs, NUM_FFT_PIPES));
-		return Encoder.decodeFftOutput(codedOutput, numFFTs, NUM_FFT_PIPES, m_fftSize);
+			transform(encodeFftInput(input, numFFTs, NUM_FFT_PIPES));
+		return decodeFftOutput(codedOutput, numFFTs, NUM_FFT_PIPES, m_fftSize);
 	}
 
 	/**
@@ -114,5 +116,30 @@ public class FftFactory4pipes extends KernelLib {
 		}
 
 		return fftOut;
+	}
+
+	private static List<DFEVector<DFEComplex>> encodeFftInput(DFEVector<DFEComplex> input,
+			int nFFT, int nPipes) {
+		List<DFEVector<DFEComplex>> list = new ArrayList<DFEVector<DFEComplex>>();
+		DFEVectorType<DFEComplex> fftType = new DFEVectorType<DFEComplex>(input[0].getType(), nFFT);
+
+		int bitsPerPipe = fftType.getTotalBits();
+		for(int i = 0; i < nPipes; i++){
+			list.add(fftType.unpack(input.pack().slice(i*bitsPerPipe, bitsPerPipe)));
+		}
+		return list;
+	}
+
+	private static DFEVector<DFEComplex> decodeFftOutput(List<DFEVector<DFEComplex>> input,
+			int nFFT, int nPipes, int fftSize) {
+		DFEVector<DFEComplex> result = new DFEVectorType<DFEComplex>(input.get(0).getType().getContainedType(),
+				nPipes*nFFT).newInstance(input[0].getKernel());
+
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < nFFT; j++){
+				result.connect(i*nFFT+j, input[i][j]);
+			}
+		}
+		return result;
 	}
 }
