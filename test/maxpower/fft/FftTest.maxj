@@ -42,7 +42,7 @@ public class FftTest {
 		FftTestKernel(KernelParameters parameters, int fftSize, boolean useFloat) {
 			super(parameters);
 
-			NUM_FFT_PIPES = FftFactory4pipes.NUM_FFT_PIPES;
+			NUM_FFT_PIPES = FourierTransform.NUM_FFT_PIPES;
 			resultArray = new DFEVectorType<DFEComplex>(new DFEComplexType(dfeFloat(8, 24)),
 					NUM_FFT_PIPES);
 
@@ -56,8 +56,6 @@ public class FftTest {
 
 			ioInVectorType = new DFEVectorType<DFEVar>(dfeFloat(8, 24), NUM_FFT_PIPES);
 
-			final FftFactory4pipes fftFactory = new FftFactory4pipes(this, twiddleType, fftSize);
-
 			/* Input */
 			final DFEVector<DFEVar> in0 = io.input("pairsIn0", ioInVectorType);
 			final DFEVector<DFEVar> in1 = io.input("pairsIn1", ioInVectorType);
@@ -65,7 +63,8 @@ public class FftTest {
 			final List<DFEVector<DFEComplex>> dataIn = untangleInput(in0, in1);
 
 			/* Do the FFT */
-			final List<DFEVector<DFEComplex>> fftOut = fftFactory.transform(dataIn);
+			final List<DFEVector<DFEComplex>> fftOut = FourierTransform.transform(fftSize, twiddleType, false,
+					dataIn);
 
 			/* Output */
 			final DFEVector<DFEComplex> out = untangleOutput(fftOut);
@@ -141,7 +140,7 @@ public class FftTest {
 
 		List<List<Bits>> bitsIn = convertInputToRaw(pairs, fftSize);
 
-		final int numKernelCycles = NUM_ITERATIONS * (fftSize / FftFactory4pipes.NUM_FFT_PIPES);
+		final int numKernelCycles = NUM_ITERATIONS * (fftSize / FourierTransform.NUM_FFT_PIPES);
 		manager.setInputDataRaw("pairsIn0", bitsIn[0]);
 		manager.setInputDataRaw("pairsIn1", bitsIn[1]);
 		manager.setKernelCycles(numKernelCycles);
@@ -184,12 +183,12 @@ public class FftTest {
 		 *     .       .       .       .         .       .       .       .
 		 */
 		for (int i = 0; i < NUM_ITERATIONS; i++) {
-			for (int j = 0; j < fftSize / FftFactory4pipes.NUM_FFT_PIPES; j++) {
+			for (int j = 0; j < fftSize / FourierTransform.NUM_FFT_PIPES; j++) {
 				final ArrayList<Double> v0 = new ArrayList<Double>();
 				final ArrayList<Double> v1 = new ArrayList<Double>();
-				for (int k = 0; k < FftFactory4pipes.NUM_FFT_PIPES; k++) {
-					v0.add(pairs[i][j * FftFactory4pipes.NUM_FFT_PIPES + k].real());
-					v1.add(pairs[i][j * FftFactory4pipes.NUM_FFT_PIPES + k].imag());
+				for (int k = 0; k < FourierTransform.NUM_FFT_PIPES; k++) {
+					v0.add(pairs[i][j * FourierTransform.NUM_FFT_PIPES + k].real());
+					v1.add(pairs[i][j * FourierTransform.NUM_FFT_PIPES + k].imag());
 				}
 
 				bits0.add(FftTestKernel.ioInVectorType.encodeConstant(v0));
@@ -217,17 +216,17 @@ public class FftTest {
 		Complex[][] results = new Complex[NUM_ITERATIONS][fftSize];
 
 		for (int i = 0; i < NUM_ITERATIONS; i++) {
-			for (int j = 0; j < fftSize / FftFactory4pipes.NUM_FFT_PIPES; j++) {
+			for (int j = 0; j < fftSize / FourierTransform.NUM_FFT_PIPES; j++) {
 
 				@SuppressWarnings("rawtypes")
 				List word = FftTestKernel.resultArray.decodeConstant(
-						bits[i * fftSize / FftFactory4pipes.NUM_FFT_PIPES + j]);
+						bits[i * fftSize / FourierTransform.NUM_FFT_PIPES + j]);
 
-				for (int k = 0; k < FftFactory4pipes.NUM_FFT_PIPES; k++) {
+				for (int k = 0; k < FourierTransform.NUM_FFT_PIPES; k++) {
 					DFEComplexType.ConstantValue z0 =
 						(DFEComplexType.ConstantValue) word[k];
 
-					results[i][j * FftFactory4pipes.NUM_FFT_PIPES + k] =
+					results[i][j * FourierTransform.NUM_FFT_PIPES + k] =
 						new Complex(z0.getReal(), z0.getImaginary());
 				}
 			}

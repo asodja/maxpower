@@ -29,8 +29,8 @@ public class FftBuffer {
 	 * @param radix Radix of the fft stages connected to the buffer.
 	 * @return Data to be feed into the next fft stage.
 	 */
-	public static <T extends KernelObject<T>> List<T> applyInterStageBuffer(List<T> input, int fftSize, int radix) {
-		int numPipes = FftFactory4pipes.NUM_FFT_PIPES;
+	protected static <T extends KernelObject<T>> List<T> applyInterStageBuffer(List<T> input, int fftSize, int radix) {
+		int numPipes = FourierTransform.NUM_FFT_PIPES;
 		int numOutputs = radix;
 
 		KernelLib kernel = input[0].getKernel();
@@ -76,8 +76,8 @@ public class FftBuffer {
 	 * @param fftSize Size of the fft
 	 * @return Data ready to be feed in the first fft stage
 	 */
-	public static <T extends KernelObject<T>> List<T> applyInputBuffer(List<T> input, final int fftSize) {
-		final int numPipes = FftFactory4pipes.NUM_FFT_PIPES;
+	protected static <T extends KernelObject<T>> List<T> applyInputBuffer(List<T> input, final int fftSize) {
+		final int numPipes = FourierTransform.NUM_FFT_PIPES;
 		KernelLib owner = input[0].getKernel();
 
 		List<DFEVar> packedInput = packInput(input);
@@ -126,7 +126,7 @@ public class FftBuffer {
 	 * @param fftSize Size of the fft
 	 * @return Data ready to be feed in the first fft stage
 	 */
-	public static <T extends KernelObject<T>> List<T> applyMixedRadixBuffer(List<T> input, final int fftSize) {
+	protected static <T extends KernelObject<T>> List<T> applyMixedRadixBuffer(List<T> input, final int fftSize) {
 		KernelLib owner = input[0].getKernel();
 
 		List<DFEVar> packedInput = packInput(input);
@@ -143,7 +143,7 @@ public class FftBuffer {
 		}
 		DFEVector<DFEVar> mergedInputVector = DFEVectorType.newInstance(mergedInput);
 
-		final int ramSize = fftSize / FftFactory4pipes.NUM_FFT_PIPES;
+		final int ramSize = fftSize / FourierTransform.NUM_FFT_PIPES;
 
 		CounterChain counterChain = owner.control.count.makeCounterChain();
 		// if we write in linear order or in our crazy pattern
@@ -217,7 +217,7 @@ public class FftBuffer {
 			throw new RuntimeException("The bit reverse buffer currently only works for 4 pipes and fft sizes of power of 2");
 		}
 
-		final int ramSize = fftSize / FftFactory4pipes.NUM_FFT_PIPES;
+		final int ramSize = fftSize / FourierTransform.NUM_FFT_PIPES;
 
 		final int N = MathUtils.bitsToAddress(fftSize);
 

@@ -90,7 +90,7 @@ public class ButterflyLib {
 	 * @return {@link List} of twiddle factors.
 	 */
 	private static List<DFEComplex> r2dualTwiddles(DFEType type, final int fftSize, KernelLib owner) {
-		final List<DFEComplex> twiddles = new ArrayList<DFEComplex>(FftFactory4pipes.NUM_FFT_PIPES);
+		final List<DFEComplex> twiddles = new ArrayList<DFEComplex>(FourierTransform.NUM_FFT_PIPES);
 
 		final CounterChain chain = owner.control.count.makeCounterChainMoreBits();
 		                   chain.addCounter(3, 1).setReportOnUnused(false);

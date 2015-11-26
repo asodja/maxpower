@@ -23,22 +23,13 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  *
  * @author Stephen Girdlestone
  */
-public class FftFactory4pipes extends KernelLib {
+public class FourierTransform {
 
 	// Expose useful parameters
 	public static final int NUM_FFT_PIPES = 4;
 
-	/** Number of butterfly phases of FFT. */
-	private final int m_radix4phases;
-	private final int m_radix2phases;
-	/** Exponent 2 representing the number of input data points (N). */
-	private final int m_exponent;
-	private final int m_fftSize;
-	/** {@link DFEType Type} of twiddle factors. */
-	private final DFEType m_twiddleType;
-
 	/**
-	 * Default constructor creating an {@link FftFactory4pipes FFT factory}.
+	 * Default constructor creating an {@link FourierTransform FFT factory}.
 	 *
 	 * @param kernel {@link KernelLib Kernel} object that uses the factory.
 	 * @param twiddleType Generic {@link DFEType type} of real and imaginary
@@ -47,21 +38,6 @@ public class FftFactory4pipes extends KernelLib {
 	 * @param N The size of the FFT (Must be a power of two or a power of
 	 * 2 and be greater than 16).
 	 */
-	public FftFactory4pipes(KernelLib kernel, final DFEType twiddleType, int N) {
-		super(kernel);
-
-		stream.suppressOffsetVectorWarnings();
-
-		m_fftSize = N;
-		if (m_fftSize < 16 || !MathUtils.isPowerOf2(m_fftSize)) {
-			throw new RuntimeException("4 pipe FFT currently only supports sizes that are 2^N for N > 4.");
-		}
-		m_exponent       = MathUtils.bitsToAddress(N);
-
-		m_radix4phases = m_exponent / 2;
-		m_radix2phases = m_exponent % 2;
-		m_twiddleType  = twiddleType;
-	}
 
 	/**
 	 * This method is a wrapper for transform(final List<DFEVector<DFEComplex>>).
@@ -72,10 +48,13 @@ public class FftFactory4pipes extends KernelLib {
 	 * @param numFFTs indicates the number of simultaneous FFTs
 	 * @return a DFEVector containing the FFT outputs.
 	 */
-	public DFEVector<DFEComplex> transform(final DFEVector<DFEComplex> input, int numFFTs) {
+	public static DFEVector<DFEComplex> transform(final int N, final DFEType twiddleType,
+			final DFEVector<DFEComplex> input, int numFFTs) {
+		final int fftSize = N;
+
 		List<DFEVector<DFEComplex>> codedOutput =
-			transform(encodeFftInput(input, numFFTs, NUM_FFT_PIPES));
-		return decodeFftOutput(codedOutput, numFFTs, NUM_FFT_PIPES, m_fftSize);
+			transform(N, twiddleType, true, encodeFftInput(input, numFFTs, NUM_FFT_PIPES));
+		return decodeFftOutput(codedOutput, numFFTs, NUM_FFT_PIPES, fftSize);
 	}
 
 	/**
@@ -90,29 +69,46 @@ public class FftFactory4pipes extends KernelLib {
 	 * @param input {@link List} containing complex streams of FFT inputs.
 	 * @return {@link List} containing complex streams of FFT outputs
 	 */
-	public List<DFEVector<DFEComplex>> transform(final List<DFEVector<DFEComplex>> input) {
-		int depth = m_fftSize;
+	public static List<DFEVector<DFEComplex>> transform(final int N, final DFEType twiddleType,
+			final boolean doBitReverse, final List<DFEVector<DFEComplex>> input) {
+		KernelLib owner = input[0].getKernel();
+
+		owner.stream.suppressOffsetVectorWarnings();
+
+		final int fftSize = N;
+		if (fftSize < 16 || !MathUtils.isPowerOf2(fftSize)) {
+			throw new RuntimeException("4 pipe FFT currently only supports sizes that are 2^N for N > 4.");
+		}
+		final int exponent = MathUtils.bitsToAddress(N);
+		final int radix4phases = exponent / 2;
+		final int radix2phases = exponent % 2;
+
+		int depth = fftSize;
 		final List<DFEVector<DFEComplex>> rdx4input;
-		rdx4input = FftBuffer.applyInputBuffer(input, m_fftSize);
+		rdx4input = FftBuffer.applyInputBuffer(input, fftSize);
 
 		List<DFEVector<DFEComplex>> fftOut;
-		if (m_radix2phases == 1) {
-			fftOut = ButterflyLib.applyButterfly(m_fftSize, 0, rdx4input, 2, m_twiddleType);
-			fftOut = FftBuffer.applyMixedRadixBuffer(fftOut, m_fftSize);
+		if (radix2phases == 1) {
+			fftOut = ButterflyLib.applyButterfly(fftSize, 0, rdx4input, 2, twiddleType);
+			fftOut = FftBuffer.applyMixedRadixBuffer(fftOut, fftSize);
 			depth /= 2;
-		} else if (m_radix2phases == 0) {
+		} else if (radix2phases == 0) {
 			fftOut = rdx4input;
 		} else {
 			throw new RuntimeException("Number of radix 2 stages must be either 0 or 1 (negative is impossible, and 2 should be a radix 4 stage).");
 		}
 
-		for (int phase = 1; phase <= m_radix4phases; phase++) {
-			fftOut = ButterflyLib.applyButterfly(m_fftSize, phase, fftOut, 4, m_twiddleType);
+		for (int phase = 1; phase <= radix4phases; phase++) {
+			fftOut = ButterflyLib.applyButterfly(fftSize, phase, fftOut, 4, twiddleType);
 
-			if(phase < m_radix4phases) {
+			if(phase < radix4phases) {
 				fftOut = FftBuffer.applyInterStageBuffer(fftOut, depth, 4);
 				depth /= 4;
 			}
+		}
+
+		if (doBitReverse) {
+			fftOut = FftBuffer.applyBitReverseBuffer(fftOut, fftSize);
 		}
 
 		return fftOut;
