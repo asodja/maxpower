@@ -4,9 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import maxpower.kernel.KernelBinaryOp.Add;
-import maxpower.kernel.TreeReduce;
 import maxpower.kernel.arithmetic.ConstDenominator;
 import maxpower.kernel.arithmetic.ConstDenominator.ConstDivModResult;
+import maxpower.utils.TreeReduce;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;

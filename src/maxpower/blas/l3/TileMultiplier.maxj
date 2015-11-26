@@ -1,8 +1,8 @@
 package maxpower.blas.l3;
 
 import maxpower.kernel.KernelBinaryOp.Add;
-import maxpower.kernel.TreeReduce;
 import maxpower.kernel.arithmetic.FloatingPointMultiAdder;
+import maxpower.utils.TreeReduce;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
