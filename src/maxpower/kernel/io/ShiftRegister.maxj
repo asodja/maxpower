@@ -49,8 +49,7 @@ public class ShiftRegister {
 	 * @return a vector of the data in the shift register; earliest data at index 0
 	 */
 	public static <T extends KernelObjectVectorizable<T, ?>>
-		DFEVector<T> serialToParallel(int n, T input, DFEVar inputValid)
-	{
+	DFEVector<T> serialToParallel(int n, T input, DFEVar inputValid) {
 		return serialToParallel(n, input, inputValid, DEFAULT_MAX_FANOUT);
 	}
 
@@ -64,8 +63,7 @@ public class ShiftRegister {
 	 * @return a vector of the data in the shift register; earliest data at index 0
 	 */
 	public static <T extends KernelObjectVectorizable<T, ?>>
-		DFEVector<T> serialToParallel(int n, T input, DFEVar inputValid, int maxFanout)
-	{
+	DFEVector<T> serialToParallel(int n, T input, DFEVar inputValid, int maxFanout) {
 		Kernel owner = input.getKernel();
 
 		List<T> output = new ArrayList<T>(n);
@@ -100,8 +98,7 @@ public class ShiftRegister {
 	 * @return The word of data at the head of the shift register
 	 */
 	public static <T extends KernelObjectVectorizable<T, ?>>
-		T parallelToSerial(DFEVector<T> input, DFEVar inputValid)
-	{
+	T parallelToSerial(DFEVector<T> input, DFEVar inputValid) {
 		return parallelToSerial(input.getElementsAsList(), inputValid);
 	}
 
@@ -127,8 +124,7 @@ public class ShiftRegister {
 	 * @return The word of data at the head of the shift register
 	 */
 	public static <T extends KernelObjectVectorizable<T, ?>>
-		T parallelToSerial(DFEVector<T> input, DFEVar inputValid, DFEVar shift)
-	{
+	T parallelToSerial(DFEVector<T> input, DFEVar inputValid, DFEVar shift) {
 		return parallelToSerial(input.getElementsAsList(), inputValid, shift);
 	}
 
@@ -141,8 +137,7 @@ public class ShiftRegister {
 	 * @return The word of data at the head of the shift register
 	 */
 	public static <T extends KernelObject<T>>
-		T parallelToSerial(List<T> input, DFEVar inputValid, DFEVar shift)
-	{
+	T parallelToSerial(List<T> input, DFEVar inputValid, DFEVar shift) {
 		return parallelToSerial(input, inputValid, shift, DEFAULT_MAX_FANOUT);
 	}
 
@@ -156,8 +151,7 @@ public class ShiftRegister {
 	 * @return The word of data at the head of the shift register
 	 */
 	public static <T extends KernelObjectVectorizable<T, ?>>
-		T parallelToSerial(DFEVector<T> input, DFEVar inputValid, DFEVar shift, int maxFanout)
-	{
+	T parallelToSerial(DFEVector<T> input, DFEVar inputValid, DFEVar shift, int maxFanout) {
 		return parallelToSerial(input.getElementsAsList(), inputValid, shift, maxFanout);
 	}
 
@@ -171,8 +165,7 @@ public class ShiftRegister {
 	 * @return The word of data at the head of the shift register
 	 */
 	public static <T extends KernelObject<T>>
-		T parallelToSerial(List<T> input, DFEVar inputValid, DFEVar shift, int maxFanout)
-	{
+	T parallelToSerial(List<T> input, DFEVar inputValid, DFEVar shift, int maxFanout) {
 		Kernel owner = inputValid.getKernel();
 		int n = input.size();
 
