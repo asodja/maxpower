@@ -1,0 +1,75 @@
+package maxpower.kernel.utils;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v0.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+
+public class VectorUtils {
+	/**
+	 * Get a specified field as a {@link DFEVector} from a DFEVector of {@link DFEStruct}.
+	 *
+	 * @param input DFEVector of DFEStructs.
+	 * @param fieldName Name of the field we wish to extract.
+	 * @return DFEVector<T> containing a an element from each DFEStruct.
+	 */
+	public static <T extends KernelObjectVectorizable<T,?>>
+	DFEVector<T> getStructMember(DFEVector<DFEStruct> input, String fieldName) {
+		final List<T> vars = new ArrayList<T>(input.getSize());
+		for (int i = 0; i < input.getSize(); i++) {
+			T var = input[i][fieldName];
+			vars.add(var);
+		}
+		return DFEVectorType.newInstance(vars);
+	}
+
+	/**
+	 * Set a specified structure member in a {@link DFEVector} of {@link DFEStruct}.
+	 *
+	 * @param input DFEVector of DFEStructs.
+	 * @param fieldName Name of the field we wish to extract.
+	 * @param value DFEVector<T> containing values to be set in each DFEStruct.
+	 */
+	public static <T extends KernelObjectVectorizable<T,?>>
+	void setStructMember(DFEVector<DFEStruct> input, String fieldName, DFEVector<T> value) {
+		for (int i = 0; i < input.getSize(); i++) {
+			input[i].set(fieldName, value[i]);
+		}
+	}
+
+	/**
+	 * Slice a specified number of elements out of a {@link DFEVector}.
+	 *
+	 * @param input DFEVector to slice elements out of.
+	 * @param start The index of the first element.
+	 * @param size The number of elements expected in the output.
+	 * @return A DFEVector containing contiguous elements from the input.
+	 */
+	public static <T extends KernelObjectVectorizable<T,?>>
+	DFEVector<T> slice(DFEVector<T> input, int start, int size) {
+		List<T> output = input.getElementsAsList().subList(start, start + size);
+		return DFEVectorType.newInstance(output);
+	}
+
+	/**
+	 *  Concatenate two DFEVectors together into a single DFEVector.
+	 *
+	 * @param first The first N elements of the output.
+	 * @param second The next M elements of the output.
+	 * @return A DFEVector containing all elements of first followed by all elements of second.
+	 */
+	public static <T extends KernelObjectVectorizable<T,?>>
+	DFEVector<T> cat(DFEVector<T> first, DFEVector<T> second) {
+		if (!(first.getType().getContainedType().equalsIgnoreMax(second.getType().getContainedType()))) {
+			throw new MaxCompilerAPIError("Types for DFEVectors must match in order to concatenate them.");
+		}
+		List<T> output = first.getElementsAsList();
+		output.addAll(second.getElementsAsList());
+		return DFEVectorType.newInstance(output);
+	}
+
+}
