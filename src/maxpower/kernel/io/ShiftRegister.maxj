@@ -66,21 +66,16 @@ public class ShiftRegister {
 	DFEVector<T> serialToParallel(int n, T input, DFEVar inputValid, int maxFanout) {
 		Kernel owner = input.getKernel();
 
+		// FIXME Workaround for compiler's inability to constant-fold NodeRegister. There is a ticket open.
+		FanoutLimiter<DFEVar> inputValidPl = (inputValid == null)
+		                                   ? new FanoutLimiter<DFEVar>(owner.constant.var(true), n)
+		                                   : new FanoutLimiter<DFEVar>(inputValid, maxFanout);
+
 		List<T> output = new ArrayList<T>(n);
-
-		// FIXME This is a workaround for the fact the NodeRegister is not constant folded
-		//       by the compiler. I have opened a ticket.
-		FanoutLimiter<DFEVar> inputValidPl = null;
-		if (inputValid != null) inputValidPl = new FanoutLimiter<DFEVar>(inputValid, maxFanout);
-
-		// FIXME Workaround cont.d
-		DFEVar store = (inputValid == null) ? owner.constant.var(true) : inputValidPl.get();
-		output.add(Reductions.streamHold(input, store));
+		output.add(Reductions.streamHold(input, inputValidPl.get()));
 
 		for (int i = 1; i < n; ++i) {
-			// FIXME Workaround cont.d
-			store = (inputValid == null) ? owner.constant.var(true) : inputValidPl.get();
-			output.add(Reductions.streamHold(owner.stream.offset(output[i-1], -1), store));
+			output.add(Reductions.streamHold(owner.stream.offset(output[i-1], -1), inputValidPl.get()));
 		}
 
 		// We want the earliest data to appear at index 0.
@@ -171,22 +166,18 @@ public class ShiftRegister {
 
 		FanoutLimiter<DFEVar> inputValidPl = new FanoutLimiter<DFEVar>(inputValid, maxFanout);
 
-		// FIXME This is a workaround for the fact the NodeRegister is not constant folded
-		//       by the compiler. I have opened a ticket.
-		FanoutLimiter<DFEVar> inputOrShift = null;
-		if (shift != null) inputOrShift = new FanoutLimiter<DFEVar>(inputValid | shift, maxFanout);
+		// FIXME Workaround for compiler's inability to constant-fold NodeRegister. There is a ticket open.
+		FanoutLimiter<DFEVar> inputOrShift = (shift == null)
+		                                   ? new FanoutLimiter<DFEVar>(owner.constant.var(true), n)
+		                                   : new FanoutLimiter<DFEVar>(inputValid | shift, maxFanout);
 
+		// N.B. The registers and the input are in opposing orders, due to the way the registers chain together.
 		List<T> regs = new ArrayList<T>(n);
-		// FIXME Workaround cont.d
-		DFEVar store = (shift == null) ? owner.constant.var(true) : inputOrShift.get();
-		regs.add(Reductions.streamHold(input[n-1], store));
+		regs.add(Reductions.streamHold(input[n-1], inputOrShift.get()));
 
 		for (int i = 1; i < n; ++i) {
-			// FIXME Workaround cont.d
-			store = (shift == null) ? owner.constant.var(true) : inputOrShift.get();
-
 			regs.add(Reductions.streamHold(
-					inputValidPl.get() ? input[n-i-1] : owner.stream.offset(regs[i-1], -1), store));
+					inputValidPl.get() ? input[n-i-1] : owner.stream.offset(regs[i-1], -1), inputOrShift.get()));
 		}
 
 		return regs[n-1];
