@@ -8,9 +8,21 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class TreeReduceTest {
-	static class Adder implements TreeReduce.Reducer<Integer> {
+	static class TestAdder implements TreeReduce.Reducer<Integer> {
+		private final int n;
+
+		TestAdder(int n) {
+			this.n = n;
+		}
+
 		@Override
 		public Integer reduce(List<Integer> values) {
+			if (values.isEmpty())
+				throw new RuntimeException("Received empty list");
+
+			if (values.size() > n)
+				throw new RuntimeException("Received more values than expected");
+
 			int sum = 0;
 			for (int v : values) sum += v;
 			return sum;
@@ -38,8 +50,8 @@ public class TreeReduceTest {
 				expected += v;
 			}
 
-			Adder adder = new Adder();
 			for (int n = 2; n < 5; ++n) {
+				TestAdder adder = new TestAdder(n);
 				Assert.assertEquals("tree reduce, n = "+n, expected, (int) TreeReduce.reduce(n, adder, values));
 			}
 		}
