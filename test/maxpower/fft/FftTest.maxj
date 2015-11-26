@@ -64,7 +64,7 @@ public class FftTest {
 
 			/* Do the FFT */
 			final List<DFEVector<DFEComplex>> fftOut = FourierTransform.transform(fftSize, twiddleType, false,
-					dataIn);
+					false, dataIn);
 
 			/* Output */
 			final DFEVector<DFEComplex> out = untangleOutput(fftOut);
