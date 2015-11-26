@@ -34,8 +34,8 @@ public class ButterflyLib {
 	 * @param input Input values.
 	 * @return Output values.
 	 */
-	public static List<DFEVector<DFEComplex>> createButterfly(final int fftSize, final int phase,
-			List<DFEVector<DFEComplex>> input, Radix radix, DFEType twiddleType) {
+	public static List<DFEVector<DFEComplex>> applyButterfly(final int fftSize, final int phase,
+			List<DFEVector<DFEComplex>> input, final int radix, DFEType twiddleType) {
 
 		KernelLib owner = input[0].getKernel();
 		DFEType type = (DFEType) ((DFEComplexType)input[0].getType().getContainedType()).getRealType();
@@ -50,7 +50,7 @@ public class ButterflyLib {
 
 		final List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(4);
 
-		if (radix.getRadix() == 4) {
+		if (radix == 4) {
 			final int radix4Phases = MathUtils.bitsToAddress(fftSize) / 2;
 			List<DFEComplex> twiddles = calcTwiddles(radix4Phases, phase, radix, type, owner);
 			DFEVector<DFEComplex> a = input[0] + input[2];
@@ -94,8 +94,7 @@ public class ButterflyLib {
 
 		final CounterChain chain = owner.control.count.makeCounterChainMoreBits();
 		                   chain.addCounter(3, 1).setReportOnUnused(false);
-		DFEVar dataCount = chain.addCounter(1 << (MathUtils.bitsToAddress(fftSize) -
-				Radix.RADIX_4.getBinaryShift()), 1);
+		DFEVar dataCount = chain.addCounter(1 << (MathUtils.bitsToAddress(fftSize) - 2), 1);
 
 		final int numTwiddles = fftSize / 4;
 		final DFEType addressType = KernelLib.dfeUInt(MathUtils.bitsToAddress(numTwiddles));
@@ -119,13 +118,13 @@ public class ButterflyLib {
 	 *
 	 * @return {@link List} of twiddle factors.
 	 */
-	private static List<DFEComplex> calcTwiddles(final int exponent, final int phase, Radix radix, DFEType type,
+	private static List<DFEComplex> calcTwiddles(final int exponent, final int phase, final int radix, DFEType type,
 			KernelLib owner) {
-		final int twiddleCount = radix.getRadix() - 1;
-		final int twiddleRatioShift = (phase - 1) * radix.getBinaryShift();
-		final int twiddleBitWidth = (exponent - phase) * radix.getBinaryShift();
+		final int twiddleCount = radix - 1;
+		final int twiddleRatioShift = (phase - 1) * (radix / 2);
+		final int twiddleBitWidth = (exponent - phase) * (radix / 2);
 		final int twiddleFactorCount = 1 << twiddleBitWidth;
-		final int inputCount = 1 << exponent * radix.getBinaryShift();
+		final int inputCount = 1 << exponent * (radix / 2);
 
 		final DFEComplexType twiddleType = new DFEComplexType(type);
 

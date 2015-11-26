@@ -104,6 +104,7 @@ public class FftTest {
 		}
 	}
 
+	@Test public void testFft16()         { testFft(16,    false); }
 	@Test public void testFft32()         { testFft(32,    false); }
 	@Test public void testFft64()         { testFft(64,    false); }
 	@Test public void testFft128()        { testFft(128,   false); }
@@ -114,6 +115,7 @@ public class FftTest {
 	@Test public void testFft4096()       { testFft(4096,  false); }
 	@Test public void testFft8192()       { testFft(8192,  false); }
 	@Test public void testFft16384()      { testFft(16384, false); }
+	@Test public void testFft16float()    { testFft(16,    true);  }
 	@Test public void testFft32float()    { testFft(32,    true);  }
 	@Test public void testFft64float()    { testFft(64,    true);  }
 	@Test public void testFft128float()   { testFft(128,   true);  }

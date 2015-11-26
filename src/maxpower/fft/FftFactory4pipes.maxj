@@ -2,7 +2,6 @@ package maxpower.fft;
 
 import java.util.List;
 
-
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
@@ -44,7 +43,7 @@ public class FftFactory4pipes extends KernelLib {
 	 * values for the twiddle factors (Twiddle factors are generated between
 	 * -1 and +1.
 	 * @param N The size of the FFT (Must be a power of two or a power of
-	 * 2 and be greater than 32).
+	 * 2 and be greater than 16).
 	 */
 	public FftFactory4pipes(KernelLib kernel, final DFEType twiddleType, int N) {
 		super(kernel);
@@ -52,8 +51,8 @@ public class FftFactory4pipes extends KernelLib {
 		stream.suppressOffsetVectorWarnings();
 
 		m_fftSize = N;
-		if (m_fftSize < 32 || !MathUtils.isPowerOf2(m_fftSize)) {
-			throw new RuntimeException("4 pipe FFT currently only supports sizes that are 2^N for N > 5.");
+		if (m_fftSize < 16 || !MathUtils.isPowerOf2(m_fftSize)) {
+			throw new RuntimeException("4 pipe FFT currently only supports sizes that are 2^N for N > 4.");
 		}
 		m_exponent       = MathUtils.bitsToAddress(N);
 
@@ -92,12 +91,12 @@ public class FftFactory4pipes extends KernelLib {
 	public List<DFEVector<DFEComplex>> transform(final List<DFEVector<DFEComplex>> input) {
 		int depth = m_fftSize;
 		final List<DFEVector<DFEComplex>> rdx4input;
-		rdx4input = FftBuffer.inputBuffer(input, m_fftSize);
+		rdx4input = FftBuffer.applyInputBuffer(input, m_fftSize);
 
 		List<DFEVector<DFEComplex>> fftOut;
 		if (m_radix2phases == 1) {
-			fftOut = ButterflyLib.createButterfly(m_fftSize, 0, rdx4input, Radix.RADIX_2, m_twiddleType);
-			fftOut = FftBuffer.mixedRadixBuffer(fftOut, m_fftSize);
+			fftOut = ButterflyLib.applyButterfly(m_fftSize, 0, rdx4input, 2, m_twiddleType);
+			fftOut = FftBuffer.applyMixedRadixBuffer(fftOut, m_fftSize);
 			depth /= 2;
 		} else if (m_radix2phases == 0) {
 			fftOut = rdx4input;
@@ -106,10 +105,10 @@ public class FftFactory4pipes extends KernelLib {
 		}
 
 		for (int phase = 1; phase <= m_radix4phases; phase++) {
-			fftOut = ButterflyLib.createButterfly(m_fftSize, phase, fftOut, Radix.RADIX_4, m_twiddleType);
+			fftOut = ButterflyLib.applyButterfly(m_fftSize, phase, fftOut, 4, m_twiddleType);
 
 			if(phase < m_radix4phases) {
-				fftOut = FftBuffer.interStageBuffer(fftOut, depth, Radix.RADIX_4.getRadix(), Radix.RADIX_4.getRadix());
+				fftOut = FftBuffer.applyInterStageBuffer(fftOut, depth, 4);
 				depth /= 4;
 			}
 		}

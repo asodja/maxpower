@@ -24,13 +24,12 @@ public class FftBuffer {
 	 *
 	 * @param input Data from the previous fft stage.
 	 * @param fftSize Size of the fft and by this also size of the buffer.
-	 * @param radix Radix of the fft stage feeding into the buffer.
-	 * @param numOutputs Radix of the fft stage consuming data from the buffer.
+	 * @param radix Radix of the fft stages connected to the buffer.
 	 * @return Data to be feed into the next fft stage.
 	 */
-	public static <T extends KernelObject<T>> List<T> interStageBuffer(List<T> input, int fftSize, int radix,
-			int numOutputs) {
+	public static <T extends KernelObject<T>> List<T> applyInterStageBuffer(List<T> input, int fftSize, int radix) {
 		int numPipes = FftFactory4pipes.NUM_FFT_PIPES;
+		int numOutputs = radix;
 
 		KernelLib kernel = input[0].getKernel();
 		if (fftSize % (numPipes * numOutputs) != 0) {
@@ -120,7 +119,7 @@ public class FftBuffer {
 	 * @param fftSize Size of the fft
 	 * @return Data ready to be feed in the first fft stage
 	 */
-	public static <T extends KernelObject<T>> List<T> inputBuffer(List<T> input, final int fftSize) {
+	public static <T extends KernelObject<T>> List<T> applyInputBuffer(List<T> input, final int fftSize) {
 		final int numPipes = FftFactory4pipes.NUM_FFT_PIPES;
 		KernelLib owner = input[0].getKernel();
 
@@ -147,7 +146,7 @@ public class FftBuffer {
 	 * @param fftSize Size of the fft
 	 * @return Data ready to be feed in the first fft stage
 	 */
-	public static <T extends KernelObject<T>> List<T> mixedRadixBuffer(List<T> input, final int fftSize) {
+	public static <T extends KernelObject<T>> List<T> applyMixedRadixBuffer(List<T> input, final int fftSize) {
 		final int numPipes = FftFactory4pipes.NUM_FFT_PIPES;
 		KernelLib owner = input[0].getKernel();
 

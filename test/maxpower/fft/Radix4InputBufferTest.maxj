@@ -51,7 +51,7 @@ public class Radix4InputBufferTest {
 				list.add(fftType.unpack(data.pack().slice(i*bitsPerPipe, bitsPerPipe)));
 			}
 
-			List<DFEVector<DFEComplex>> transposedData = FftBuffer.inputBuffer(list, fftSize);
+			List<DFEVector<DFEComplex>> transposedData = FftBuffer.applyInputBuffer(list, fftSize);
 
 			DFEVector<DFEComplex> result = complexVectorType.newInstance(this);
 
