@@ -1,0 +1,185 @@
+package maxpower.kernel.io;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import maxpower.kernel.pipeline.FanoutLimiter;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+
+/**
+ * Shift registers can be used to perform efficient serial -> parallel and
+ * parallel -> serial transformation, minimising routing and resource requirement.
+ *
+ * @author Chris Jones
+ */
+public class ShiftRegister {
+	private static final int DEFAULT_MAX_FANOUT = 16;
+
+	/**
+	 * Serial -> parallel transformation via shift register.
+	 *
+	 * This version will shift the register every cycle.
+	 *
+	 * IMPORTANT: The output is stream offset into the future, so the entire
+	 * vector can be read on the same cycle that the first input is written in.
+	 *
+	 * @param n     Number of words in the output vector
+	 * @param input Input word
+	 * @return a vector of the data in the shift register; earliest data at index 0
+	 */
+	public static <T extends KernelObjectVectorizable<T, ?>> DFEVector<T> serialToParallel(int n, T input) {
+		Kernel owner = input.getKernel();
+		return owner.stream.offset(serialToParallel(n, input, null), +n-1);
+	}
+
+	/**
+	 * Serial -> parallel transformation via shift register.
+	 *
+	 * @param n          Number of words in the output vector
+	 * @param input      Input word
+	 * @param inputValid If true, data will shift along the register and input word written
+	 * @return a vector of the data in the shift register; earliest data at index 0
+	 */
+	public static <T extends KernelObjectVectorizable<T, ?>>
+	DFEVector<T> serialToParallel(int n, T input, DFEVar inputValid) {
+		return serialToParallel(n, input, inputValid, DEFAULT_MAX_FANOUT);
+	}
+
+	/**
+	 * Serial -> parallel transformation via shift register.
+	 *
+	 * @param n          Number of words in the output vector
+	 * @param input      Input word
+	 * @param inputValid If true, data will shift along the register and input word written
+	 * @param maxFanout  Maximum number of words to which {@code inputValid} may fanout
+	 * @return a vector of the data in the shift register; earliest data at index 0
+	 */
+	public static <T extends KernelObjectVectorizable<T, ?>>
+	DFEVector<T> serialToParallel(int n, T input, DFEVar inputValid, int maxFanout) {
+		Kernel owner = input.getKernel();
+
+		// FIXME Workaround for compiler's inability to constant-fold NodeRegister. There is a ticket open.
+		FanoutLimiter<DFEVar> inputValidPl = (inputValid == null)
+		                                   ? new FanoutLimiter<DFEVar>(owner.constant.var(true), n)
+		                                   : new FanoutLimiter<DFEVar>(inputValid, maxFanout);
+
+		List<T> output = new ArrayList<T>(n);
+		output.add(Reductions.streamHold(input, inputValidPl.get()));
+
+		for (int i = 1; i < n; ++i) {
+			output.add(Reductions.streamHold(owner.stream.offset(output[i-1], -1), inputValidPl.get()));
+		}
+
+		// We want the earliest data to appear at index 0.
+		Collections.reverse(output);
+		return DFEVectorType.newInstance(output);
+	}
+
+	/**
+	 * Parallel -> serial transformation via shift register.
+	 *
+	 * This version will shift the register every cycle.
+	 *
+	 * @param input      Input data
+	 * @param inputValid If true, will set shift register contents to the input
+	 * @return The word of data at the head of the shift register
+	 */
+	public static <T extends KernelObjectVectorizable<T, ?>>
+	T parallelToSerial(DFEVector<T> input, DFEVar inputValid) {
+		return parallelToSerial(input.getElementsAsList(), inputValid);
+	}
+
+	/**
+	 * Parallel -> serial transformation via shift register.
+	 *
+	 * This version will shift the register every cycle.
+	 *
+	 * @param input      Input data
+	 * @param inputValid If true, will set shift register contents to the input
+	 * @return The word of data at the head of the shift register
+	 */
+	public static <T extends KernelObject<T>> T parallelToSerial(List<T> input, DFEVar inputValid) {
+		return parallelToSerial(input, inputValid, null);
+	}
+
+	/**
+	 * Parallel -> serial transformation via shift register.
+	 *
+	 * @param input      Input data
+	 * @param inputValid If true, will set shift register contents to the input
+	 * @param shift      If true, shift the register (ignored when {@code inputValid} is true)
+	 * @return The word of data at the head of the shift register
+	 */
+	public static <T extends KernelObjectVectorizable<T, ?>>
+	T parallelToSerial(DFEVector<T> input, DFEVar inputValid, DFEVar shift) {
+		return parallelToSerial(input.getElementsAsList(), inputValid, shift);
+	}
+
+	/**
+	 * Parallel -> serial transformation via shift register.
+	 *
+	 * @param input      Input data
+	 * @param inputValid If true, will set shift register contents to the input
+	 * @param shift      If true, shift the register (ignored when {@code inputValid} is true)
+	 * @return The word of data at the head of the shift register
+	 */
+	public static <T extends KernelObject<T>>
+	T parallelToSerial(List<T> input, DFEVar inputValid, DFEVar shift) {
+		return parallelToSerial(input, inputValid, shift, DEFAULT_MAX_FANOUT);
+	}
+
+	/**
+	 * Parallel -> serial transformation via shift register.
+	 *
+	 * @param input      Input data
+	 * @param inputValid If true, will set shift register contents to the input
+	 * @param shift      If true, shift the register (ignored when inputValid is true)
+	 * @param maxFanout  Maximum number of words to which {@code inputValid} and {@code shift} may fanout
+	 * @return The word of data at the head of the shift register
+	 */
+	public static <T extends KernelObjectVectorizable<T, ?>>
+	T parallelToSerial(DFEVector<T> input, DFEVar inputValid, DFEVar shift, int maxFanout) {
+		return parallelToSerial(input.getElementsAsList(), inputValid, shift, maxFanout);
+	}
+
+	/**
+	 * Parallel -> serial transformation via shift register.
+	 *
+	 * @param input      Input data
+	 * @param inputValid If true, will set shift register contents to the input
+	 * @param shift      If true, shift the register (ignored when {@code inputValid} is true)
+	 * @param maxFanout  Maximum number of words to which {@code inputValid} and {@code shift} may fanout
+	 * @return The word of data at the head of the shift register
+	 */
+	public static <T extends KernelObject<T>>
+	T parallelToSerial(List<T> input, DFEVar inputValid, DFEVar shift, int maxFanout) {
+		Kernel owner = inputValid.getKernel();
+		int n = input.size();
+
+		FanoutLimiter<DFEVar> inputValidPl = new FanoutLimiter<DFEVar>(inputValid, maxFanout);
+
+		// FIXME Workaround for compiler's inability to constant-fold NodeRegister. There is a ticket open.
+		FanoutLimiter<DFEVar> inputOrShift = (shift == null)
+		                                   ? new FanoutLimiter<DFEVar>(owner.constant.var(true), n)
+		                                   : new FanoutLimiter<DFEVar>(inputValid | shift, maxFanout);
+
+		// N.B. The registers and the input are in opposing orders, due to the way the registers chain together.
+		List<T> regs = new ArrayList<T>(n);
+		regs.add(Reductions.streamHold(input[n-1], inputOrShift.get()));
+
+		for (int i = 1; i < n; ++i) {
+			regs.add(Reductions.streamHold(
+					inputValidPl.get() ? input[n-i-1] : owner.stream.offset(regs[i-1], -1), inputOrShift.get()));
+		}
+
+		return regs[n-1];
+	}
+}
