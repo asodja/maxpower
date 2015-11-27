@@ -3,7 +3,7 @@ package maxpower.kernel.utils;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.maxeler.maxcompiler.v0.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
