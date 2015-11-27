@@ -149,11 +149,6 @@ public class FftBuffer {
 		DFEVar position =
 			counterChain.addCounter(ramSize / 2, 1).cast(Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize)));
 
-		ArrayList<Memory<DFEVar>> buffer = new ArrayList<Memory<DFEVar>>();
-		for (int i = 0; i < 2; i++) {
-			buffer.add(owner.mem.alloc(mergedInputVector[0].getType(), ramSize));
-		}
-
 		// First we write to the buffer. We have to rotate buffer state times
 		mergedInputVector = mergedInputVector.rotateElementsLeft(bufferState);
 
@@ -166,9 +161,10 @@ public class FftBuffer {
 		addresses.add(dataCount);
 		addresses.add(bufferState ? position : position + (ramSize / 2));
 		for (int i = 0; i < 2; i++) {
+			Memory<DFEVar> buffer = owner.mem.alloc(mergedInputVector[0].getType(), ramSize);
 			DFEVar finalAddress = state ? addresses[i] : dataCount;
-			lookupResults.add(buffer[i].read(finalAddress));
-			buffer[i].write(finalAddress, mergedInputVector[i], owner.constant.var(true));
+			lookupResults.add(buffer.read(finalAddress));
+			buffer.write(finalAddress, mergedInputVector[i], owner.constant.var(true));
 		}
 
 		List<DFEVector<DFEVar>> resultVectors = new ArrayList<DFEVector<DFEVar>>();
