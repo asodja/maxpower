@@ -202,7 +202,7 @@ public class FftBuffer {
 	 */
 	protected static  <T extends KernelObject<T>> List<T> applyBitReverseBuffer(List<T> input, int fftSize) {
 		KernelLib owner = input[0].getKernel();
-
+		// TODO: This buffer is buggy at the moment
 		DFEVector<DFEVar> packedInput = DFEVectorType.newInstance(packInput(input));
 
 		if (!MathUtils.isPowerOf2(fftSize)) {
@@ -219,11 +219,6 @@ public class FftBuffer {
 		// We have four states that determine rotates, swaps and addresses
 		DFEVar bufferState = counterChain.addCounter(4, 1);
 		DFEVar position    = counterChain.addCounter(1 << (N - 4), 1);
-
-		ArrayList<Memory<DFEVar>> buffer = new ArrayList<Memory<DFEVar>>();
-		for (int i = 0; i < 4; i++) {
-			buffer.add(owner.mem.alloc(packedInput[0].getType(), ramSize));
-		}
 
 		// First we write to the buffer. We have to rotate buffer state times
 		packedInput = packedInput.rotateElementsLeft(bufferState);
@@ -243,9 +238,10 @@ public class FftBuffer {
 		DFEVar dataCount = bufferState.cast(Kernel.dfeUInt(2 + N - 4)) * (1 << (N - 4)) +
 				position.cast(Kernel.dfeUInt(2 + N - 4));
 		for (int i = 0; i < 4; i++) {
+			Memory<DFEVar> buffer = owner.mem.alloc(packedInput[0].getType(), ramSize);
 			DFEVar finalAddress = state ? addresses[i] : dataCount;
-			lookupResults.add(buffer[i].read(finalAddress));
-			buffer[i].write(finalAddress, packedInput[i], owner.constant.var(true));
+			buffer.write(finalAddress, packedInput[i], owner.constant.var(true));
+			lookupResults.add(buffer.read(finalAddress));
 		}
 
 		// Now we still have to swap the output a bit

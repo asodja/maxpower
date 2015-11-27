@@ -63,6 +63,7 @@ public class BitReverseTest {
 			DFEVector<DFEVar> realResult = vectorType.newInstance(this);
 			for (int i = 0; i < NUM_PIPES; i++) {
 				realResult[i] <== result[i].getReal();
+				result[i].getImaginary().setReportOnUnused(false);
 			}
 
 			io.output("output", vectorType) <== realResult;
@@ -93,9 +94,10 @@ public class BitReverseTest {
 		for (int i = 0; i < NUM_DATA_RUNS; i++) {
 			for (int j = 0; j < size / NUM_PIPES; j++) {
 				for (int k = 0; k < NUM_PIPES; k++) {
-					input[j + i * size / NUM_PIPES][k] = j * NUM_PIPES + k;
+					input[j + i * size / NUM_PIPES][k] = i * size + j * NUM_PIPES + k;
 				}
-				inputBits[j + i * size / NUM_PIPES] = kernel.vectorType.encodeConstant(input[j]);
+				inputBits[j + i * size / NUM_PIPES] =
+					kernel.vectorType.encodeConstant(input[j  + i * size / NUM_PIPES]);
 			}
 		}
 
@@ -107,7 +109,7 @@ public class BitReverseTest {
 		for (int i = 0; i < NUM_DATA_RUNS; i++) {
 			for (int j = 0; j < size / NUM_PIPES; j++) {
 				@SuppressWarnings("rawtypes")
-				List word = kernel.vectorType.decodeConstant(actualBits[j]);
+				List word = kernel.vectorType.decodeConstant(actualBits[j + i * size / NUM_PIPES]);
 				for (int k = 0; k < NUM_PIPES; k++) {
 					actual[j + i * size / NUM_PIPES][k] = (Double) word[k];
 				}
@@ -117,17 +119,29 @@ public class BitReverseTest {
 		double[][] expected = bitReverseData(size, input);
 		for (int i = 0; i < NUM_DATA_RUNS; i++) {
 			for (int j = 0; j < size / NUM_PIPES; j++) {
-				assertArrayEquals("BitReverse" + j, expected[j], actual[j + i * size / NUM_PIPES], 0);
+				for (int k = 0; k < NUM_PIPES; k++) {
+					System.out.println("Buff: " + k + " Exp: " + expected[j  + i * size / NUM_PIPES][k] + " Is : " +
+							actual[j + i * size / NUM_PIPES][k]);
+				}
+			}
+		}
+		for (int i = 0; i < NUM_DATA_RUNS; i++) {
+			for (int j = 0; j < size / NUM_PIPES; j++) {
+				assertArrayEquals("BitReverse " + j, expected[j  + i * size / NUM_PIPES],
+						actual[j + i * size / NUM_PIPES], 0);
 			}
 		}
 	}
 
 	private double[][] bitReverseData(final int size, double[][] input) {
-		double expected[][] = new double[size / NUM_PIPES][NUM_PIPES];
+		double expected[][] = new double[NUM_DATA_RUNS * size / NUM_PIPES][NUM_PIPES];
 
-		for (int i = 0; i < size; i++) {
-			int address = bitreverse(i, size);
-			expected[i / 4][i % 4] = input[address/ 4][address % 4];
+		for (int i = 0; i < NUM_DATA_RUNS; i++) {
+			for (int j = 0; j < size; j++) {
+				int address = bitreverse(j, size);
+				expected[j / NUM_PIPES + i * size / NUM_PIPES][j % NUM_PIPES] =
+					input[address / NUM_PIPES + i * size / NUM_PIPES][address % NUM_PIPES];
+			}
 		}
 
 		return expected;

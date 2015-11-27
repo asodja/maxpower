@@ -25,7 +25,7 @@ import com.maxeler.maxcompiler.v2.utils.Bits;
 
 public class FftTest {
 
-	public final static int NUM_ITERATIONS  = 11;   // Minimum of 11 iterations needed to cover complete addressing pattern
+	public final static int NUM_ITERATIONS = 11;   // Minimum of 11 iterations needed to cover complete addressing pattern
 
 	// Bound the acceptable error
 	public final static double MIN_SNR_DB = 69.0;
