@@ -31,7 +31,10 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 public class FourierTransform {
 
 	// Expose useful parameters
+	// Attention: If you change one of this constants everything will break.
 	public static final int NUM_FFT_PIPES = 4;
+	public static final int RADIX_4 = 4;
+	public static final int RADIX_2 = 2;
 
 	/**
 	 * Fourier transform input using the Fast Fourier Transform.
@@ -203,9 +206,9 @@ public class FourierTransform {
 
 		List<DFEVector<DFEComplex>> fftOut;
 		if (radix2phases == 1) {
-			fftOut = ButterflyLib.butterfly(fftSize, 0, 2, twiddleType, rdx4input);
+			fftOut = ButterflyLib.butterfly(fftSize, 0, RADIX_2, twiddleType, rdx4input);
 			fftOut = FftBuffer.applyMixedRadixBuffer(fftOut, fftSize);
-			depth /= 2;
+			depth /= RADIX_2;
 		} else if (radix2phases == 0) {
 			fftOut = rdx4input;
 		} else {
@@ -213,11 +216,11 @@ public class FourierTransform {
 		}
 
 		for (int phase = 1; phase <= radix4phases; phase++) {
-			fftOut = ButterflyLib.butterfly(fftSize, phase, 4, twiddleType, fftOut);
+			fftOut = ButterflyLib.butterfly(fftSize, phase, RADIX_4, twiddleType, fftOut);
 
 			if(phase < radix4phases) {
-				fftOut = FftBuffer.applyInterStageBuffer(fftOut, depth, 4);
-				depth /= 4;
+				fftOut = FftBuffer.applyInterStageBuffer(fftOut, depth);
+				depth /= RADIX_4;
 			}
 		}
 

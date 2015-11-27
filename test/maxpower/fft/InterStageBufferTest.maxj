@@ -52,7 +52,7 @@ public class InterStageBufferTest {
 				list.add(fftType.unpack(data.pack().slice(i*bitsPerPipe, bitsPerPipe)));
 			}
 
-			List<DFEVector<DFEComplex>> transposedData = FftBuffer.applyInterStageBuffer(list, fftSize, 4);
+			List<DFEVector<DFEComplex>> transposedData = FftBuffer.applyInterStageBuffer(list, fftSize);
 
 			DFEVector<DFEComplex> result = complexVectorType.newInstance(this);
 

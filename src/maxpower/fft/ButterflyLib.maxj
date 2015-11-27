@@ -55,7 +55,7 @@ public class ButterflyLib {
 
 		List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(4);
 
-		if (radix == 4) {
+		if (radix == FourierTransform.RADIX_4) {
 			output = radix4Butterfly(fftSize, phase, radix, twiddleType, type, input);
 		} else { // dual radix 2
 			output = dualRadix2Butterfly(fftSize, twiddleType, input);
@@ -72,7 +72,7 @@ public class ButterflyLib {
 			DFEType twiddleType, DFEType type, List<DFEVector<DFEComplex>> input) {
 		KernelLib owner = input[0].getKernel();
 
-		List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(4);
+		List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(FourierTransform.RADIX_4);
 
 		int radix4Phases = MathUtils.bitsToAddress(fftSize) / 2;
 		List<DFEComplex> twiddles = getTwiddles(radix4Phases, phase, radix, type, owner);
@@ -97,7 +97,7 @@ public class ButterflyLib {
 			List<DFEVector<DFEComplex>> input) {
 		KernelLib owner = input[0].getKernel();
 
-		List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(4);
+		List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(2 * FourierTransform.RADIX_2);
 
 		List<DFEComplex> twiddles = getDualRadix2Twiddles(fftSize, twiddleType, owner);
 		output.add((input[0] + input[2]));
@@ -147,10 +147,10 @@ public class ButterflyLib {
 	private static List<DFEComplex> getTwiddles(int exponent, int phase, int radix, DFEType type,
 			KernelLib owner) {
 		int twiddleCount = radix - 1;
-		int twiddleRatioShift = (phase - 1) * (radix / 2);
-		int twiddleBitWidth = (exponent - phase) * (radix / 2);
+		int twiddleRatioShift = (phase - 1) * MathUtils.bitsToAddress(radix);
+		int twiddleBitWidth = (exponent - phase) * MathUtils.bitsToAddress(radix);
 		int twiddleFactorCount = 1 << twiddleBitWidth;
-		int inputCount = 1 << exponent * (radix / 2);
+		int inputCount = 1 << exponent * MathUtils.bitsToAddress(radix);
 
 		DFEComplexType twiddleType = new DFEComplexType(type);
 
