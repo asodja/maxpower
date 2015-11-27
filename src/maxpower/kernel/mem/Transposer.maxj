@@ -45,7 +45,8 @@ public class Transposer {
 	 * height    slow dimension
 	 **/
 	public static DFEVector<DFEVar> transpose(DFEVector<DFEVar> in, int width, int height) {
-		return transpose(in, width, height, in.getKernel().constant.var(true));
+		return in.getKernel().stream.offset(transpose(in, width, height, in.getKernel().constant.var(true)),
+				width * height / in.getSize());
 	}
 
 	/**
@@ -143,7 +144,8 @@ public class Transposer {
 	 * height    slow dimension
 	 **/
 	public static DFEVar transpose(DFEVar in, int width, int height) {
-		return transpose(in, width, 1, height, in.getKernel().constant.var(true));
+		return in.getKernel().stream.offset(
+				transpose(in, width, 1, height, in.getKernel().constant.var(true)), width * height);
 	}
 
 	/**
@@ -192,7 +194,9 @@ public class Transposer {
 	 * depth     slow dimension
 	 **/
 	public static DFEVar transpose(DFEVar in, int width, int height, int depth) {
-		return transpose(in, width, height, depth, in.getKernel().constant.var(true));
+		return in.getKernel().stream.offset(
+				transpose(in, width, height, depth, in.getKernel().constant.var(true)),
+				width * height * depth);
 	}
 
 	/**

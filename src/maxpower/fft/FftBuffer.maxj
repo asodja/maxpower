@@ -22,6 +22,9 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  */
 public class FftBuffer {
 
+	static final int ADDRESSING_BIT_REVERSE[] = {0, 2, 3, 1};
+	static final int SWAPPING_BIT_REVERSE[][] = {{0, 2, 1, 3}, {2, 0, 3, 1}, {1, 3, 2, 0}, {3, 1, 0, 2}};
+
 	/**
 	 * Creates a buffer to store data between two stages in the fft.
 	 *
@@ -35,9 +38,8 @@ public class FftBuffer {
 		int numPipes = FourierTransform.NUM_FFT_PIPES;
 		int numOutputs = radix;
 
-		KernelLib kernel = input[0].getKernel();
-		if (fftSize % (numPipes * numOutputs) != 0) {
-			throw new RuntimeException("fftSize must be divisible by both numPipes and numOutputs.");
+		if (fftSize % numPipes != 0 && fftSize % numOutputs != 0) {
+			throw new IllegalArgumentException("fftSize must be divisible by both numPipes and numOutputs.");
 		}
 		int bufferDepth = fftSize / numPipes;
 
@@ -64,9 +66,7 @@ public class FftBuffer {
 					bufferDepth / numOutputs, numOutputs));
 		}
 
-		DFEVector<DFEVar> offsetOutput = kernel.stream.offset(output, fftSize / numPipes);
-
-		List<DFEVar> transposedOutput = transpose(offsetOutput.getElementsAsList(), numOutputs);
+		List<DFEVar> transposedOutput = transpose(output.getElementsAsList(), numOutputs);
 
 		return unpackOutput(transposedOutput, input[0].getType());
 	}
@@ -80,7 +80,6 @@ public class FftBuffer {
 	 */
 	protected static <T extends KernelObject<T>> List<T> applyInputBuffer(List<T> input, int fftSize) {
 		int numPipes = FourierTransform.NUM_FFT_PIPES;
-		KernelLib owner = input[0].getKernel();
 
 		List<DFEVar> packedInput = packInput(input);
 
@@ -90,10 +89,8 @@ public class FftBuffer {
 			transposerInput.getType().unpack(Transposer.transpose(transposerInput.pack(),
 					fftSize / numPipes / numPipes, numPipes));
 
-		DFEVector<DFEVar> transposerResultOffset = owner.stream.offset(transposerResult, fftSize / numPipes);
-
 		// Now we finish with a small 4 x 4 transpose in the end
-		List<DFEVar> outputTranspose = transpose(transposerResultOffset.getElementsAsList(), numPipes);
+		List<DFEVar> outputTranspose = transpose(transposerResult.getElementsAsList(), numPipes);
 
 		return unpackOutput(outputTranspose, input[0].getType());
 	}
@@ -288,10 +285,9 @@ public class FftBuffer {
 
 	private static ArrayList<DFEVar> getStartingPointsForAddressingBitReverse(KernelLib owner) {
 		ArrayList<DFEVar> ramAddressUpperBitsMuxInput = new ArrayList<DFEVar>();
-		ramAddressUpperBitsMuxInput.add(owner.constant.var(Kernel.dfeUInt(2), 0));
-		ramAddressUpperBitsMuxInput.add(owner.constant.var(Kernel.dfeUInt(2), 2));
-		ramAddressUpperBitsMuxInput.add(owner.constant.var(Kernel.dfeUInt(2), 3));
-		ramAddressUpperBitsMuxInput.add(owner.constant.var(Kernel.dfeUInt(2), 1));
+		for (int i = 0; i < 4; i++) {
+			ramAddressUpperBitsMuxInput.add(owner.constant.var(Kernel.dfeUInt(2), ADDRESSING_BIT_REVERSE[i]));
+		}
 		return ramAddressUpperBitsMuxInput;
 	}
 
@@ -299,28 +295,15 @@ public class FftBuffer {
 		ArrayList<ArrayList<DFEVar>> swapMuxSelectMuxInput = new ArrayList<ArrayList<DFEVar>>();
 		for (int i = 0; i < 4; i++) {
 			swapMuxSelectMuxInput.add(new ArrayList<DFEVar>());
+			for (int j = 0; j < 4; j++) {
+				swapMuxSelectMuxInput[i].add(owner.constant.var(Kernel.dfeUInt(2),
+						SWAPPING_BIT_REVERSE[i][j]));
+			}
 		}
-		swapMuxSelectMuxInput[0].add(owner.constant.var(Kernel.dfeUInt(2), 0));
-		swapMuxSelectMuxInput[0].add(owner.constant.var(Kernel.dfeUInt(2), 2));
-		swapMuxSelectMuxInput[0].add(owner.constant.var(Kernel.dfeUInt(2), 1));
-		swapMuxSelectMuxInput[0].add(owner.constant.var(Kernel.dfeUInt(2), 3));
-		swapMuxSelectMuxInput[1].add(owner.constant.var(Kernel.dfeUInt(2), 2));
-		swapMuxSelectMuxInput[1].add(owner.constant.var(Kernel.dfeUInt(2), 0));
-		swapMuxSelectMuxInput[1].add(owner.constant.var(Kernel.dfeUInt(2), 3));
-		swapMuxSelectMuxInput[1].add(owner.constant.var(Kernel.dfeUInt(2), 1));
-		swapMuxSelectMuxInput[2].add(owner.constant.var(Kernel.dfeUInt(2), 1));
-		swapMuxSelectMuxInput[2].add(owner.constant.var(Kernel.dfeUInt(2), 3));
-		swapMuxSelectMuxInput[2].add(owner.constant.var(Kernel.dfeUInt(2), 2));
-		swapMuxSelectMuxInput[2].add(owner.constant.var(Kernel.dfeUInt(2), 0));
-		swapMuxSelectMuxInput[3].add(owner.constant.var(Kernel.dfeUInt(2), 3));
-		swapMuxSelectMuxInput[3].add(owner.constant.var(Kernel.dfeUInt(2), 1));
-		swapMuxSelectMuxInput[3].add(owner.constant.var(Kernel.dfeUInt(2), 0));
-		swapMuxSelectMuxInput[3].add(owner.constant.var(Kernel.dfeUInt(2), 2));
-
 		return swapMuxSelectMuxInput;
 	}
 
-	private static <T extends KernelObject<T>> List<DFEVar>packInput(List<T> input) {
+	private static <T extends KernelObject<T>> List<DFEVar> packInput(List<T> input) {
 		List<DFEVar> packedInput = new ArrayList<DFEVar>(input.size());
 		for (int i = 0; i < input.size(); i++) {
 			packedInput.add(input[i].pack());
@@ -328,12 +311,12 @@ public class FftBuffer {
 		return packedInput;
 	}
 
-	private static <T extends KernelObject<T>> List<T>unpackOutput(DFEVector<DFEVar> packedOutput,
+	private static <T extends KernelObject<T>> List<T> unpackOutput(DFEVector<DFEVar> packedOutput,
 			KernelType<T> type) {
 		return unpackOutput(packedOutput.getElementsAsList(), type);
 	}
 
-	private static <T extends KernelObject<T>> List<T>unpackOutput(List<DFEVar> packedOutput,
+	private static <T extends KernelObject<T>> List<T> unpackOutput(List<DFEVar> packedOutput,
 			KernelType<T> type) {
 		List<T> output = new ArrayList<T>(packedOutput.size());
 		for (int i = 0; i < packedOutput.size(); i++) {
