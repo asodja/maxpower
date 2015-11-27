@@ -32,6 +32,8 @@ public class MixedRadixBufferTest {
 		public MixedRadixBufferTestKernel(KernelParameters parameters, final int fftSize) {
 			super(parameters);
 
+			stream.suppressOffsetVectorWarnings();
+
 			DFEVector<DFEVar> inputVector = io.input("input", vectorType);
 
 			DFEComplexType complexType = new DFEComplexType(dataType);

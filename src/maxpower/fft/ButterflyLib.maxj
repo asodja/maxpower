@@ -13,6 +13,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.utils.Bits;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
@@ -31,17 +32,21 @@ public class ButterflyLib {
 	 * are output in the same order.
 	 * Else do a normal radix-4 butterfly
 	 *
+	 * @param fftSize Size of the fft
+	 * @param phase Current phase (only used if radix 4 butterflies are applied
 	 * @param input Input values.
+	 * @param radix Radix of the butterfly
+	 * @param twiddleType Data type of the twiddles
 	 * @return Output values.
 	 */
-	protected static List<DFEVector<DFEComplex>> applyButterfly(final int fftSize, final int phase,
-			List<DFEVector<DFEComplex>> input, final int radix, DFEType twiddleType) {
+	protected static List<DFEVector<DFEComplex>> applyButterfly(int fftSize, int phase,
+			List<DFEVector<DFEComplex>> input, int radix, DFEType twiddleType) {
 
 		KernelLib owner = input[0].getKernel();
 		DFEType type = (DFEType) ((DFEComplexType)input[0].getType().getContainedType()).getRealType();
 		// Optimise if using fixed types.
 		if (type instanceof DFEFix) {
-			final int typeOffset = ((DFEFix)type).getOffset();
+			int typeOffset = ((DFEFix)type).getOffset();
 			owner.optimization.pushFixOpMode(
 					Optimization.bitSizeLargest(),
 					Optimization.offsetExact(typeOffset),
@@ -51,7 +56,7 @@ public class ButterflyLib {
 		final List<DFEVector<DFEComplex>> output = new ArrayList<DFEVector<DFEComplex>>(4);
 
 		if (radix == 4) {
-			final int radix4Phases = MathUtils.bitsToAddress(fftSize) / 2;
+			int radix4Phases = MathUtils.bitsToAddress(fftSize) / 2;
 			List<DFEComplex> twiddles = calcTwiddles(radix4Phases, phase, radix, type, owner);
 			DFEVector<DFEComplex> a = input[0] + input[2];
 			DFEVector<DFEComplex> b = input[1] + input[3];
@@ -89,19 +94,18 @@ public class ButterflyLib {
 	 * @param owner {@link KernelLib} creating the twiddles
 	 * @return {@link List} of twiddle factors.
 	 */
-	private static List<DFEComplex> r2dualTwiddles(DFEType type, final int fftSize, KernelLib owner) {
-		final List<DFEComplex> twiddles = new ArrayList<DFEComplex>(FourierTransform.NUM_FFT_PIPES);
+	private static List<DFEComplex> r2dualTwiddles(DFEType type, int fftSize, KernelLib owner) {
+		List<DFEComplex> twiddles = new ArrayList<DFEComplex>(FourierTransform.NUM_FFT_PIPES);
 
-		final CounterChain chain = owner.control.count.makeCounterChainMoreBits();
+		int numTwiddles = fftSize / 4;
+		CounterChain chain = owner.control.count.makeCounterChain();
 		                   chain.addCounter(3, 1).setReportOnUnused(false);
-		DFEVar dataCount = chain.addCounter(1 << (MathUtils.bitsToAddress(fftSize) - 2), 1);
+		DFEVar dataCount = chain.addCounter(numTwiddles, 1);
 
-		final int numTwiddles = fftSize / 4;
-		final DFEType addressType = KernelLib.dfeUInt(MathUtils.bitsToAddress(numTwiddles));
-		final DFEComplexType twiddleType = new DFEComplexType(type);
-		final Bits[] twiddleFactors = calculateTwiddleFactorValues(numTwiddles, fftSize, type, twiddleType);
+		DFEComplexType twiddleType = new DFEComplexType(type);
+		Bits[] twiddleFactors = calculateTwiddleFactorValues(numTwiddles, fftSize, type, twiddleType);
 
-		final DFEComplex twiddle = owner.mem.rom(dataCount.cast(addressType), twiddleType,
+		DFEComplex twiddle = owner.mem.rom(dataCount, twiddleType,
 				twiddleFactors);
 
 		twiddles.add(twiddle);
@@ -118,60 +122,64 @@ public class ButterflyLib {
 	 *
 	 * @return {@link List} of twiddle factors.
 	 */
-	private static List<DFEComplex> calcTwiddles(final int exponent, final int phase, final int radix, DFEType type,
+	private static List<DFEComplex> calcTwiddles(int exponent, int phase, int radix, DFEType type,
 			KernelLib owner) {
-		final int twiddleCount = radix - 1;
-		final int twiddleRatioShift = (phase - 1) * (radix / 2);
-		final int twiddleBitWidth = (exponent - phase) * (radix / 2);
-		final int twiddleFactorCount = 1 << twiddleBitWidth;
-		final int inputCount = 1 << exponent * (radix / 2);
+		int twiddleCount = radix - 1;
+		int twiddleRatioShift = (phase - 1) * (radix / 2);
+		int twiddleBitWidth = (exponent - phase) * (radix / 2);
+		int twiddleFactorCount = 1 << twiddleBitWidth;
+		int inputCount = 1 << exponent * (radix / 2);
 
-		final DFEComplexType twiddleType = new DFEComplexType(type);
+		DFEComplexType twiddleType = new DFEComplexType(type);
 
-		final Bits[] twiddleFactorsBits = calculateTwiddleFactorValues(inputCount, inputCount,
+		Bits[] twiddleFactorsBits = calculateTwiddleFactorValues(inputCount, inputCount,
 				type, twiddleType);
 
-		final List<DFEComplex> twiddles =
-				new ArrayList<DFEComplex>(twiddleCount);
+		DFEVectorType<DFEComplex> twiddleVectorType =
+			new DFEVectorType<DFEComplex>(twiddleType, twiddleCount);
+		DFEVector<DFEComplex> twiddles = twiddleVectorType.newInstance(owner);
 
 		if (phase == exponent) {
 			// In the last phase, all twiddle factors are (1,0).
-			final DFEComplex realOnlyTwiddle = DFEComplexType.newInstance(
+			DFEComplex realOnlyTwiddle = DFEComplexType.newInstance(
 					owner, owner.constant.var(1), owner.constant.var(0))
 					.cast(twiddleType);
 			for (int i = 0; i < twiddleCount; i++) {
-				twiddles.add(realOnlyTwiddle);
+				twiddles[i] <== realOnlyTwiddle;
 			}
 		} else {
 			// Set up the subset of data for ROMs according to the phase.
-			final Bits[][] twiddleBits = new Bits[twiddleCount][twiddleFactorCount];
+			Bits[][] twiddleBits = new Bits[twiddleCount][twiddleFactorCount];
 			for (int j = 0; j < twiddleCount; j++) {
-				final int increment = (j + 1) << twiddleRatioShift;
+				int increment = (j + 1) << twiddleRatioShift;
 				for (int i = 0; i < twiddleFactorCount; i++) {
-					final int index = i * increment;
+					int index = i * increment;
 					twiddleBits[j][i] = twiddleFactorsBits[index];
 				}
 			}
+			Bits[] twiddleBitsForRom = new Bits[twiddleFactorCount];
+			for (int i = 0; i < twiddleFactorCount; i++) {
+				List<Bits> twiddleBitsList = new ArrayList<Bits>();
+				for (int j = 0; j < twiddleCount; j++) {
+					twiddleBitsList.add(twiddleBits[j][i]);
+				}
+				twiddleBitsForRom[i] = twiddleVectorType.encodeConstant(twiddleBitsList);
+			}
 			// Create the address counter.
-			final CounterChain chain =
-				owner.control.count.makeCounterChainMoreBits();
-			final DFEVar dataCount = chain.addCounter(twiddleFactorCount, 1);
+			CounterChain chain =
+				owner.control.count.makeCounterChain();
+			DFEVar dataCount = chain.addCounter(twiddleFactorCount, 1);
 
 			// Create the phase ROMs.
-			for (int i = 0; i < twiddleCount; i++) {
-				final DFEComplex twiddle =
-					owner.mem.rom(dataCount.cast(KernelLib.dfeUInt(twiddleBitWidth)), twiddleType,
-							twiddleBits[i]);
-				twiddles.add(twiddle);
-			}
+			twiddles <== owner.mem.rom(dataCount, twiddleVectorType, twiddleBitsForRom);
 		}
-		return twiddles;
+		return twiddles.getElementsAsList();
 	}
 
-	private static Bits[] calculateTwiddleFactorValues(final int numTwiddles, final int fftStageSize,
+	private static Bits[] calculateTwiddleFactorValues(int numTwiddles, int fftStageSize,
 			DFEType type, DFEComplexType twiddleType) {
-		final Bits[] twiddleFactors = new Bits[numTwiddles];
-		final double precision;
+		Bits[] twiddleFactors = new Bits[numTwiddles];
+		double precision;
 		if (type instanceof DFEFix) {
 			precision = 1.0 / (1 << ((DFEFix) type).getFractionBits());
 		} else {
@@ -179,12 +187,12 @@ public class ButterflyLib {
 		}
 
 		for (int i = 0; i < numTwiddles; i++) {
-			final double angle = -i * 2 * Math.PI / fftStageSize;
-			final double real  = Math.cos(angle);
-			final double img   = Math.sin(angle);
+			double angle = -i * 2 * Math.PI / fftStageSize;
+			double real  = Math.cos(angle);
+			double img   = Math.sin(angle);
 
-			final double realTw = (Math.abs(real) > precision) ? real : 0.0;
-			final double imgTw  = (Math.abs(img)  > precision) ? img  : 0.0;
+			double realTw = (Math.abs(real) > precision) ? real : 0.0;
+			double imgTw  = (Math.abs(img)  > precision) ? img  : 0.0;
 
 			twiddleFactors[i] = twiddleType.encodeConstant(realTw, imgTw);;
 		}

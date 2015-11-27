@@ -5,6 +5,7 @@ import java.util.List;
 
 import maxpower.kernel.mem.Transposer;
 
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Params;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
@@ -29,7 +30,8 @@ public class FftBuffer {
 	 * @param radix Radix of the fft stages connected to the buffer.
 	 * @return Data to be feed into the next fft stage.
 	 */
-	protected static <T extends KernelObject<T>> List<T> applyInterStageBuffer(List<T> input, int fftSize, int radix) {
+	protected static <T extends KernelObject<T>> List<T> applyInterStageBuffer(List<T> input, int fftSize,
+			int radix) {
 		int numPipes = FourierTransform.NUM_FFT_PIPES;
 		int numOutputs = radix;
 
@@ -41,7 +43,7 @@ public class FftBuffer {
 
 		List<DFEVar> packedInput = packInput(input);
 		DFEVector<DFEVar> output;
-		final int height = bufferDepth / numOutputs / radix;
+		int height = bufferDepth / numOutputs / radix;
 		if (height > 0) {
 			List<DFEVar> transposedInput = new ArrayList<DFEVar>(numPipes);
 			ArrayList<DFEVar> slicedInput = new ArrayList<DFEVar>(numPipes);
@@ -76,8 +78,8 @@ public class FftBuffer {
 	 * @param fftSize Size of the fft
 	 * @return Data ready to be feed in the first fft stage
 	 */
-	protected static <T extends KernelObject<T>> List<T> applyInputBuffer(List<T> input, final int fftSize) {
-		final int numPipes = FourierTransform.NUM_FFT_PIPES;
+	protected static <T extends KernelObject<T>> List<T> applyInputBuffer(List<T> input, int fftSize) {
+		int numPipes = FourierTransform.NUM_FFT_PIPES;
 		KernelLib owner = input[0].getKernel();
 
 		List<DFEVar> packedInput = packInput(input);
@@ -101,11 +103,11 @@ public class FftBuffer {
 
 		List<DFEVar> packedInput = packInput(input);
 
-		final List<DFEVector<DFEVar>> inputToMux = new ArrayList<DFEVector<DFEVar>>(numOutputs);
+		List<DFEVector<DFEVar>> inputToMux = new ArrayList<DFEVector<DFEVar>>(numOutputs);
 
 		for (int i = 0; i < input.size(); i++) {
 			DFEVectorType<DFEVar> arrayType = new DFEVectorType<DFEVar>(packedInput[i].getType(), numOutputs);
-			final DFEVector<DFEVar> array = arrayType.newInstance(kernel);
+			DFEVector<DFEVar> array = arrayType.newInstance(kernel);
 			for (int j = 0; j < numOutputs; j++) {
 				array.connect(j, kernel.stream.offset(packedInput[i], j));
 			}
@@ -114,7 +116,7 @@ public class FftBuffer {
 		Params params = kernel.control.count.makeParams(MathUtils.bitsToAddress(input.size()))
 				.withMax(input.size());
 		DFEVar  select = kernel.control.count.makeCounter(params).getCount();
-		final DFEVector<DFEVar> packedOutput = kernel.control.mux(select, inputToMux);
+		DFEVector<DFEVar> packedOutput = kernel.control.mux(select, inputToMux);
 
 		return unpackOutput(packedOutput, input[0].getType());
 	}
@@ -126,7 +128,7 @@ public class FftBuffer {
 	 * @param fftSize Size of the fft
 	 * @return Data ready to be feed in the first fft stage
 	 */
-	protected static <T extends KernelObject<T>> List<T> applyMixedRadixBuffer(List<T> input, final int fftSize) {
+	protected static <T extends KernelObject<T>> List<T> applyMixedRadixBuffer(List<T> input, int fftSize) {
 		KernelLib owner = input[0].getKernel();
 
 		List<DFEVar> packedInput = packInput(input);
@@ -134,7 +136,8 @@ public class FftBuffer {
 		List<DFEVector<DFEVar>> smallVectorList = new ArrayList<DFEVector<DFEVar>>();
 		DFEVectorType<DFEVar> smallVectorType;
 		for (int i = 0; i < packedInput.size() / 2; i++) {
-			DFEVector<DFEVar> smallVector = DFEVectorType.newInstance(packedInput.subList(i * 2, (i + 1) * 2));
+			DFEVector<DFEVar> smallVector =
+				DFEVectorType.newInstance(packedInput.subList(i * 2, (i + 1) * 2));
 			smallVectorList.add(smallVector);
 		}
 		smallVectorType = smallVectorList[0].getType();
@@ -143,15 +146,15 @@ public class FftBuffer {
 		}
 		DFEVector<DFEVar> mergedInputVector = DFEVectorType.newInstance(mergedInput);
 
-		final int ramSize = fftSize / FourierTransform.NUM_FFT_PIPES;
+		int ramSize = fftSize / FourierTransform.NUM_FFT_PIPES;
 
 		CounterChain counterChain = owner.control.count.makeCounterChain();
 		// if we write in linear order or in our crazy pattern
 		DFEVar state       = counterChain.addCounter(2, 1);
 		// We have for states that determine rotates, swaps and addresses
 		DFEVar bufferState = counterChain.addCounter(2, 1);
-		DFEVar position    =
-			counterChain.addCounter(ramSize / 2, 1).cast(KernelLib.dfeUInt(MathUtils.bitsToAddress(ramSize)));
+		DFEVar position =
+			counterChain.addCounter(ramSize / 2, 1).cast(Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize)));
 
 		ArrayList<Memory<DFEVar>> buffer = new ArrayList<Memory<DFEVar>>();
 		for (int i = 0; i < 2; i++) {
@@ -163,8 +166,8 @@ public class FftBuffer {
 
 		// Now we can finally access the RAM and do some reading and writing
 		ArrayList<DFEVar> lookupResults = new ArrayList<DFEVar>();
-		DFEVar dataCount = bufferState.cast(KernelLib.dfeUInt(MathUtils.bitsToAddress(ramSize))) * (ramSize / 2) +
-				position;
+		DFEVar dataCount =
+			bufferState.cast(Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize))) * (ramSize / 2) + position;
 		// Set addresses
 		List<DFEVar> addresses = new ArrayList<DFEVar>();
 		addresses.add(dataCount);
@@ -208,7 +211,7 @@ public class FftBuffer {
 	 * @param fftSize Size of the fft.
 	 * @return bit reversed result of the fft.
 	 */
-	protected static  <T extends KernelObject<T>> List<T> applyBitReverseBuffer(List<T> input, final int fftSize) {
+	protected static  <T extends KernelObject<T>> List<T> applyBitReverseBuffer(List<T> input, int fftSize) {
 		KernelLib owner = input[0].getKernel();
 
 		DFEVector<DFEVar> packedInput = DFEVectorType.newInstance(packInput(input));
@@ -217,14 +220,14 @@ public class FftBuffer {
 			throw new RuntimeException("The bit reverse buffer currently only works for 4 pipes and fft sizes of power of 2");
 		}
 
-		final int ramSize = fftSize / FourierTransform.NUM_FFT_PIPES;
+		int ramSize = fftSize / FourierTransform.NUM_FFT_PIPES;
 
-		final int N = MathUtils.bitsToAddress(fftSize);
+		int N = MathUtils.bitsToAddress(fftSize);
 
 		CounterChain counterChain = owner.control.count.makeCounterChain();
 		// if we write in linear order or in our crazy pattern
 		DFEVar state       = counterChain.addCounter(2, 1);
-		// We have for states that determine rotates, swaps and addresses
+		// We have four states that determine rotates, swaps and addresses
 		DFEVar bufferState = counterChain.addCounter(4, 1);
 		DFEVar position    = counterChain.addCounter(1 << (N - 4), 1);
 
@@ -243,13 +246,13 @@ public class FftBuffer {
 		DFEVar addresses[] = new DFEVar[4];
 		for (int i = 0; i < 4; i++) {
 			addresses[i] = ramAddressUpperBits + i # bitReverse(position);
-			addresses[i] = addresses[i].cast(KernelLib.dfeUInt(2 + N - 4));
+			addresses[i] = addresses[i].cast(Kernel.dfeUInt(2 + N - 4));
 		}
 
 		// Now we can finally access the RAM and do some reading and writing
 		ArrayList<DFEVar> lookupResults = new ArrayList<DFEVar>();
-		DFEVar dataCount = bufferState.cast(KernelLib.dfeUInt(2 + N - 4)) * (1 << (N - 4)) +
-				position.cast(KernelLib.dfeUInt(2 + N - 4));
+		DFEVar dataCount = bufferState.cast(Kernel.dfeUInt(2 + N - 4)) * (1 << (N - 4)) +
+				position.cast(Kernel.dfeUInt(2 + N - 4));
 		for (int i = 0; i < 4; i++) {
 			DFEVar finalAddress = state ? addresses[i] : dataCount;
 			lookupResults.add(buffer[i].read(finalAddress));
@@ -285,10 +288,10 @@ public class FftBuffer {
 
 	private static ArrayList<DFEVar> getStartingPointsForAddressingBitReverse(KernelLib owner) {
 		ArrayList<DFEVar> ramAddressUpperBitsMuxInput = new ArrayList<DFEVar>();
-		ramAddressUpperBitsMuxInput.add(owner.constant.var(KernelLib.dfeUInt(2), 0));
-		ramAddressUpperBitsMuxInput.add(owner.constant.var(KernelLib.dfeUInt(2), 2));
-		ramAddressUpperBitsMuxInput.add(owner.constant.var(KernelLib.dfeUInt(2), 3));
-		ramAddressUpperBitsMuxInput.add(owner.constant.var(KernelLib.dfeUInt(2), 1));
+		ramAddressUpperBitsMuxInput.add(owner.constant.var(Kernel.dfeUInt(2), 0));
+		ramAddressUpperBitsMuxInput.add(owner.constant.var(Kernel.dfeUInt(2), 2));
+		ramAddressUpperBitsMuxInput.add(owner.constant.var(Kernel.dfeUInt(2), 3));
+		ramAddressUpperBitsMuxInput.add(owner.constant.var(Kernel.dfeUInt(2), 1));
 		return ramAddressUpperBitsMuxInput;
 	}
 
@@ -297,22 +300,22 @@ public class FftBuffer {
 		for (int i = 0; i < 4; i++) {
 			swapMuxSelectMuxInput.add(new ArrayList<DFEVar>());
 		}
-		swapMuxSelectMuxInput[0].add(owner.constant.var(KernelLib.dfeUInt(2), 0));
-		swapMuxSelectMuxInput[0].add(owner.constant.var(KernelLib.dfeUInt(2), 2));
-		swapMuxSelectMuxInput[0].add(owner.constant.var(KernelLib.dfeUInt(2), 1));
-		swapMuxSelectMuxInput[0].add(owner.constant.var(KernelLib.dfeUInt(2), 3));
-		swapMuxSelectMuxInput[1].add(owner.constant.var(KernelLib.dfeUInt(2), 2));
-		swapMuxSelectMuxInput[1].add(owner.constant.var(KernelLib.dfeUInt(2), 0));
-		swapMuxSelectMuxInput[1].add(owner.constant.var(KernelLib.dfeUInt(2), 3));
-		swapMuxSelectMuxInput[1].add(owner.constant.var(KernelLib.dfeUInt(2), 1));
-		swapMuxSelectMuxInput[2].add(owner.constant.var(KernelLib.dfeUInt(2), 1));
-		swapMuxSelectMuxInput[2].add(owner.constant.var(KernelLib.dfeUInt(2), 3));
-		swapMuxSelectMuxInput[2].add(owner.constant.var(KernelLib.dfeUInt(2), 2));
-		swapMuxSelectMuxInput[2].add(owner.constant.var(KernelLib.dfeUInt(2), 0));
-		swapMuxSelectMuxInput[3].add(owner.constant.var(KernelLib.dfeUInt(2), 3));
-		swapMuxSelectMuxInput[3].add(owner.constant.var(KernelLib.dfeUInt(2), 1));
-		swapMuxSelectMuxInput[3].add(owner.constant.var(KernelLib.dfeUInt(2), 0));
-		swapMuxSelectMuxInput[3].add(owner.constant.var(KernelLib.dfeUInt(2), 2));
+		swapMuxSelectMuxInput[0].add(owner.constant.var(Kernel.dfeUInt(2), 0));
+		swapMuxSelectMuxInput[0].add(owner.constant.var(Kernel.dfeUInt(2), 2));
+		swapMuxSelectMuxInput[0].add(owner.constant.var(Kernel.dfeUInt(2), 1));
+		swapMuxSelectMuxInput[0].add(owner.constant.var(Kernel.dfeUInt(2), 3));
+		swapMuxSelectMuxInput[1].add(owner.constant.var(Kernel.dfeUInt(2), 2));
+		swapMuxSelectMuxInput[1].add(owner.constant.var(Kernel.dfeUInt(2), 0));
+		swapMuxSelectMuxInput[1].add(owner.constant.var(Kernel.dfeUInt(2), 3));
+		swapMuxSelectMuxInput[1].add(owner.constant.var(Kernel.dfeUInt(2), 1));
+		swapMuxSelectMuxInput[2].add(owner.constant.var(Kernel.dfeUInt(2), 1));
+		swapMuxSelectMuxInput[2].add(owner.constant.var(Kernel.dfeUInt(2), 3));
+		swapMuxSelectMuxInput[2].add(owner.constant.var(Kernel.dfeUInt(2), 2));
+		swapMuxSelectMuxInput[2].add(owner.constant.var(Kernel.dfeUInt(2), 0));
+		swapMuxSelectMuxInput[3].add(owner.constant.var(Kernel.dfeUInt(2), 3));
+		swapMuxSelectMuxInput[3].add(owner.constant.var(Kernel.dfeUInt(2), 1));
+		swapMuxSelectMuxInput[3].add(owner.constant.var(Kernel.dfeUInt(2), 0));
+		swapMuxSelectMuxInput[3].add(owner.constant.var(Kernel.dfeUInt(2), 2));
 
 		return swapMuxSelectMuxInput;
 	}

@@ -5,7 +5,6 @@ import static org.junit.Assert.assertArrayEquals;
 import java.util.ArrayList;
 import java.util.List;
 
-
 import org.junit.Test;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
@@ -32,6 +31,8 @@ public class Radix4InputBufferTest {
 
 		public Radix4InputBufferTestKernel(KernelParameters parameters, final int fftSize) {
 			super(parameters);
+
+			stream.suppressOffsetVectorWarnings();
 
 			DFEVector<DFEVar> inputVector = io.input("input", vectorType);
 

@@ -1,8 +1,12 @@
 package maxpower.kernel.mem;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import maxpower.kernel.arithmetic.ConstDenominator;
 import maxpower.kernel.arithmetic.ConstDenominator.ConstDivModResult;
 
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.DualPortMemOutputs;
@@ -12,6 +16,8 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamWriteMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Stream.OffsetExpr;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 /**
@@ -19,9 +25,103 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  */
 public class Transposer {
 
-	// TODO: Add Multi Pipe version
-
 	private static int offset_counter = 0;
+
+	/**
+	 * Multi pipe version of the 2D transpose function. Note that hight and width have to be multiples of
+	 * the number of pipes
+	 *
+	 * Example:
+	 * Assume width of 4 and height of 3, with values
+	 *
+	 *	0	|	1	|	2	|	3
+	 *	4	|	5	|	6	|	7
+	 *	8	|	9	|	10	|	11
+	 *
+	 *	Then the output will return (after 12 cycles since the output does not hide the latency)
+	 *		0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11
+	 *
+	 * width     fast dimension
+	 * height    slow dimension
+	 **/
+	public static DFEVector<DFEVar> transpose(DFEVector<DFEVar> in, int width, int height) {
+		return transpose(in, width, height, in.getKernel().constant.var(true));
+	}
+
+	/**
+	 * Multi pipe version of the 2D transpose function. Note that hight and width have to be multiples of
+	 * the number of pipes
+	 *
+	 * Example:
+	 * Assume width of 4 and height of 3, with values
+	 *
+	 *	0	|	1	|	2	|	3
+	 *	4	|	5	|	6	|	7
+	 *	8	|	9	|	10	|	11
+	 *
+	 *	Then the output will return (after 12 cycles since the output does not hide the latency)
+	 *		0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11
+	 *
+	 * width     fast dimension
+	 * height    slow dimension
+	 **/
+	public static DFEVector<DFEVar> transpose(DFEVector<DFEVar> in, int width, int height, DFEVar enable) {
+		KernelLib owner = in.getKernel();
+
+		final int N = width * height;
+		final int pipes = in.getSize();
+		if (!MathUtils.integerMultiple(width, pipes) || !MathUtils.integerMultiple(height, pipes)) {
+			throw new RuntimeException("Width and height have to be a multiple of the number of pipes.");
+		}
+		// double buffered implementation
+
+		DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(2 * (N / pipes)));
+		CounterChain readCounter = owner.control.count.makeCounterChain(enable);
+		CounterChain writeCounter = owner.control.count.makeCounterChain(enable);
+
+		DFEVar state    = readCounter.addCounter(2,      1);
+		DFEVar slowRead = readCounter.addCounter(width,  1).cast(addressType);
+		DFEVar fastRead = readCounter.addCounter(height / pipes, 1).cast(addressType);
+
+		DFEVar slowWrite = writeCounter.addCounter(height, 1).cast(addressType);
+		DFEVar fastWrite = writeCounter.addCounter(width / pipes,  1).cast(addressType);
+
+		DFEVar writeAddress = fastWrite + slowWrite * (width / pipes);
+
+		ConstDivModResult writeRotateDivMod = ConstDenominator.divMod(slowWrite, pipes);
+		writeRotateDivMod.getQuotient().setReportOnUnused(false);
+		DFEVar writeRotate = writeRotateDivMod.getRemainder();
+		ConstDivModResult readRotateDivMod = ConstDenominator.divMod(slowRead, pipes);
+		DFEVar group = readRotateDivMod.getQuotient();
+		DFEVar readRotate = readRotateDivMod.getRemainder();
+
+		writeAddress = state ? writeAddress : (writeAddress + (N / pipes));
+
+		DFEVector<DFEVar> readAddresses = new DFEVectorType<DFEVar>(addressType, pipes).newInstance(owner);
+		for (int i = 0; i < pipes; i++) {
+			DFEVar readAddress = fastRead * width + i * (width / pipes) + group;
+			readAddresses[i] <== state ? readAddress + N / pipes : readAddress;
+		}
+		readAddresses = readAddresses.rotateElementsLeft(readRotate);
+
+		int ramSize = 2 * N / pipes;
+
+		DFEVector<DFEVar> inRotated = in.rotateElementsLeft(writeRotate);
+
+		List<DFEVar> lookupResults = new ArrayList<DFEVar>();
+		for (int i = 0; i < in.getSize(); i++) {
+			RamPortParams<DFEVar> writePort = owner.mem.makeRamPortParams(RamPortMode.WRITE_ONLY, writeAddress,
+					inRotated[i]).withWriteEnable(enable);
+			RamPortParams<DFEVar> readPort  = owner.mem.makeRamPortParams(RamPortMode.READ_ONLY,  readAddresses[i],
+					in[0].getType());
+			DualPortMemOutputs<DFEVar> buffer = owner.mem.ramDualPort(ramSize, RamWriteMode.READ_FIRST, writePort,
+					readPort);
+			lookupResults.add(buffer.getOutputB());
+		}
+
+		DFEVector<DFEVar> result = DFEVectorType.newInstance(lookupResults);
+		return result.rotateElementsRight(readRotate);
+	}
 
 	/**
 	 * For minimal resource usage, choose width and height such that
@@ -70,7 +170,7 @@ public class Transposer {
 	}
 
 	/**
-	 * This one differs from constructor Transposer(KernelLib owner, HWVar in, int width, int height, HWVar enable) in that
+	 * This one differs from constructor Transposer(DFEVar in, int width, int height) in that
 	 * movement in the horizontal directions, when transposing, are not by one column but by a user defined amount.
 	 *
 	 * Example:
@@ -96,7 +196,7 @@ public class Transposer {
 	}
 
 	/**
-	 * This one differs from constructor Transposer(KernelLib owner, HWVar in, int width, int height, HWVar enable) in that
+	 * This one differs from constructor Transposer(DFEVar in, int width, int height, DFEVar enable) in that
 	 * movement in the horizontal directions, when transposing, are not by one column but by a user defined amount.
 	 *
 	 * Example:
@@ -120,8 +220,8 @@ public class Transposer {
 	public static DFEVar transpose(DFEVar in, int width, int height, int depth, DFEVar enable) {
 		KernelLib owner = in.getKernel();
 
-		final int N = width * height * depth;;
-		final boolean isDoubleBuffered;
+		int N = width * height * depth;
+		boolean isDoubleBuffered;
 
 		DFEVar writeAddress;
 		DFEVar readAddress;
@@ -129,24 +229,24 @@ public class Transposer {
 		if (height == 1) {
 			isDoubleBuffered = false;
 
-			final int Nm = N - 1;
-			final int nBits = MathUtils.bitsToAddress(N);
+			int Nm = N - 1;
+			int nBits = MathUtils.bitsToAddress(N);
 
 			DFEVar isFirst = owner.control.count.pulse(1);
 
 			DFEVar i = owner.control.count.makeCounter(owner.control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
-			DFEVar mul = KernelLib.dfeUInt(nBits).newInstance(owner);
+			DFEVar mul = Kernel.dfeUInt(nBits).newInstance(owner);
 			owner.optimization.pushEnableBitGrowth(true);
 			ConstDivModResult addressDivMod = ConstDenominator.divMod(i * mul, Nm, nBits);
 			addressDivMod.getQuotient().setReportOnUnused(false);
-			DFEVar address = i === Nm ? Nm : addressDivMod.getRemainder().cast(KernelLib.dfeUInt(nBits));
+			DFEVar address = i === Nm ? Nm : addressDivMod.getRemainder().cast(Kernel.dfeUInt(nBits));
 
-			DFEVar nextMul = mul * KernelLib.dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(owner, width);
+			DFEVar nextMul = mul * Kernel.dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(owner, width);
 			owner.optimization.popEnableBitGrowth();
 
 			ConstDivModResult nextMulDivMod = ConstDenominator.divMod(nextMul, Nm, nBits);
 			nextMulDivMod.getQuotient().setReportOnUnused(false);
-			nextMul = nextMulDivMod.getRemainder().cast(KernelLib.dfeUInt(nBits));
+			nextMul = nextMulDivMod.getRemainder().cast(Kernel.dfeUInt(nBits));
 
 			OffsetExpr offset = owner.stream.makeOffsetAutoLoop("transposerOffset" + offset_counter++, 0, N);
 			mul <== owner.control.mux(isFirst#(i===0), owner.stream.offset(mul, -1),
@@ -159,7 +259,7 @@ public class Transposer {
 		} else if (width == depth) {
 			isDoubleBuffered = false;
 
-			DFEType addressType = KernelLib.dfeUInt(MathUtils.bitsToAddress(N));
+			DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(N));
 
 			CounterChain readCounter = owner.control.count.makeCounterChain(enable);
 
@@ -179,7 +279,7 @@ public class Transposer {
 			// double buffered implementation
 			isDoubleBuffered = true;
 
-			DFEType addressType = KernelLib.dfeUInt(MathUtils.bitsToAddress(2 * N));
+			DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(2 * N));
 			CounterChain readCounter = owner.control.count.makeCounterChain(enable);
 			CounterChain writeCounter = owner.control.count.makeCounterChain(enable);
 
@@ -195,7 +295,7 @@ public class Transposer {
 			readAddress  = rdBuff ? readAddress + N : readAddress;
 		}
 
-		final int ramSize = isDoubleBuffered ? 2 * N : N;
+		int ramSize = isDoubleBuffered ? 2 * N : N;
 
 		RamPortParams<DFEVar> writePort   = owner.mem.makeRamPortParams(RamPortMode.WRITE_ONLY, writeAddress, in).withWriteEnable(enable);
 		RamPortParams<DFEVar> readPort    = owner.mem.makeRamPortParams(RamPortMode.READ_ONLY,  readAddress,  in.getType());
