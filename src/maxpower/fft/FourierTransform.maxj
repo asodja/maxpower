@@ -27,6 +27,8 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * distinct ffts to save scheduling resources.
  *
  * @author Stephen Girdlestone
+ * @author Simon Tilbury
+ * @author Nils Voss
  */
 public class FourierTransform {
 

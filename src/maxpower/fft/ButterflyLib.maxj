@@ -21,6 +21,8 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * A collection of all the butterfly functions for radix-4 and dual radix-2 FFTs.
  *
  * @author Stephen Girdlestone
+ * @author Simon Tilbury
+ * @author Nils Voss
  *
  */
 public class ButterflyLib {

@@ -20,6 +20,9 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 /**
  * Containing all buffer used in the fft
+ *
+ * @author Stephen Girdlestone
+ * @author Nils Voss
  */
 public class FftBuffer {
 
