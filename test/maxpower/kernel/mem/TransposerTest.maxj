@@ -96,13 +96,13 @@ public class TransposerTest {
 	}
 
 	@Test
-	public void test3DTransposerWidthEqualsHeightWrapper() {
+	public void test3DTransposerWidthEqualsDepthWrapper() {
 		long seed = System.currentTimeMillis();
 		Random rng = new Random(seed);
 		for (int i = 0; i < NUM_RUNS; i++) {
 			final int width  = Math.abs(rng.nextInt()) % 32 + 2;
-			final int depth = Math.abs(rng.nextInt()) % 32 + 2;
-			test3DTransposer(width, width, depth, seed);
+			final int height = Math.abs(rng.nextInt()) % 32 + 2;
+			test3DTransposer(width, height, width, seed);
 		}
 	}
 

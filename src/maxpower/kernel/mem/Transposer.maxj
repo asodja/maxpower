@@ -9,11 +9,8 @@ import maxpower.kernel.arithmetic.ConstDenominator.ConstDivModResult;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.DualPortMemOutputs;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortMode;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamPortParams;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamWriteMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Stream.OffsetExpr;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
@@ -71,53 +68,58 @@ public class Transposer {
 
 		final int N = width * height;
 		final int pipes = in.getSize();
+		final int ramSize = 2 * N / pipes;
 		if (!MathUtils.integerMultiple(width, pipes) || !MathUtils.integerMultiple(height, pipes)) {
 			throw new RuntimeException("Width and height have to be a multiple of the number of pipes.");
 		}
+		if (pipes == 1) { // Use more efficient single buffered version
+			return in.getType().newInstance(owner, transpose(in[0], width, height, enable));
+		}
 		// double buffered implementation
 
-		DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(2 * (N / pipes)));
+		DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize));
+		System.out.println(MathUtils.bitsToAddress(ramSize));
 		CounterChain readCounter = owner.control.count.makeCounterChain(enable);
 		CounterChain writeCounter = owner.control.count.makeCounterChain(enable);
 
-		DFEVar state    = readCounter.addCounter(2,      1);
-		DFEVar slowRead = readCounter.addCounter(width,  1).cast(addressType);
+		DFEVar state    = readCounter.addCounter(2,              1);
+		DFEVar slowRead = readCounter.addCounter(width,          1).cast(addressType);
 		DFEVar fastRead = readCounter.addCounter(height / pipes, 1).cast(addressType);
 
 		DFEVar slowWrite = writeCounter.addCounter(height, 1).cast(addressType);
-		DFEVar fastWrite = writeCounter.addCounter(width / pipes,  1).cast(addressType);
+		                   writeCounter.addCounter(width / pipes, 1).setReportOnUnused(false);
 
-		DFEVar writeAddress = fastWrite + slowWrite * (width / pipes);
+		DFEVar writeAddress = owner.control.count.simpleCounter(MathUtils.bitsToAddress(ramSize), N / pipes);
 
-		ConstDivModResult writeRotateDivMod = ConstDenominator.divMod(slowWrite, pipes);
-		writeRotateDivMod.getQuotient().setReportOnUnused(false);
-		DFEVar writeRotate = writeRotateDivMod.getRemainder();
 		ConstDivModResult readRotateDivMod = ConstDenominator.divMod(slowRead, pipes);
 		DFEVar group = readRotateDivMod.getQuotient();
 		DFEVar readRotate = readRotateDivMod.getRemainder();
+		DFEVar writeRotate;
+		if (width != height) {
+			ConstDivModResult writeRotateDivMod = ConstDenominator.divMod(slowWrite, pipes);
+			writeRotateDivMod.getQuotient().setReportOnUnused(false);
+			writeRotate = writeRotateDivMod.getRemainder();
+		} else {
+			writeRotate = readRotate;
+		}
 
 		writeAddress = state ? writeAddress : (writeAddress + (N / pipes));
 
 		DFEVector<DFEVar> readAddresses = new DFEVectorType<DFEVar>(addressType, pipes).newInstance(owner);
+		DFEVar readAddressOffset = fastRead.cast(addressType) * width + group.cast(addressType);
 		for (int i = 0; i < pipes; i++) {
-			DFEVar readAddress = fastRead * width + i * (width / pipes) + group;
+			DFEVar readAddress = readAddressOffset + i * (width / pipes);
 			readAddresses[i] <== state ? readAddress + N / pipes : readAddress;
 		}
 		readAddresses = readAddresses.rotateElementsLeft(readRotate);
-
-		int ramSize = 2 * N / pipes;
 
 		DFEVector<DFEVar> inRotated = in.rotateElementsLeft(writeRotate);
 
 		List<DFEVar> lookupResults = new ArrayList<DFEVar>();
 		for (int i = 0; i < in.getSize(); i++) {
-			RamPortParams<DFEVar> writePort = owner.mem.makeRamPortParams(RamPortMode.WRITE_ONLY, writeAddress,
-					inRotated[i]).withWriteEnable(enable);
-			RamPortParams<DFEVar> readPort  = owner.mem.makeRamPortParams(RamPortMode.READ_ONLY,  readAddresses[i],
-					in[0].getType());
-			DualPortMemOutputs<DFEVar> buffer = owner.mem.ramDualPort(ramSize, RamWriteMode.READ_FIRST, writePort,
-					readPort);
-			lookupResults.add(buffer.getOutputB());
+			Memory<DFEVar> buffer = owner.mem.alloc(inRotated[i].getType(), ramSize);
+			buffer.write(writeAddress, inRotated[i], enable);
+			lookupResults.add(buffer.read(readAddresses[i]));
 		}
 
 		DFEVector<DFEVar> result = DFEVectorType.newInstance(lookupResults);
@@ -238,19 +240,20 @@ public class Transposer {
 
 			DFEVar isFirst = owner.control.count.pulse(1);
 
-			DFEVar i = owner.control.count.makeCounter(owner.control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
+			DFEVar i = owner.control.count.makeCounter(
+					owner.control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
 			DFEVar mul = Kernel.dfeUInt(nBits).newInstance(owner);
 			owner.optimization.pushEnableBitGrowth(true);
 			ConstDivModResult addressDivMod = ConstDenominator.divMod(i * mul, Nm, nBits);
 			addressDivMod.getQuotient().setReportOnUnused(false);
-			DFEVar address = i === Nm ? Nm : addressDivMod.getRemainder().cast(Kernel.dfeUInt(nBits));
+			DFEVar address = i === Nm ? Nm : addressDivMod.getRemainder();
 
 			DFEVar nextMul = mul * Kernel.dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(owner, width);
 			owner.optimization.popEnableBitGrowth();
 
 			ConstDivModResult nextMulDivMod = ConstDenominator.divMod(nextMul, Nm, nBits);
 			nextMulDivMod.getQuotient().setReportOnUnused(false);
-			nextMul = nextMulDivMod.getRemainder().cast(Kernel.dfeUInt(nBits));
+			nextMul = nextMulDivMod.getRemainder();
 
 			OffsetExpr offset = owner.stream.makeOffsetAutoLoop("transposerOffset" + offset_counter++, 0, N);
 			mul <== owner.control.mux(isFirst#(i===0), owner.stream.offset(mul, -1),
@@ -275,7 +278,7 @@ public class Transposer {
 			DFEVar cycleCounter = owner.control.count.simpleCounter(MathUtils.bitsToAddress(N), N);
 
 			DFEVar address = changePattern === 0 ? cycleCounter :
-					fast * width * height + medium * width + slow;
+					(fast * height + medium) * width + slow;
 
 			writeAddress = address;
 			readAddress = address;
@@ -283,28 +286,28 @@ public class Transposer {
 			// double buffered implementation
 			isDoubleBuffered = true;
 
+			DFEType calculationType = Kernel.dfeUInt(MathUtils.bitsToAddress(N));
 			DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(2 * N));
 			CounterChain readCounter = owner.control.count.makeCounterChain(enable);
 			CounterChain writeCounter = owner.control.count.makeCounterChain(enable);
 
 			DFEVar rdBuff = readCounter.addCounter(2,      1);
-			DFEVar slow   = readCounter.addCounter(width,  1).cast(addressType);
-			DFEVar medium = readCounter.addCounter(height, 1).cast(addressType);
-			DFEVar fast   = readCounter.addCounter(depth,  1).cast(addressType);
+			DFEVar slow   = readCounter.addCounter(width,  1).cast(calculationType);
+			DFEVar medium = readCounter.addCounter(height, 1).cast(calculationType);
+			DFEVar fast   = readCounter.addCounter(depth,  1).cast(calculationType);
 
 			readAddress  = fast * width * height + medium * width + slow;
-			writeAddress = writeCounter.addCounter(N, 1).cast(addressType);
+			writeAddress = writeCounter.addCounter(N, 1).cast(calculationType);
 
-			writeAddress = rdBuff ? writeAddress    : writeAddress + N;
-			readAddress  = rdBuff ? readAddress + N : readAddress;
+			writeAddress = writeAddress.cat(rdBuff).cast(addressType);
+			readAddress  = readAddress.cat(~rdBuff).cast(addressType);
 		}
 
 		int ramSize = isDoubleBuffered ? 2 * N : N;
 
-		RamPortParams<DFEVar> writePort   = owner.mem.makeRamPortParams(RamPortMode.WRITE_ONLY, writeAddress, in).withWriteEnable(enable);
-		RamPortParams<DFEVar> readPort    = owner.mem.makeRamPortParams(RamPortMode.READ_ONLY,  readAddress,  in.getType());
-		DualPortMemOutputs<DFEVar> buffer = owner.mem.ramDualPort(ramSize, RamWriteMode.READ_FIRST, writePort, readPort);
+		Memory<DFEVar> buffer = owner.mem.alloc(in.getType(), ramSize);
+		buffer.write(writeAddress, in, enable);
 
-		return buffer.getOutputB();
+		return buffer.read(readAddress);
 	}
 }

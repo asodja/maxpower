@@ -119,6 +119,8 @@ public class ButterflyLib {
 	private static List<DFEComplex> getDualRadix2Twiddles(int fftSize, DFEType type,  KernelLib owner) {
 		List<DFEComplex> twiddles = new ArrayList<DFEComplex>(FourierTransform.NUM_FFT_PIPES);
 
+		// we only need to calculate the first quadrant of the root of unity. Since the rest can be
+		// calculated on the fly by exploiting symmetries
 		int numTwiddles = fftSize / 4;
 		CounterChain chain = owner.control.count.makeCounterChain();
 		                   chain.addCounter(3, 1).setReportOnUnused(false);
@@ -127,8 +129,7 @@ public class ButterflyLib {
 		DFEComplexType twiddleType = new DFEComplexType(type);
 		Bits[] twiddleFactors = calculateTwiddleFactorValues(numTwiddles, fftSize, type, twiddleType);
 
-		DFEComplex twiddle = owner.mem.rom(dataCount, twiddleType,
-				twiddleFactors);
+		DFEComplex twiddle = owner.mem.rom(dataCount, twiddleType, twiddleFactors);
 
 		twiddles.add(twiddle);
 		DFEComplex secondTwiddle = DFEComplexType.newInstance(owner, twiddle.getImaginary(),
@@ -163,9 +164,7 @@ public class ButterflyLib {
 
 		if (phase == exponent) {
 			// In the last phase, all twiddle factors are (1,0).
-			DFEComplex realOnlyTwiddle = DFEComplexType.newInstance(
-					owner, owner.constant.var(1), owner.constant.var(0))
-					.cast(twiddleType);
+			DFEComplex realOnlyTwiddle = owner.constant.cplx(twiddleType, 1, 0);
 			for (int i = 0; i < twiddleCount; i++) {
 				twiddles[i] <== realOnlyTwiddle;
 			}
@@ -212,6 +211,7 @@ public class ButterflyLib {
 			double real  = Math.cos(angle);
 			double img   = Math.sin(angle);
 
+			// The following checks are intended to avoid underflows in the constant encoding.
 			double realTw = (Math.abs(real) > precision) ? real : 0.0;
 			double imgTw  = (Math.abs(img)  > precision) ? img  : 0.0;
 

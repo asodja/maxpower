@@ -63,6 +63,7 @@ public class InterStageBufferTest {
 			DFEVector<DFEVar> realResult = vectorType.newInstance(this);
 			for (int i = 0; i < NUM_PIPES; i++) {
 				realResult[i] <== result[i].getReal();
+				result[i].getImaginary().setReportOnUnused(false);
 			}
 
 			io.output("output", vectorType) <== realResult;
