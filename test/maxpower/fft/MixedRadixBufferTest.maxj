@@ -93,9 +93,10 @@ public class MixedRadixBufferTest {
 		for (int i = 0; i < NUM_DATA_RUNS; i++) {
 			for (int j = 0; j < size / NUM_PIPES; j++) {
 				for (int k = 0; k < NUM_PIPES; k++) {
-					input[j + i * size / NUM_PIPES][k] = j * NUM_PIPES + k;
+					input[j + i * size / NUM_PIPES][k] = i * size + j * NUM_PIPES + k;
 				}
-				inputBits[j + i * size / NUM_PIPES] = kernel.vectorType.encodeConstant(input[j]);
+				inputBits[j + i * size / NUM_PIPES] =
+					kernel.vectorType.encodeConstant(input[j + i * size / NUM_PIPES]);
 			}
 		}
 
@@ -115,11 +116,11 @@ public class MixedRadixBufferTest {
 		}
 
 		double[][] expected = createExpectedData(size, input);
-		for (int i = 0; i < size / NUM_PIPES; i++) {
+		/*for (int i = 0; i < size / NUM_PIPES; i++) {
 			for (int j = 0; j < NUM_PIPES; j++) {
 				System.out.println("Is: " + actual[i][j] + " Expected " + expected[i][j]);
 			}
-		}
+		}*/
 		for (int i = 0; i < NUM_DATA_RUNS; i++) {
 			for (int j = 0; j < size / NUM_PIPES; j++) {
 				assertArrayEquals("MixedRadixBuffer" + j, expected[j], actual[j + i * size / NUM_PIPES], 0);
@@ -128,26 +129,29 @@ public class MixedRadixBufferTest {
 	}
 
 	private double[][] createExpectedData(final int size, double[][] input) {
-		double expected[][] = new double[size / NUM_PIPES][NUM_PIPES];
+		double expected[][] = new double[NUM_DATA_RUNS * size / NUM_PIPES][NUM_PIPES];
 
-		int positionLow = 0;
-		int positionHigh = size / 2;
-		for (int i = 0; i < size; i++) {
-			int address;
-			if (i % 2 == 0) {
-				address = positionLow++;
-			} else {
-				address = positionHigh++;
-			}
-			if (i % 4 == 3){
-				positionLow  += 2;
-				positionHigh += 2;
-				if (positionLow == size / 2){
-					positionLow  = 2;
-					positionHigh = size / 2 + 2;
+		for (int i = 0; i < NUM_DATA_RUNS; i++) {
+			int positionLow = 0;
+			int positionHigh = size / 2;
+			for (int j = 0; j < size; j++) {
+				int address;
+				if (j % 2 == 0) {
+					address = positionLow++;
+				} else {
+					address = positionHigh++;
 				}
+				if (j % NUM_PIPES == 3){
+					positionLow  += 2;
+					positionHigh += 2;
+					if (positionLow == size / 2){
+						positionLow  = 2;
+						positionHigh = size / 2 + 2;
+					}
+				}
+				expected[i * size / NUM_PIPES + j / NUM_PIPES][j % NUM_PIPES] =
+					input[i * size / NUM_PIPES + address / NUM_PIPES][address % NUM_PIPES];
 			}
-			expected[i / 4][i % 4] = input[address/ 4][address % 4];
 		}
 
 		return expected;

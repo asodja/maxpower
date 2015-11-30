@@ -64,7 +64,6 @@ public class FftSimpleInterfaceTest {
 		long seed = System.currentTimeMillis();
 		Random rn = new Random(seed);
 
-
 		Complex[][] pairs       = generateInputData(rn, fftSize);
 		Complex[][] expected    = calculateExpected(pairs, fftSize);
 

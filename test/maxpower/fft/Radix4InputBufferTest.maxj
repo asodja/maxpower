@@ -94,9 +94,10 @@ public class Radix4InputBufferTest {
 		for (int i = 0; i < NUM_DATA_RUNS; i++) {
 			for (int j = 0; j < size / NUM_PIPES; j++) {
 				for (int k = 0; k < NUM_PIPES; k++) {
-					input[j + i * size / NUM_PIPES][k] = j * NUM_PIPES + k;
+					input[j + i * size / NUM_PIPES][k] = i * size + j * NUM_PIPES + k;
 				}
-				inputBits[j + i * size / NUM_PIPES] = kernel.vectorType.encodeConstant(input[j]);
+				inputBits[j + i * size / NUM_PIPES] =
+					kernel.vectorType.encodeConstant(input[j  + i * size / NUM_PIPES]);
 			}
 		}
 
@@ -129,14 +130,16 @@ public class Radix4InputBufferTest {
 	}
 
 	private double[][] createExpectedData(final int size, double[][] input) {
-		double expected[][] = new double[size / NUM_PIPES][NUM_PIPES];
+		double expected[][] = new double[NUM_DATA_RUNS * size / NUM_PIPES][NUM_PIPES];
 
 		int value = 0;
-		for (int i = 0; i < size; i++) {
-			expected[i / 4][i % 4] = value;
-			value += size / 4;
-			if (value >= size) {
-				value -= size - 1;
+		for (int i = 0; i < NUM_DATA_RUNS; i++) {
+			for (int j = 0; j < size; j++) {
+				expected[j / NUM_PIPES + i * size / NUM_PIPES][j % NUM_PIPES] = value + i * size;
+				value += size / NUM_PIPES;
+				if (value >= size) {
+					value -= size - 1;
+				}
 			}
 		}
 

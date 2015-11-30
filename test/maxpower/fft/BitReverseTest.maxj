@@ -97,7 +97,7 @@ public class BitReverseTest {
 					input[j + i * size / NUM_PIPES][k] = i * size + j * NUM_PIPES + k;
 				}
 				inputBits[j + i * size / NUM_PIPES] =
-					kernel.vectorType.encodeConstant(input[j  + i * size / NUM_PIPES]);
+					kernel.vectorType.encodeConstant(input[j + i * size / NUM_PIPES]);
 			}
 		}
 
