@@ -158,8 +158,7 @@ public class IfftTest {
 
 		for (int i = 0; i < NUM_ITERATIONS; i++) {
 			for (int j = 0; j < fftSize; j++) {
-				/*pairs[i][j] = new Complex((rn.nextDouble() - 0.5) / 1024, (rn.nextDouble() - 0.5) / 1024);*/
-				pairs[i][j] = new Complex(j + i * fftSize, 0);
+				pairs[i][j] = new Complex((rn.nextDouble() - 0.5) / 1024, (rn.nextDouble() - 0.5) / 1024);
 			}
 		}
 
