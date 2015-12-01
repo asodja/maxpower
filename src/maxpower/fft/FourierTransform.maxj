@@ -196,7 +196,8 @@ public class FourierTransform {
 
 		int fftSize = N;
 		if (fftSize < 16 || !MathUtils.isPowerOf2(fftSize)) {
-			throw new RuntimeException("4 pipe FFT currently only supports sizes that are 2^N for N > 4.");
+			throw new RuntimeException("4 pipe FFT currently only supports sizes that are 2^N for N > 4 " +
+					"(If the result gets reordered to be as expected N > 5).");
 		}
 		int exponent = MathUtils.bitsToAddress(N);
 		int radix4phases = exponent / 2;
@@ -214,7 +215,8 @@ public class FourierTransform {
 		} else if (radix2phases == 0) {
 			fftOut = rdx4input;
 		} else {
-			throw new RuntimeException("Number of radix 2 stages must be either 0 or 1 (negative is impossible, and 2 should be a radix 4 stage).");
+			throw new RuntimeException("Number of radix 2 stages must be either 0 or 1 (negative is impossible," +
+					" and 2 should be a radix 4 stage).");
 		}
 
 		for (int phase = 1; phase <= radix4phases; phase++) {

@@ -97,7 +97,6 @@ public class Transpose {
 		// double buffered implementation
 
 		DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize));
-		System.out.println(MathUtils.bitsToAddress(ramSize));
 		CounterChain readCounter = owner.control.count.makeCounterChain(enable);
 		CounterChain writeCounter = owner.control.count.makeCounterChain(enable);
 
@@ -119,6 +118,7 @@ public class Transpose {
 			writeRotateDivMod.getQuotient().setReportOnUnused(false);
 			writeRotate = writeRotateDivMod.getRemainder();
 		} else {
+			slowWrite.setReportOnUnused(false);
 			writeRotate = readRotate;
 		}
 
