@@ -240,7 +240,7 @@ public class Transposer {
 	 * </table>
 	 *
 	 *	Then the output will return
-	 *		0, 5, 10, 15, 20, 25, 1, 6, 11, 16, ...
+	 *		0, 15, 5, 20, 10, 25, 1, 16, 6, 21, ...
 	 *
 	 * width     fast dimension
 	 * height    medium dimension

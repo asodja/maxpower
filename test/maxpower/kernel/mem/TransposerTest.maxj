@@ -236,7 +236,7 @@ public class TransposerTest {
 		SimulationManager manager = new SimulationManager("Transposer3DTest");
 		TransposerTestKernel kernel = new TransposerTestKernel(manager.makeKernelParameters(), width, height, depth);
 		manager.setKernel(kernel);
-		manager.logMsg("Seed: %d, Width: %d, Height: %d", seed, width, height);
+		manager.logMsg("Seed: %d, Width: %d, Height: %d, Depth %d", seed, width, height, depth);
 		manager.build();
 
 		manager.setKernelCycles(NUM_DATA_RUNS * height * width * depth);
@@ -249,7 +249,7 @@ public class TransposerTest {
 		for (int i = 0; i < width; i++) {
 			for (int j = 0; j < height; j++) {
 				for (int k = 0; k < depth; k++) {
-					System.out.println("Is: " + actual[pos] +
+					System.out.println("Input: " + input[pos] + " Is: " + actual[pos] +
 							" Expected " + expected[pos++]);
 				}
 			}
