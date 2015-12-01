@@ -112,7 +112,7 @@ public class VariableWidthIO {
 		AspectChangeIO acio = new AspectChangeIO(owner,portWidth);
 
 		OutputData<T> output = makeOutput(name, wideData, numToWrite);
-		acio.output(name, output.getOutput(), output.getNeedToWrite(), doFlush);
+		acio.output(name, output.getOutput(), output.getNeedToWrite() | doFlush, doFlush);
 	}
 
 	private static class OutputData<T extends KernelObjectVectorizable<T,?>> {

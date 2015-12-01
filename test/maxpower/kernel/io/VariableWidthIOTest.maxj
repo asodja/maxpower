@@ -1,6 +1,7 @@
 package maxpower.kernel.io;
 
 import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -24,9 +25,11 @@ public class VariableWidthIOTest {
 	private class InputTestData {
 		private final int inputWidth;
 		private int dataLength;
+		private final int paddedDataLength;
 		private final int[] getCounts;
 		private final double[] data;
 		private final double[][] expectedOutput;
+		private final boolean flushAtEnd;
 
 		protected InputTestData(int inputWidthIn,  int[] getCountsIn) {
 			inputWidth = inputWidthIn;
@@ -34,7 +37,8 @@ public class VariableWidthIOTest {
 			getCounts = getCountsIn;
 
 			for (int i = 0; i < getCountsIn.length; i++) dataLength += getCountsIn[i];
-			data = new double[dataLength];
+			paddedDataLength = ((dataLength-1)/inputWidthIn + 1)*dataLength;
+			data = new double[paddedDataLength];
 			expectedOutput = new double[getCounts.length][];
 
 			for (int i = 0; i < dataLength; i++) {
@@ -49,11 +53,12 @@ public class VariableWidthIOTest {
 					dataitr++;
 				}
 			}
+			if (dataLength%inputWidth == 0) flushAtEnd = false; else flushAtEnd = true;
 		}
 
 		protected List<Bits> encodeInput(DFEType dataType) {
 			final List<Bits> encodedData = new ArrayList<Bits>(MathUtils.ceilDivide(data.length, inputWidth));
-			for (int i = 0; i < dataLength; i++) {
+			for (int i = 0; i < paddedDataLength; i++) {
 				encodedData.add(dataType.encodeConstant(data[i]));
 			}
 			return encodedData;
@@ -81,6 +86,8 @@ public class VariableWidthIOTest {
 		}
 
 		protected double[][] getExpectedOutput() { return expectedOutput; }
+
+		protected boolean getFlushAtEnd() { return flushAtEnd; }
 	}
 
 	private class OutputTestData {
@@ -90,6 +97,7 @@ public class VariableWidthIOTest {
 		private final int[] dataCounts;
 		private final double[] data;
 		private final double[][] expectedOutput;
+		private final boolean flushAtEnd;
 
 		protected OutputTestData(int outputWidthIn, int[] dataCountsIn) {
 
@@ -97,7 +105,7 @@ public class VariableWidthIOTest {
 			dataCounts = dataCountsIn;
 			dataLength = 0;
 			for (int i = 0; i < dataCountsIn.length; i++) dataLength += dataCounts[i];
-			nOutputs = dataLength/outputWidth;
+			nOutputs = (dataLength - 1)/outputWidth + 1;
 
 			data = new double[dataCountsIn.length*outputWidth];
 			expectedOutput = new double[nOutputs][outputWidth];
@@ -120,10 +128,16 @@ public class VariableWidthIOTest {
 			dataitr = 1;
 			for (int i = 0; i < nOutputs; i++) {
 				for (int j = 0; j < outputWidth; j++) {
-					expectedOutput[i][j] = dataitr;
-					dataitr++;
+					if (dataitr <= dataLength){
+						expectedOutput[i][j] = dataitr;
+						dataitr++;
+					} else {
+						expectedOutput[i][j] = Double.NaN;
+					}
 				}
 			}
+
+			if (dataLength%outputWidth == 0) flushAtEnd = false; else flushAtEnd = true;;
 		}
 
 		protected List<Bits> encodeInput(DFEType dataType) {
@@ -154,27 +168,48 @@ public class VariableWidthIOTest {
 
 
 		protected double[][] getExpectedOutput() { return expectedOutput; }
+
+		protected boolean getFlushAtEnd() { return flushAtEnd; }
+
+		protected int getDataLength() { return dataLength; }
 	}
 
 	private class VariableWidthIOInputTestKernel extends Kernel {
-		protected VariableWidthIOInputTestKernel (KernelParameters parameters, DFEVectorType<DFEVar> vectorType, int inputWidth) {
+		protected VariableWidthIOInputTestKernel (KernelParameters parameters, DFEVectorType<DFEVar> vectorType, int inputWidth, boolean doFlushAtEnd) {
 			super(parameters);
 
+			DFEVar maxTicks = io.scalarInput("maxTicks", dfeUInt(32));
+			DFEVar tickCount = control.count.makeCounterChain().addCounter(maxTicks, 1);
+			DFEVar doFlush = tickCount === (maxTicks-1);
+
 			DFEVar needCount = io.input("needCount", dfeUInt(32));
-			DFEVector<DFEVar> input = VariableWidthIO.input("input", vectorType, needCount);
+			DFEVector<DFEVar> input;
+			if (doFlushAtEnd) {
+				input = VariableWidthIO.input("input", vectorType, needCount, vectorType.getContainedType().getTotalBits()*inputWidth, doFlush);
+			} else {
+				input = VariableWidthIO.input("input", vectorType, needCount);
+			}
 
 			io.output("output",input,input.getType());
 		}
 	}
 
 	private class VariableWidthIOOutputTestKernel extends Kernel {
-		protected VariableWidthIOOutputTestKernel (KernelParameters parameters, DFEVectorType<DFEVar> vectorType, int inputWidth) {
+		protected VariableWidthIOOutputTestKernel (KernelParameters parameters, DFEVectorType<DFEVar> vectorType, int inputWidth, boolean doFlushAtEnd) {
 			super(parameters);
+
+			DFEVar maxTicks = io.scalarInput("maxTicks", dfeUInt(32));
+			DFEVar tickCount = control.count.makeCounterChain().addCounter(maxTicks, 1);
+			DFEVar doFlush = tickCount === (maxTicks-1);
 
 			DFEVar writeCount = io.input("needCount", dfeUInt(32));
 			DFEVector<DFEVar> input = io.input("input", vectorType);
 
-			VariableWidthIO.output("output",input,writeCount);
+			if (doFlushAtEnd) {
+				VariableWidthIO.output("output",input,writeCount, vectorType.getContainedType().getTotalBits()*inputWidth, doFlush);
+			} else {
+				VariableWidthIO.output("output",input,writeCount);
+			}
 		}
 	}
 
@@ -186,8 +221,9 @@ public class VariableWidthIOTest {
 		InputTestData data = new InputTestData(inputWidth, getCounts);
 
 		SimulationManager m = new SimulationManager("FlexibleWidthInputTest");
-		m.setKernel(new VariableWidthIOInputTestKernel(m.makeKernelParameters(), vectorType, inputWidth));
+		m.setKernel(new VariableWidthIOInputTestKernel(m.makeKernelParameters(), vectorType, inputWidth, data.getFlushAtEnd()));
 		m.setKernelCycles(getCounts.length);
+		m.setScalarInput("maxTicks", KernelLib.dfeUInt(32).encodeConstant(getCounts.length));
 		m.setInputDataRaw("input", data.encodeInput(type));
 		m.setInputDataRaw("needCount", data.encodeCounts(indexType));
 		m.build();
@@ -212,8 +248,9 @@ public class VariableWidthIOTest {
 		OutputTestData data = new OutputTestData(outputWidth,  getCounts);
 
 		SimulationManager m = new SimulationManager("FlexibleWidthOutputTest");
-		m.setKernel(new VariableWidthIOOutputTestKernel(m.makeKernelParameters(), vectorType, outputWidth));
+		m.setKernel(new VariableWidthIOOutputTestKernel(m.makeKernelParameters(), vectorType, outputWidth, data.getFlushAtEnd()));
 		m.setKernelCycles(getCounts.length);
+		m.setScalarInput("maxTicks", KernelLib.dfeUInt(32).encodeConstant(getCounts.length));
 		m.setInputDataRaw("input", data.encodeInput(type));
 		m.setInputDataRaw("needCount", data.encodeCounts(indexType));
 		m.build();
@@ -225,8 +262,14 @@ public class VariableWidthIOTest {
 			System.out.println("Expected " + Arrays.toString(expectedOutput[i]));
 			System.out.println("Got      " + Arrays.toString(output[i]) + "\n");
 		}
+		int dataitr = 0;
 		for (int i = 0; i < output.length; i++) {
-			assertArrayEquals(expectedOutput[i],output[i],0.0);
+			for (int j = 0; j < output[i].length; j++){
+				if (dataitr < data.getDataLength()){
+					assertEquals(expectedOutput[i][j],output[i][j],0.0);
+					dataitr++;
+				}
+			}
 		}
 	}
 
@@ -236,6 +279,7 @@ public class VariableWidthIOTest {
 	@Test public void testInputInExactAspectChange() { testFlexibleWidthInput(10, new int[]{4,4,4,4,4}); }
 	@Test public void testInputWithSomeUnpleasantNumbers() { testFlexibleWidthInput(7, new int[]{2,3,5,7,2,1,1}); }
 	@Test public void testInputWithSomeUnpleasantNumbersAndReadingNothing() { testFlexibleWidthInput(7, new int[]{2,0,3,5,0,7,2,1,1,0}); }
+	@Test public void testInputWithSomeUnpleasantNumbersAndReadingNothingAndFlushing() { testFlexibleWidthInput(7, new int[]{2,0,3,5,0,7,2,1,1,0,3}); }
 
 	@Test public void testOutputAsPassThrough() { testFlexibleWidthOutput(2, new int[]{2}); }
 	@Test public void testOutputWritingNothing() { testFlexibleWidthOutput(2, new int[]{0,2,2,0,0,2,0}); }
@@ -243,5 +287,7 @@ public class VariableWidthIOTest {
 	@Test public void testOutputInExactAspectChange() { testFlexibleWidthOutput(10, new int[]{4,4,4,4,4}); }
 	@Test public void testOutputWithSomeUnpleasantNumbers() { testFlexibleWidthOutput(7, new int[]{2,3,5,7,2,1,1}); }
 	@Test public void testOutputWithSomeUnpleasantNumbersAndReadingNothing() { testFlexibleWidthOutput(7, new int[]{2,0,3,5,0,7,2,1,1,0}); }
+	@Test public void testOutputWithSomeUnpleasantNumbersAndReadingNothingAndFlushing() { testFlexibleWidthOutput(7, new int[]{2,0,3,5,0,7,2,1,1,0,3}); }
+
 }
 
