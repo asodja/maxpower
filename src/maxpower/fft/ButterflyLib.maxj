@@ -160,15 +160,13 @@ public class ButterflyLib {
 		Bits[] twiddleFactorsBits = calculateTwiddleFactorValues(inputCount, inputCount,
 				type, twiddleType);
 
-		DFEVectorType<DFEComplex> twiddleVectorType =
-			new DFEVectorType<DFEComplex>(twiddleType, twiddleCount);
-		DFEVector<DFEComplex> twiddles = twiddleVectorType.newInstance(owner);
+		List<DFEComplex> twiddles = new ArrayList<DFEComplex>();
 
 		if (phase == exponent) {
 			// In the last phase, all twiddle factors are (1,0).
 			DFEComplex realOnlyTwiddle = owner.constant.cplx(twiddleType, 1, 0);
 			for (int i = 0; i < twiddleCount; i++) {
-				twiddles[i] <== realOnlyTwiddle;
+				twiddles.add(realOnlyTwiddle);
 			}
 		} else {
 			// Set up the subset of data for ROMs according to the phase.
@@ -180,6 +178,8 @@ public class ButterflyLib {
 					twiddleBits[j][i] = twiddleFactorsBits[index];
 				}
 			}
+			DFEVectorType<DFEComplex> twiddleVectorType =
+				new DFEVectorType<DFEComplex>(twiddleType, twiddleCount);
 			Bits[] twiddleBitsForRom = new Bits[twiddleFactorCount];
 			for (int i = 0; i < twiddleFactorCount; i++) {
 				List<Bits> twiddleBitsList = new ArrayList<Bits>();
@@ -193,9 +193,9 @@ public class ButterflyLib {
 			DFEVar dataCount = chain.addCounter(twiddleFactorCount, 1);
 
 			// Create the phase ROMs.
-			twiddles <== owner.mem.rom(dataCount, twiddleVectorType, twiddleBitsForRom);
+			twiddles.addAll(owner.mem.rom(dataCount, twiddleVectorType, twiddleBitsForRom).getElementsAsList());
 		}
-		return twiddles.getElementsAsList();
+		return twiddles;
 	}
 
 	private static Bits[] calculateTwiddleFactorValues(int numTwiddles, int fftStageSize,
