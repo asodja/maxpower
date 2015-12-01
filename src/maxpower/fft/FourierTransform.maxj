@@ -194,8 +194,7 @@ public class FourierTransform {
 			}
 		}
 
-		int fftSize = N;
-		if (fftSize < 16 || !MathUtils.isPowerOf2(fftSize)) {
+		if (N < 16 || !MathUtils.isPowerOf2(N)) {
 			throw new RuntimeException("4 pipe FFT currently only supports sizes that are 2^N for N > 4 " +
 					"(If the result gets reordered to be as expected N > 5).");
 		}
@@ -203,14 +202,14 @@ public class FourierTransform {
 		int radix4phases = exponent / 2;
 		int radix2phases = exponent % 2;
 
-		int depth = fftSize;
+		int depth = N;
 		List<DFEVector<DFEComplex>> rdx4input;
-		rdx4input = FftBuffer.applyInputBuffer(input, fftSize);
+		rdx4input = FftBuffer.applyInputBuffer(input, N);
 
 		List<DFEVector<DFEComplex>> fftOut;
 		if (radix2phases == 1) {
-			fftOut = ButterflyLib.butterfly(fftSize, 0, RADIX_2, twiddleType, rdx4input);
-			fftOut = FftBuffer.applyMixedRadixBuffer(fftOut, fftSize);
+			fftOut = ButterflyLib.butterfly(N, 0, RADIX_2, twiddleType, rdx4input);
+			fftOut = FftBuffer.applyMixedRadixBuffer(fftOut, N);
 			depth /= RADIX_2;
 		} else if (radix2phases == 0) {
 			fftOut = rdx4input;
@@ -220,7 +219,7 @@ public class FourierTransform {
 		}
 
 		for (int phase = 1; phase <= radix4phases; phase++) {
-			fftOut = ButterflyLib.butterfly(fftSize, phase, RADIX_4, twiddleType, fftOut);
+			fftOut = ButterflyLib.butterfly(N, phase, RADIX_4, twiddleType, fftOut);
 
 			if(phase < radix4phases) {
 				fftOut = FftBuffer.applyInterStageBuffer(fftOut, depth);
@@ -229,7 +228,7 @@ public class FourierTransform {
 		}
 
 		if (doBitReverse) {
-			fftOut = FftBuffer.applyBitReverseBuffer(fftOut, fftSize);
+			fftOut = FftBuffer.applyBitReverseBuffer(fftOut, N);
 		}
 
 		if (doIfft) {
@@ -237,7 +236,7 @@ public class FourierTransform {
 			for (int i = 0; i < fftOut.size(); i++) {
 				DFEVector<DFEComplex> vector = fftOut[i].getType().newInstance(owner);
 				for (int j = 0; j < fftOut[i].getSize(); j++) {
-					vector[j] <== 1 / N * fftOut[i][j].conjugate();
+					vector[j] <== fftOut[i][j].conjugate() / N;
 				}
 				fftOut.set(i, vector);
 			}
