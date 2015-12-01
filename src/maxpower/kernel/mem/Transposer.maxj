@@ -174,7 +174,7 @@ public class Transposer {
 	 **/
 	public static DFEVar transpose(DFEVar in, int width, int height) {
 		return in.getKernel().stream.offset(
-				transpose(in, width, 1, height, in.getKernel().constant.var(true)), width * height);
+				transpose(in, width, height, in.getKernel().constant.var(true)), width * height);
 	}
 
 	/**
@@ -205,174 +205,40 @@ public class Transposer {
 	 * height    slow dimension
 	 **/
 	public static DFEVar transpose(DFEVar in, int width, int height, DFEVar enable) {
-		return transpose(in, width, 1, height, enable);
-	}
-
-	/**
-	 * This one differs from constructor Transposer(DFEVar in, int width, int height) in that
-	 * movement in the horizontal directions, when transposing, are not by one column but by a user defined amount.
-	 *
-	 * Example:
-	 * Assume width (fast) of 5 and height (medium) of 3 and depth (slow) of 2, with values
-	 *
-	 * <table>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <tbody>
-	 *     <tr><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td></tr>
-	 *     <tr><td>10</td><td>11</td><td>12</td><td>13</td><td>14</td></tr>
-	 *     <tr><td>20</td><td>21</td><td>22</td><td>23</td><td>24</td></tr>
-	 *   </tbody>
-	 * </table>
-	 *
-	 * <table>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <tbody>
-	 *     <tr><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td></tr>
-	 *     <tr><td>15</td><td>16</td><td>17</td><td>18</td><td>19</td></tr>
-	 *     <tr><td>25</td><td>26</td><td>27</td><td>28</td><td>29</td></tr>
-	 *   </tbody>
-	 * </table>
-	 *
-	 *	Then the output will return
-	 *		0, 15, 5, 20, 10, 25, 1, 16, 6, 21, ...
-	 *
-	 * width     fast dimension
-	 * height    medium dimension
-	 * depth     slow dimension
-	 **/
-	public static DFEVar transpose(DFEVar in, int width, int height, int depth) {
-		return in.getKernel().stream.offset(
-				transpose(in, width, height, depth, in.getKernel().constant.var(true)),
-				width * height * depth);
-	}
-
-	/**
-	 * This one differs from constructor Transposer(DFEVar in, int width, int height, DFEVar enable) in that
-	 * movement in the horizontal directions, when transposing, are not by one column but by a user defined amount.
-	 *
-	 * Example:
-	 * Assume width (fast) of 5 and height (medium) of 3 and depth (slow) of 2, with values
-	 *
-	 * <table>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <tbody>
-	 *     <tr><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td></tr>
-	 *     <tr><td>10</td><td>11</td><td>12</td><td>13</td><td>14</td></tr>
-	 *     <tr><td>20</td><td>21</td><td>22</td><td>23</td><td>24</td></tr>
-	 *   </tbody>
-	 * </table>
-	 *
-	 * <table>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <col width="25%"/>
-	 *   <tbody>
-	 *     <tr><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td></tr>
-	 *     <tr><td>15</td><td>16</td><td>17</td><td>18</td><td>19</td></tr>
-	 *     <tr><td>25</td><td>26</td><td>27</td><td>28</td><td>29</td></tr>
-	 *   </tbody>
-	 * </table>
-	 *
-	 *	Then the output will return
-	 *		0, 15, 5, 20, 10, 25, 1, 16, 6, 21, ...
-	 *
-	 * width     fast dimension
-	 * height    medium dimension
-	 * depth     slow dimension
-	 **/
-	public static DFEVar transpose(DFEVar in, int width, int height, int depth, DFEVar enable) {
 		KernelLib owner = in.getKernel();
 
-		int N = width * height * depth;
-		boolean isDoubleBuffered;
+		int N = width * height;
 
-		DFEVar writeAddress;
-		DFEVar readAddress;
+		int Nm = N - 1;
+		int nBits = MathUtils.bitsToAddress(N);
 
-		if (height == 1) {
-			isDoubleBuffered = false;
+		DFEVar isFirst = owner.control.count.pulse(1);
 
-			int Nm = N - 1;
-			int nBits = MathUtils.bitsToAddress(N);
+		DFEVar i = owner.control.count.makeCounter(
+				owner.control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
+		DFEVar mul = Kernel.dfeUInt(nBits).newInstance(owner);
+		owner.optimization.pushEnableBitGrowth(true);
+		ConstDivModResult addressDivMod = ConstDenominator.divMod(i * mul, Nm, nBits);
+		addressDivMod.getQuotient().setReportOnUnused(false);
+		DFEVar address = i === Nm ? Nm : addressDivMod.getRemainder();
 
-			DFEVar isFirst = owner.control.count.pulse(1);
+		DFEVar nextMul = mul * Kernel.dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(owner, width);
+		owner.optimization.popEnableBitGrowth();
 
-			DFEVar i = owner.control.count.makeCounter(
-					owner.control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
-			DFEVar mul = Kernel.dfeUInt(nBits).newInstance(owner);
-			owner.optimization.pushEnableBitGrowth(true);
-			ConstDivModResult addressDivMod = ConstDenominator.divMod(i * mul, Nm, nBits);
-			addressDivMod.getQuotient().setReportOnUnused(false);
-			DFEVar address = i === Nm ? Nm : addressDivMod.getRemainder();
+		ConstDivModResult nextMulDivMod = ConstDenominator.divMod(nextMul, Nm, nBits);
+		nextMulDivMod.getQuotient().setReportOnUnused(false);
+		nextMul = nextMulDivMod.getRemainder();
 
-			DFEVar nextMul = mul * Kernel.dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(owner, width);
-			owner.optimization.popEnableBitGrowth();
+		OffsetExpr offset = owner.stream.makeOffsetAutoLoop("transposerOffset" + offset_counter++, 0, N);
+		mul <== owner.control.mux(isFirst#(i===0), owner.stream.offset(mul, -1),
+				owner.stream.offset(nextMul, -offset), owner.constant.var(1), owner.constant.var(1));
 
-			ConstDivModResult nextMulDivMod = ConstDenominator.divMod(nextMul, Nm, nBits);
-			nextMulDivMod.getQuotient().setReportOnUnused(false);
-			nextMul = nextMulDivMod.getRemainder();
+		DFEVar writeAddress = address;
+		DFEVar readAddress = address;
 
-			OffsetExpr offset = owner.stream.makeOffsetAutoLoop("transposerOffset" + offset_counter++, 0, N);
-			mul <== owner.control.mux(isFirst#(i===0), owner.stream.offset(mul, -1),
-					owner.stream.offset(nextMul, -offset), owner.constant.var(1), owner.constant.var(1));
+		owner.getManager().logInfo("Depth of RAM in Transposer = " + N);
 
-			writeAddress = address;
-			readAddress = address;
-
-			owner.getManager().logInfo("Depth of RAM in Transposer = " + N);
-		} else if (width == depth) {
-			isDoubleBuffered = false;
-
-			DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(N));
-
-			CounterChain readCounter = owner.control.count.makeCounterChain(enable);
-
-			DFEVar changePattern = readCounter.addCounter(2,      1);
-			DFEVar slow          = readCounter.addCounter(width,  1).cast(addressType);
-			DFEVar medium        = readCounter.addCounter(height, 1).cast(addressType);
-			DFEVar fast          = readCounter.addCounter(depth,  1).cast(addressType);
-
-			DFEVar cycleCounter = owner.control.count.simpleCounter(MathUtils.bitsToAddress(N), N);
-
-			DFEVar address = changePattern === 0 ? cycleCounter :
-					(fast * height + medium) * width + slow;
-
-			writeAddress = address;
-			readAddress = address;
-		} else {
-			// double buffered implementation
-			isDoubleBuffered = true;
-
-			DFEType calculationType = Kernel.dfeUInt(MathUtils.bitsToAddress(N));
-			DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(2 * N));
-			CounterChain readCounter = owner.control.count.makeCounterChain(enable);
-			CounterChain writeCounter = owner.control.count.makeCounterChain(enable);
-
-			DFEVar rdBuff = readCounter.addCounter(2,      1);
-			DFEVar slow   = readCounter.addCounter(width,  1).cast(calculationType);
-			DFEVar medium = readCounter.addCounter(height, 1).cast(calculationType);
-			DFEVar fast   = readCounter.addCounter(depth,  1).cast(calculationType);
-
-			readAddress  = fast * width * height + medium * width + slow;
-			writeAddress = writeCounter.addCounter(N, 1).cast(calculationType);
-
-			writeAddress = writeAddress.cat(rdBuff).cast(addressType);
-			readAddress  = readAddress.cat(~rdBuff).cast(addressType);
-		}
-
-		int ramSize = isDoubleBuffered ? 2 * N : N;
-
-		Memory<DFEVar> buffer = owner.mem.alloc(in.getType(), ramSize);
+		Memory<DFEVar> buffer = owner.mem.alloc(in.getType(), N);
 		buffer.write(writeAddress, in, enable);
 
 		return buffer.read(readAddress);

@@ -24,8 +24,7 @@ public class TransposerTest {
 
 	private static class TransposerTestKernel extends Kernel{
 
-		public TransposerTestKernel(KernelParameters parameters, final int width, final int height,
-				final int depth) {
+		public TransposerTestKernel(KernelParameters parameters, final int width, final int height) {
 			super(parameters);
 
 			stream.suppressOffsetVectorWarnings();
@@ -33,8 +32,8 @@ public class TransposerTest {
 			DFEVar input = io.input("input", dfeFloat(8, 24));
 
 			io.output("output", dfeFloat(8, 24)) <==
-				stream.offset(Transposer.transpose(input, width, height, depth, constant.var(true)),
-						width * height * depth);
+				stream.offset(Transposer.transpose(input, width, height, constant.var(true)),
+						width * height);
 		}
 	}
 
@@ -83,29 +82,6 @@ public class TransposerTest {
 		}
 	}
 
-	@Test
-	public void test3DTransposerWrapper() {
-		long seed = System.currentTimeMillis();
-		Random rng = new Random(seed);
-		for (int i = 0; i < NUM_RUNS; i++) {
-			final int width  = Math.abs(rng.nextInt()) % 32 + 2;
-			final int height = Math.abs(rng.nextInt()) % 32 + 2;
-			final int depth = Math.abs(rng.nextInt()) % 32 + 2;
-			test3DTransposer(width, height, depth, seed);
-		}
-	}
-
-	@Test
-	public void test3DTransposerWidthEqualsDepthWrapper() {
-		long seed = System.currentTimeMillis();
-		Random rng = new Random(seed);
-		for (int i = 0; i < NUM_RUNS; i++) {
-			final int width  = Math.abs(rng.nextInt()) % 32 + 2;
-			final int height = Math.abs(rng.nextInt()) % 32 + 2;
-			test3DTransposer(width, height, width, seed);
-		}
-	}
-
 	private void test2DTransposer(final int width, final int height, final long seed) {
 		double input[]    = new double[NUM_DATA_RUNS * height * width];
 		double actual[]   = new double[NUM_DATA_RUNS * height * width];
@@ -129,7 +105,7 @@ public class TransposerTest {
 		}
 
 		SimulationManager manager = new SimulationManager("Transposer2DTest");
-		TransposerTestKernel kernel = new TransposerTestKernel(manager.makeKernelParameters(), width, 1, height);
+		TransposerTestKernel kernel = new TransposerTestKernel(manager.makeKernelParameters(), width, height);
 		manager.setKernel(kernel);
 		manager.logMsg("Seed: %d, Width: %d, Height: %d", seed, width, height);
 		manager.build();
@@ -202,56 +178,6 @@ public class TransposerTest {
 		/*for (int i = 0; i < height; i++) {
 			for (int j = 0; j < width; j++) {
 				System.out.println("Is: " + actual[i * width + j] + " Expected " + expected[i * width + j]);
-			}
-		}*/
-		assertArrayEquals("Transposer", expected, actual, 0);
-	}
-
-	private void test3DTransposer(final int width, final int height, int depth, final long seed) {
-		double input[]    = new double[NUM_DATA_RUNS * height * width *  depth];
-		double actual[]   = new double[NUM_DATA_RUNS * height * width *  depth];
-		double expected[] = new double[NUM_DATA_RUNS * height * width *  depth];
-
-		int pos = 0;
-		for (int i = 0; i < NUM_DATA_RUNS; i++) {
-			for (int j = 0; j < depth; j++) {
-				for (int k = 0; k < height; k++) {
-					for (int l = 0; l < width; l++) {
-						input[pos++] = l + k * width + j * width * height;
-					}
-				}
-			}
-		}
-		pos = 0;
-		for (int i = 0; i < NUM_DATA_RUNS; i++) {
-			for (int j = 0; j < width; j++) {
-				for (int k = 0; k < height; k++) {
-					for (int l = 0; l < depth; l++) {
-						expected[pos++] = j + k * width + l * width * height;
-					}
-				}
-			}
-		}
-
-		SimulationManager manager = new SimulationManager("Transposer3DTest");
-		TransposerTestKernel kernel = new TransposerTestKernel(manager.makeKernelParameters(), width, height, depth);
-		manager.setKernel(kernel);
-		manager.logMsg("Seed: %d, Width: %d, Height: %d, Depth %d", seed, width, height, depth);
-		manager.build();
-
-		manager.setKernelCycles(NUM_DATA_RUNS * height * width * depth);
-		manager.setInputData("input", input);
-		manager.run();
-
-		actual = manager.getOutputDataArray("output");
-
-		/*pos = 0;
-		for (int i = 0; i < width; i++) {
-			for (int j = 0; j < height; j++) {
-				for (int k = 0; k < depth; k++) {
-					System.out.println("Input: " + input[pos] + " Is: " + actual[pos] +
-							" Expected " + expected[pos++]);
-				}
 			}
 		}*/
 		assertArrayEquals("Transposer", expected, actual, 0);

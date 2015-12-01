@@ -60,7 +60,7 @@ public class FftBuffer {
 			DFEVector<DFEVar> packedData = DFEVectorType.newInstance(transposedInput);
 			DFEVectorType<DFEVar> packedType = packedData.getType();
 
-			output = packedType.unpack(Transposer.transpose(packedData.pack(), numPipes,
+			output = packedType.unpack(transpose(packedData.pack(), numPipes,
 					height, numPipes));
 		} else {
 			DFEVector<DFEVar> packedData = DFEVectorType.newInstance(packedInput);
@@ -120,6 +120,72 @@ public class FftBuffer {
 		DFEVector<DFEVar> packedOutput = kernel.control.mux(select, inputToMux);
 
 		return unpackOutput(packedOutput, input[0].getType());
+	}
+
+	/** Example:
+	 * Assume width (fast) of 5 and height (medium) of 3 and depth (slow) of 2, with values
+	 *
+	 * <table>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <tbody>
+	 *     <tr><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td></tr>
+	 *     <tr><td>10</td><td>11</td><td>12</td><td>13</td><td>14</td></tr>
+	 *     <tr><td>20</td><td>21</td><td>22</td><td>23</td><td>24</td></tr>
+	 *   </tbody>
+	 * </table>
+	 *
+	 * <table>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <tbody>
+	 *     <tr><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td></tr>
+	 *     <tr><td>15</td><td>16</td><td>17</td><td>18</td><td>19</td></tr>
+	 *     <tr><td>25</td><td>26</td><td>27</td><td>28</td><td>29</td></tr>
+	 *   </tbody>
+	 * </table>
+	 *
+	 *	Then the output will return
+	 *		0, 15, 5, 20, 10, 25, 1, 16, 6, 21, ...
+	 *
+	 * width     fast dimension
+	 * height    medium dimension
+	 * depth     slow dimension
+	 **/
+	protected static DFEVar transpose(DFEVar in, int width, int height, int depth) {
+		KernelLib owner = in.getKernel();
+
+		if (width != depth) {
+			throw new IllegalArgumentException("Width and depth must be equal!");
+		}
+
+		int N = width * height * depth;
+
+		DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(N));
+
+		CounterChain readCounter = owner.control.count.makeCounterChain();
+
+		DFEVar changePattern = readCounter.addCounter(2,      1);
+		DFEVar slow          = readCounter.addCounter(width,  1).cast(addressType);
+		DFEVar medium        = readCounter.addCounter(height, 1).cast(addressType);
+		DFEVar fast          = readCounter.addCounter(depth,  1).cast(addressType);
+
+		DFEVar cycleCounter = owner.control.count.simpleCounter(MathUtils.bitsToAddress(N), N);
+
+		DFEVar address = changePattern === 0 ? cycleCounter :
+				(fast * height + medium) * width + slow;
+
+		DFEVar writeAddress = address;
+		DFEVar readAddress = address;
+
+		Memory<DFEVar> buffer = owner.mem.alloc(in.getType(), N);
+		buffer.write(writeAddress, in, owner.constant.var(true));
+
+		return owner.stream.offset(buffer.read(readAddress), N);
 	}
 
 	/**
