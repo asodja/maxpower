@@ -160,10 +160,8 @@ public class VariableWidthIOTest {
 		protected VariableWidthIOInputTestKernel (KernelParameters parameters, DFEVectorType<DFEVar> vectorType, int inputWidth) {
 			super(parameters);
 
-			final VariableWidthIO vwio = new VariableWidthIO(this);
-
 			DFEVar needCount = io.input("needCount", dfeUInt(32));
-			DFEVector<DFEVar> input = vwio.input("input", vectorType, needCount);
+			DFEVector<DFEVar> input = VariableWidthIO.input("input", vectorType, needCount);
 
 			io.output("output",input,input.getType());
 		}
@@ -173,12 +171,10 @@ public class VariableWidthIOTest {
 		protected VariableWidthIOOutputTestKernel (KernelParameters parameters, DFEVectorType<DFEVar> vectorType, int inputWidth) {
 			super(parameters);
 
-			final VariableWidthIO vwio = new VariableWidthIO(this);
-
 			DFEVar writeCount = io.input("needCount", dfeUInt(32));
 			DFEVector<DFEVar> input = io.input("input", vectorType);
 
-			vwio.output("output",input,writeCount);
+			VariableWidthIO.output("output",input,writeCount);
 		}
 	}
 
@@ -234,18 +230,18 @@ public class VariableWidthIOTest {
 		}
 	}
 
-	@Test public void testInputAsPassThrough() { testFlexibleWidthInput(2,new int[]{2}); }
+	@Test public void testInputAsPassThrough() { testFlexibleWidthInput(2, new int[]{2}); }
 	@Test public void testInputReadingNothing() { testFlexibleWidthInput(2, new int[]{0,2,2,0,0,2,0}); }
 	@Test public void testInputExactAspectChange() { testFlexibleWidthInput(10, new int[]{5,5,5,5}); }
 	@Test public void testInputInExactAspectChange() { testFlexibleWidthInput(10, new int[]{4,4,4,4,4}); }
-	@Test public void testInputWithSomeUnpleasantNumbers() { testFlexibleWidthInput(7,new int[]{2,3,5,7,2,1,1}); }
-	@Test public void testInputWithSomeUnpleasantNumbersAndReadingNothing() { testFlexibleWidthInput(7,new int[]{2,0,3,5,0,7,2,1,1,0}); }
+	@Test public void testInputWithSomeUnpleasantNumbers() { testFlexibleWidthInput(7, new int[]{2,3,5,7,2,1,1}); }
+	@Test public void testInputWithSomeUnpleasantNumbersAndReadingNothing() { testFlexibleWidthInput(7, new int[]{2,0,3,5,0,7,2,1,1,0}); }
 
-	@Test public void testOutputAsPassThrough() { testFlexibleWidthOutput(2,new int[]{2}); }
-	@Test public void testOutputWritingNothing() { testFlexibleWidthOutput(2,new int[]{0,2,2,0,0,2,0}); }
+	@Test public void testOutputAsPassThrough() { testFlexibleWidthOutput(2, new int[]{2}); }
+	@Test public void testOutputWritingNothing() { testFlexibleWidthOutput(2, new int[]{0,2,2,0,0,2,0}); }
 	@Test public void testOutputExactAspectChange() { testFlexibleWidthOutput(10, new int[]{5,5,5,5}); }
 	@Test public void testOutputInExactAspectChange() { testFlexibleWidthOutput(10, new int[]{4,4,4,4,4}); }
-	@Test public void testOutputWithSomeUnpleasantNumbers() { testFlexibleWidthOutput(7,new int[]{2,3,5,7,2,1,1}); }
-	@Test public void testOutputWithSomeUnpleasantNumbersAndReadingNothing() { testFlexibleWidthOutput(7,new int[]{2,0,3,5,0,7,2,1,1,0}); }
+	@Test public void testOutputWithSomeUnpleasantNumbers() { testFlexibleWidthOutput(7, new int[]{2,3,5,7,2,1,1}); }
+	@Test public void testOutputWithSomeUnpleasantNumbersAndReadingNothing() { testFlexibleWidthOutput(7, new int[]{2,0,3,5,0,7,2,1,1,0}); }
 }
 
