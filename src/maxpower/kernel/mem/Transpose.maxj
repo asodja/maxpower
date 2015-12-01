@@ -23,7 +23,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * @author Stephen Girdlestone
  * @author Nils Voss
  */
-public class Transposer {
+public class Transpose {
 
 	private static int offset_counter = 0;
 
