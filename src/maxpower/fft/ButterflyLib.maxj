@@ -170,21 +170,15 @@ public class ButterflyLib {
 			}
 		} else {
 			// Set up the subset of data for ROMs according to the phase.
-			Bits[][] twiddleBits = new Bits[twiddleCount][twiddleFactorCount];
-			for (int j = 0; j < twiddleCount; j++) {
-				int increment = (j + 1) << twiddleRatioShift;
-				for (int i = 0; i < twiddleFactorCount; i++) {
-					int index = i * increment;
-					twiddleBits[j][i] = twiddleFactorsBits[index];
-				}
-			}
 			DFEVectorType<DFEComplex> twiddleVectorType =
 				new DFEVectorType<DFEComplex>(twiddleType, twiddleCount);
 			Bits[] twiddleBitsForRom = new Bits[twiddleFactorCount];
 			for (int i = 0; i < twiddleFactorCount; i++) {
 				List<Bits> twiddleBitsList = new ArrayList<Bits>();
 				for (int j = 0; j < twiddleCount; j++) {
-					twiddleBitsList.add(twiddleBits[j][i]);
+					int increment = (j + 1) << twiddleRatioShift;
+					int index = i * increment;
+					twiddleBitsList.add(twiddleFactorsBits[index]);
 				}
 				twiddleBitsForRom[i] = twiddleVectorType.encodeConstant(twiddleBitsList);
 			}

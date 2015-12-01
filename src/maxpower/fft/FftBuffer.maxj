@@ -162,6 +162,9 @@ public class FftBuffer {
 		if (width != depth) {
 			throw new IllegalArgumentException("Width and depth must be equal!");
 		}
+		if (height == 1) {
+			return Transpose.transpose(in, width, depth);
+		}
 
 		int N = width * height * depth;
 
