@@ -31,6 +31,21 @@ public class VariableWidthIO {
 	}
 
 	/**
+	 * Create an input of a given maximum width which can return a variable number of valid data (up to the maximum width) each cycle from the input.
+	 * @param name The name of the input as referenced in the manager
+	 * @param wideInputType A DFEVectorType representing the input port
+	 * @param numToRead A stream giving the number of valid number of inputs needed on a given cycle (each value must be leq the maximum width for defined behaviour)
+	 * @param portWidth The width of the port in hardware in bits (128,1536,3072).
+	 * @return A DFEVector of size maximum width, the first <code> numToRead </code> elements of which are read linearly from the input.
+	 */
+
+	public static <T extends KernelObjectVectorizable<T,?>>
+	DFEVector<T> input(String name, DFEVectorType<T> wideInputType, DFEVar numToRead, int portWidth) {
+		Kernel owner = numToRead.getKernel();
+		return getInput(name, wideInputType, numToRead, true, portWidth, owner.constant.var(false));
+	}
+
+	/**
  * Create an input of a given maximum width which can return a variable number of valid data (up to the maximum width) each cycle from the input.
 	 * @param name The name of the input as referenced in the manager
 	 * @param wideInputType A DFEVectorType representing the input port
@@ -96,6 +111,22 @@ public class VariableWidthIO {
 
 		OutputData<T> output = makeOutput(name, wideData, numToWrite);
 		owner.io.output(name, output.getOutput(), output.getOutput().getType(), output.getNeedToWrite());
+	}
+
+	/**
+	 * Create an output which will accumulate a variable amount of input data each cycle and output it through a fixed width io port.
+	 * @param name The name of the output as referenced in the manager
+	 * @param wideData A DFEVector of incoming data, with valid data at the beginning
+	 * @param numToWrite The amount of valid data received this cycle
+	 * @param portWidth The width of the port in hardware in bits (128,1536,3072).
+	 */
+	public static <T extends KernelObjectVectorizable<T,?>> void output(String name, DFEVector<T> wideData, DFEVar numToWrite, int portWidth) {
+
+		Kernel owner = wideData.getKernel();
+		AspectChangeIO acio = new AspectChangeIO(owner,portWidth);
+
+		OutputData<T> output = makeOutput(name, wideData, numToWrite);
+		acio.output(name, output.getOutput(), output.getNeedToWrite(), owner.constant.var(false));
 	}
 
 	/**
