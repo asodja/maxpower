@@ -149,7 +149,8 @@ public class FourierTransform {
 		if (input[0][0].getReal().getType() instanceof DFEFloat) {
 			twiddleType = input[0][0].getReal().getType();
 		} else {
-			twiddleType = Kernel.dfeFixOffset(18, 1.0, SignMode.TWOSCOMPLEMENT);
+			twiddleType = Kernel.dfeFixOffset(input[0][0].getReal().getType().getTotalBits(),
+					1.0, SignMode.TWOSCOMPLEMENT);
 		}
 
 		List<DFEVector<DFEComplex>> codedOutput =
