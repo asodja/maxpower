@@ -82,6 +82,18 @@ public class TransposeTest {
 		}
 	}
 
+	@Test
+	public void test2DTransposeMultiPipePowerOf2PipesWrapper() {
+		long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		for (int i = 0; i < NUM_RUNS; i++) {
+			final int pipes  = 1 << (Math.abs(rng.nextInt()) % 4 + 1);
+			final int width  =
+				MathUtils.leastCommonMultiple(pipes, Math.abs(rng.nextInt()) % 16 + 1) + pipes;
+			test2DTransposeMultiPipe(width, width, pipes, seed);
+		}
+	}
+
 	private void test2DTranspose(final int width, final int height, final long seed) {
 		double input[]    = new double[NUM_DATA_RUNS * height * width];
 		double actual[]   = new double[NUM_DATA_RUNS * height * width];
