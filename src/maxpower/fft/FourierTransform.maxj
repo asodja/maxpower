@@ -205,12 +205,12 @@ public class FourierTransform {
 
 		int depth = N;
 		List<DFEVector<DFEComplex>> rdx4input;
-		rdx4input = FftBuffer.applyInputBuffer(input, N);
+		rdx4input = FftBufferLib.applyInputBuffer(input, N);
 
 		List<DFEVector<DFEComplex>> fftOut;
 		if (radix2phases == 1) {
 			fftOut = ButterflyLib.butterfly(N, 0, RADIX_2, twiddleType, rdx4input);
-			fftOut = FftBuffer.applyMixedRadixBuffer(fftOut, N);
+			fftOut = FftBufferLib.applyMixedRadixBuffer(fftOut, N);
 			depth /= RADIX_2;
 		} else if (radix2phases == 0) {
 			fftOut = rdx4input;
@@ -223,13 +223,13 @@ public class FourierTransform {
 			fftOut = ButterflyLib.butterfly(N, phase, RADIX_4, twiddleType, fftOut);
 
 			if(phase < radix4phases) {
-				fftOut = FftBuffer.applyInterStageBuffer(fftOut, depth);
+				fftOut = FftBufferLib.applyInterStageBuffer(fftOut, depth);
 				depth /= RADIX_4;
 			}
 		}
 
 		if (doBitReverse) {
-			fftOut = FftBuffer.applyBitReverseBuffer(fftOut, N);
+			fftOut = FftBufferLib.applyBitReverseBuffer(fftOut, N);
 		}
 
 		if (doIfft) {

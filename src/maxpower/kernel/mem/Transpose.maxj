@@ -286,7 +286,7 @@ public class Transpose {
 				owner.stream.offset(nextMul, -offset), owner.constant.var(1), owner.constant.var(1));
 
 		DFEVar writeAddress = address;
-		DFEVar readAddress = address;
+		DFEVar readAddress  = address;
 
 		owner.getManager().logInfo("Depth of RAM in Transposer = " + N);
 

@@ -27,7 +27,7 @@ public class Test3DTranspose {
 
 			DFEVar input = io.input("input", dfeFloat(8, 24));
 
-			io.output("output", dfeFloat(8, 24)) <== FftBuffer.transpose(input, width, height, depth);
+			io.output("output", dfeFloat(8, 24)) <== FftBufferLib.transpose(input, width, height, depth);
 		}
 	}
 

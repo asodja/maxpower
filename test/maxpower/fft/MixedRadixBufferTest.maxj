@@ -52,7 +52,7 @@ public class MixedRadixBufferTest {
 				list.add(fftType.unpack(data.pack().slice(i*bitsPerPipe, bitsPerPipe)));
 			}
 
-			List<DFEVector<DFEComplex>> transposedData = FftBuffer.applyMixedRadixBuffer(list, fftSize);
+			List<DFEVector<DFEComplex>> transposedData = FftBufferLib.applyMixedRadixBuffer(list, fftSize);
 
 			DFEVector<DFEComplex> result = complexVectorType.newInstance(this);
 

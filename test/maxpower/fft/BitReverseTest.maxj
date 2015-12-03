@@ -52,7 +52,7 @@ public class BitReverseTest {
 				list.add(fftType.unpack(data.pack().slice(i*bitsPerPipe, bitsPerPipe)));
 			}
 
-			List<DFEVector<DFEComplex>> transposedData = FftBuffer.applyBitReverseBuffer(list, fftSize);
+			List<DFEVector<DFEComplex>> transposedData = FftBufferLib.applyBitReverseBuffer(list, fftSize);
 
 			DFEVector<DFEComplex> result = complexVectorType.newInstance(this);
 
