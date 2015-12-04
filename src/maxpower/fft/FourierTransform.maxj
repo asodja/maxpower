@@ -21,7 +21,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * offset to allow the first values go through all FFT stages). The input is
  * expected as for a radix-4 FFT, i.e. 4 values per cycle.
  *
- * Multiple parallel FFTs can performed using the same function call assuming they
+ * Multiple parallel FFTs can be performed using the same function call assuming they
  * are running in phase. Please mind that if you reuse the same fft the input has to
  * be scheduled to arrive in the same time. It might be cheaper to do multiple
  * distinct ffts to save scheduling resources.

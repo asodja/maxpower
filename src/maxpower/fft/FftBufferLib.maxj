@@ -37,7 +37,7 @@ public class FftBufferLib {
 	 * Creates a buffer to store data between two stages in the fft.
 	 *
 	 * @param input Data from the previous fft stage.
-	 * @param fftSize Size of the fft and by this also size of the buffer.
+	 * @param fftSize Size of the fft and as a result also size of the buffer.
 	 * @param radix Radix of the fft stages connected to the buffer.
 	 * @return Data to be feed into the next fft stage.
 	 */
@@ -80,7 +80,7 @@ public class FftBufferLib {
 	 * Only tested for 4 Pipes and a Radix of 4.
 	 * @param input Input data
 	 * @param fftSize Size of the fft
-	 * @return Data ready to be feed in the first fft stage
+	 * @return Data ready to be feed into the first fft stage
 	 */
 	protected static <T extends KernelObject<T>> List<T> applyInputBuffer(List<T> input, int fftSize) {
 		int numPipes = FourierTransform.NUM_FFT_PIPES;
@@ -271,8 +271,8 @@ public class FftBufferLib {
 	}
 
 	/**
-	 * Bit reverse the result of the FFT. ATTENTION: This will break for not equal to 4 pipes and non power of 2
-	 * input sizes
+	 * Bit reverse the result of the FFT.
+	 * This will break for not equal to 4 pipes and non power of 2 input sizes
 	 * @param input fft results.
 	 * @param fftSize Size of the fft.
 	 * @return bit reversed result of the fft.

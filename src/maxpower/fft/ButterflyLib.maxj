@@ -30,8 +30,8 @@ public class ButterflyLib {
 	/**
 	 * If radix is 2: perform a dual radix-2 butterfly on the inputs, applying twiddle
 	 * factors to the results. The input is expected such that the first
-	 * butterfly is on values 0 and 2, the second on values 1 and 3. Results
-	 * are output in the same order.
+	 * butterfly is on values 0 and 2, the second on values 1 and 3.
+	 * Results have the same order.
 	 * Else do a normal radix-4 butterfly
 	 *
 	 * @param fftSize Size of the fft
