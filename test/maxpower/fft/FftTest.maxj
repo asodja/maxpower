@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Random;
 
 import maxpower.fft.utils.Complex;
-import maxpower.fft.utils.FFTWrapper;
+import maxpower.fft.utils.Fft;
 
 import org.junit.Test;
 
@@ -271,7 +271,7 @@ public class FftTest {
 			}
 
 			/* DFT of 2 traces */
-			List<Complex> A = FFTWrapper.fft(a);
+			List<Complex> A = Fft.fft(a);
 
 			/* Digit-reversed indexing */
 			for (int j = 0; j < fftSize; j++) {

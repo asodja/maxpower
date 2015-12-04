@@ -52,7 +52,7 @@ public class MixedRadixBufferTest {
 				list.add(fftType.unpack(data.pack().slice(i*bitsPerPipe, bitsPerPipe)));
 			}
 
-			List<DFEVector<DFEComplex>> transposedData = FftBufferLib.applyMixedRadixBuffer(list, fftSize);
+			List<DFEVector<DFEComplex>> transposedData = FftBuffer.applyMixedRadixBuffer(list, fftSize);
 
 			DFEVector<DFEComplex> result = complexVectorType.newInstance(this);
 
@@ -117,11 +117,6 @@ public class MixedRadixBufferTest {
 		}
 
 		double[][] expected = createExpectedData(size, input);
-		/*for (int i = 0; i < size / NUM_PIPES; i++) {
-			for (int j = 0; j < NUM_PIPES; j++) {
-				System.out.println("Is: " + actual[i][j] + " Expected " + expected[i][j]);
-			}
-		}*/
 		for (int i = 0; i < NUM_DATA_RUNS; i++) {
 			for (int j = 0; j < size / NUM_PIPES; j++) {
 				assertArrayEquals("MixedRadixBuffer" + j, expected[j], actual[j + i * size / NUM_PIPES], 0);

@@ -25,7 +25,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * @author Nils Voss
  *
  */
-public class ButterflyLib {
+public class Butterfly {
 
 	/**
 	 * If radix is 2: perform a dual radix-2 butterfly on the inputs, applying twiddle

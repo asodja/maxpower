@@ -128,11 +128,6 @@ public class TransposeTest {
 
 		actual = manager.getOutputDataArray("output");
 
-		/*for (int i = 0; i < height; i++) {
-			for (int j = 0; j < width; j++) {
-				System.out.println("Is: " + actual[i * width + j] + " Expected " + expected[i * width + j]);
-			}
-		}*/
 		assertArrayEquals("Transposer", expected, actual, 0);
 	}
 
@@ -187,11 +182,6 @@ public class TransposeTest {
 			}
 		}
 
-		/*for (int i = 0; i < height; i++) {
-			for (int j = 0; j < width; j++) {
-				System.out.println("Is: " + actual[i * width + j] + " Expected " + expected[i * width + j]);
-			}
-		}*/
 		assertArrayEquals("Transposer", expected, actual, 0);
 	}
 }

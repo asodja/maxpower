@@ -27,7 +27,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  */
 public class Transpose {
 
-	private static int offset_counter = 0;
+	private static int offsetCounter = 0;
 
 	/**
 	 * Multi pipe version of the 2D transpose function. Note that hight and width have to be multiples of
@@ -51,8 +51,8 @@ public class Transpose {
 	 *	Then the output will return (after 12 cycles since the output does not hide the latency)
 	 *		0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11
 	 *
-	 * width     fast dimension
-	 * height    slow dimension
+	 * @param width fast dimension
+	 * @param height slow dimension
 	 **/
 	public static DFEVector<DFEVar> transpose(DFEVector<DFEVar> in, int width, int height) {
 		return in.getKernel().stream.offset(transpose(in, width, height, in.getKernel().constant.var(true)),
@@ -81,13 +81,12 @@ public class Transpose {
 	 *	Then the output will return (after 12 cycles since the output does not hide the latency)
 	 *		0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11
 	 *
-	 * width     fast dimension
-	 * height    slow dimension
+	 * @param width fast dimension
+	 * @param height slow dimension
 	 **/
 	public static DFEVector<DFEVar> transpose(DFEVector<DFEVar> in, int width, int height, DFEVar enable) {
 		KernelLib owner = in.getKernel();
 
-		final int N = width * height;
 		final int pipes = in.getSize();
 		if (!MathUtils.integerMultiple(width, pipes) || !MathUtils.integerMultiple(height, pipes)) {
 			throw new RuntimeException("Width and height have to be a multiple of the number of pipes.");
@@ -98,103 +97,121 @@ public class Transpose {
 
 		DFEVector<DFEVar> result;
 		if (height == width && height >= 2 * pipes && height % pipes == 0 && MathUtils.isPowerOf2(pipes)) {
-			// Single buffered implementation for special case
-			int ramSize = N / pipes;
-
-			int nByPipes = width / pipes;
-			DFEType dataType = in[0].getType();
-			DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(dataType, pipes);
-			DFEVectorType<DFEVar> bufferOutVectorType = new DFEVectorType<DFEVar>(dataType, pipes);
-			DFEVectorType<DFEVar> addressType =
-				new DFEVectorType<DFEVar>(Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize)), pipes);
-			DFEVector<DFEVar> ramReadAddress = addressType.newInstance(owner);
-
-			CounterChain counterChainRow = owner.control.count.makeCounterChain(enable);
-			CounterChain counterChainCol = owner.control.count.makeCounterChain(enable);
-
-			DFEVar state = counterChainRow.addCounter(2, 1);
-			DFEVar row_j = counterChainRow.addCounter(height, 1);
-			DFEVar row_i = counterChainRow.addCounter(width / pipes, 1);
-			DFEVar col_j = counterChainCol.addCounter(width, 1);
-			DFEVar col_i = counterChainCol.addCounter(height, pipes);
-
-			int bitsToAddressPipes = MathUtils.bitsToAddress(pipes);
-			DFEVar shift_write = row_j.slice(0, bitsToAddressPipes).cast(Kernel.dfeUInt(bitsToAddressPipes));
-			DFEVar shift_read  = col_j.slice(0, bitsToAddressPipes).cast(Kernel.dfeUInt(bitsToAddressPipes));
-
-			owner.optimization.pushFixOpMode(Optimization.bitSizeExact(MathUtils.bitsToAddress(ramSize)),
-					Optimization.offsetExact(0), MathOps.ALL);
-			DFEVar ramWriteAddress = row_j * nByPipes + row_i.cast(row_j.getType());
-			for(int i = 0; i < pipes; i++){
-				ramReadAddress[i] <== (col_i + i) * nByPipes + (col_j >> bitsToAddressPipes);
-			}
-			owner.optimization.popFixOpMode(MathOps.ALL);
-
-			DFEVector<DFEVar> inputRotated =
-				in.rotateElementsLeft(shift_write.cast(Kernel.dfeUInt(bitsToAddressPipes)));
-			DFEVector<DFEVar> readAddrRotated = ramReadAddress.rotateElementsLeft(shift_read);
-
-			DFEVector<DFEVar> bufferOutput = bufferOutVectorType.newInstance(owner);
-			for(int i = 0; i < pipes; i++){
-				Memory<DFEVar> buffer = owner.mem.alloc(vectorType.getContainedType(), ramSize);
-				DFEVar address = state ? readAddrRotated[i] : ramWriteAddress;
-				bufferOutput[i] <== buffer.read(address);
-				buffer.write(address, inputRotated[i], enable);
-			}
-			result = bufferOutput.rotateElementsRight(shift_read);
+			result = transposePowerOf2Quadratic(in, width, height, enable);
 		} else {
-			// double buffered implementation
-			final int ramSize = 2 * N / pipes;
-
-			DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize));
-			CounterChain readCounter = owner.control.count.makeCounterChain(enable);
-			CounterChain writeCounter = owner.control.count.makeCounterChain(enable);
-
-			DFEVar state    = readCounter.addCounter(2,              1);
-			DFEVar slowRead = readCounter.addCounter(width,          1).cast(addressType);
-			DFEVar fastRead = readCounter.addCounter(height / pipes, 1).cast(addressType);
-
-			DFEVar slowWrite = writeCounter.addCounter(height, 1).cast(addressType);
-			                   writeCounter.addCounter(width / pipes, 1).setReportOnUnused(false);
-
-			DFEVar writeAddress = owner.control.count.simpleCounter(MathUtils.bitsToAddress(ramSize), N / pipes);
-
-			ConstDivModResult readRotateDivMod = ConstDenominator.divMod(slowRead, pipes);
-			DFEVar group = readRotateDivMod.getQuotient();
-			DFEVar readRotate = readRotateDivMod.getRemainder();
-			DFEVar writeRotate;
-			if (width != height) {
-				ConstDivModResult writeRotateDivMod = ConstDenominator.divMod(slowWrite, pipes);
-				writeRotateDivMod.getQuotient().setReportOnUnused(false);
-				writeRotate = writeRotateDivMod.getRemainder();
-			} else {
-				slowWrite.setReportOnUnused(false);
-				writeRotate = readRotate;
-			}
-
-			writeAddress = state ? writeAddress : (writeAddress + (N / pipes));
-
-			DFEVector<DFEVar> readAddresses = new DFEVectorType<DFEVar>(addressType, pipes).newInstance(owner);
-			DFEVar readAddressOffset = fastRead.cast(addressType) * width + group.cast(addressType);
-			for (int i = 0; i < pipes; i++) {
-				DFEVar readAddress = readAddressOffset + i * (width / pipes);
-				readAddresses[i] <== state ? readAddress + N / pipes : readAddress;
-			}
-			readAddresses = readAddresses.rotateElementsLeft(readRotate);
-
-			DFEVector<DFEVar> inRotated = in.rotateElementsLeft(writeRotate);
-
-			List<DFEVar> lookupResults = new ArrayList<DFEVar>();
-			for (int i = 0; i < in.getSize(); i++) {
-				Memory<DFEVar> buffer = owner.mem.alloc(inRotated[i].getType(), ramSize);
-				buffer.write(writeAddress, inRotated[i], enable);
-				lookupResults.add(buffer.read(readAddresses[i]));
-			}
-
-			result = DFEVectorType.newInstance(lookupResults);
-			result = result.rotateElementsRight(readRotate);
+			return transposeFallBack(in, width, height, enable);
 		}
 		return result;
+	}
+
+	private static DFEVector<DFEVar> transposePowerOf2Quadratic(DFEVector<DFEVar> in, int width,  int height,
+			DFEVar enable) {
+		KernelLib owner = in.getKernel();
+
+		final int N = width * height;
+		final int pipes = in.getSize();
+
+		// Single buffered implementation for special case
+		int ramSize = N / pipes;
+
+		int nByPipes = width / pipes;
+		DFEType dataType = in[0].getType();
+		DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(dataType, pipes);
+		DFEVectorType<DFEVar> bufferOutVectorType = new DFEVectorType<DFEVar>(dataType, pipes);
+		DFEVectorType<DFEVar> addressType =
+			new DFEVectorType<DFEVar>(Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize)), pipes);
+		DFEVector<DFEVar> ramReadAddress = addressType.newInstance(owner);
+
+		CounterChain counterChainRow = owner.control.count.makeCounterChain(enable);
+		CounterChain counterChainCol = owner.control.count.makeCounterChain(enable);
+
+		DFEVar state = counterChainRow.addCounter(2, 1);
+		DFEVar row_j = counterChainRow.addCounter(height, 1);
+		DFEVar row_i = counterChainRow.addCounter(width / pipes, 1);
+		DFEVar col_j = counterChainCol.addCounter(width, 1);
+		DFEVar col_i = counterChainCol.addCounter(height, pipes);
+
+		int bitsToAddressPipes = MathUtils.bitsToAddress(pipes);
+		DFEVar shift_write = row_j.slice(0, bitsToAddressPipes).cast(Kernel.dfeUInt(bitsToAddressPipes));
+		DFEVar shift_read  = col_j.slice(0, bitsToAddressPipes).cast(Kernel.dfeUInt(bitsToAddressPipes));
+
+		owner.optimization.pushFixOpMode(Optimization.bitSizeExact(MathUtils.bitsToAddress(ramSize)),
+				Optimization.offsetExact(0), MathOps.ALL);
+		DFEVar ramWriteAddress = row_j * nByPipes + row_i.cast(row_j.getType());
+		for(int i = 0; i < pipes; i++){
+			ramReadAddress[i] <== (col_i + i) * nByPipes + (col_j >> bitsToAddressPipes);
+		}
+		owner.optimization.popFixOpMode(MathOps.ALL);
+
+		DFEVector<DFEVar> inputRotated =
+			in.rotateElementsLeft(shift_write.cast(Kernel.dfeUInt(bitsToAddressPipes)));
+		DFEVector<DFEVar> readAddrRotated = ramReadAddress.rotateElementsLeft(shift_read);
+
+		DFEVector<DFEVar> bufferOutput = bufferOutVectorType.newInstance(owner);
+		for(int i = 0; i < pipes; i++){
+			Memory<DFEVar> buffer = owner.mem.alloc(vectorType.getContainedType(), ramSize);
+			DFEVar address = state ? readAddrRotated[i] : ramWriteAddress;
+			bufferOutput[i] <== buffer.read(address);
+			buffer.write(address, inputRotated[i], enable);
+		}
+		return bufferOutput.rotateElementsRight(shift_read);
+	}
+
+	private static DFEVector<DFEVar> transposeFallBack(DFEVector<DFEVar> in, int width, int height, DFEVar enable) {
+		KernelLib owner = in.getKernel();
+
+		final int N = width * height;
+		final int pipes = in.getSize();
+
+		// double buffered implementation
+		final int ramSize = 2 * N / pipes;
+
+		DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize));
+		CounterChain readCounter = owner.control.count.makeCounterChain(enable);
+		CounterChain writeCounter = owner.control.count.makeCounterChain(enable);
+
+		DFEVar state    = readCounter.addCounter(2,              1);
+		DFEVar slowRead = readCounter.addCounter(width,          1).cast(addressType);
+		DFEVar fastRead = readCounter.addCounter(height / pipes, 1).cast(addressType);
+
+		DFEVar slowWrite = writeCounter.addCounter(height, 1).cast(addressType);
+		                   writeCounter.addCounter(width / pipes, 1).setReportOnUnused(false);
+
+		DFEVar writeAddress = owner.control.count.simpleCounter(MathUtils.bitsToAddress(ramSize), N / pipes);
+
+		ConstDivModResult readRotateDivMod = ConstDenominator.divMod(slowRead, pipes);
+		DFEVar group = readRotateDivMod.getQuotient();
+		DFEVar readRotate = readRotateDivMod.getRemainder();
+		DFEVar writeRotate;
+		if (width != height) {
+			ConstDivModResult writeRotateDivMod = ConstDenominator.divMod(slowWrite, pipes);
+			writeRotateDivMod.getQuotient().setReportOnUnused(false);
+			writeRotate = writeRotateDivMod.getRemainder();
+		} else {
+			slowWrite.setReportOnUnused(false);
+			writeRotate = readRotate;
+		}
+
+		writeAddress = state ? writeAddress : (writeAddress + (N / pipes));
+
+		DFEVector<DFEVar> readAddresses = new DFEVectorType<DFEVar>(addressType, pipes).newInstance(owner);
+		DFEVar readAddressOffset = fastRead.cast(addressType) * width + group.cast(addressType);
+		for (int i = 0; i < pipes; i++) {
+			DFEVar readAddress = readAddressOffset + i * (width / pipes);
+			readAddresses[i] <== state ? readAddress + N / pipes : readAddress;
+		}
+		readAddresses = readAddresses.rotateElementsLeft(readRotate);
+
+		DFEVector<DFEVar> inRotated = in.rotateElementsLeft(writeRotate);
+
+		List<DFEVar> lookupResults = new ArrayList<DFEVar>();
+		for (int i = 0; i < in.getSize(); i++) {
+			Memory<DFEVar> buffer = owner.mem.alloc(inRotated[i].getType(), ramSize);
+			buffer.write(writeAddress, inRotated[i], enable);
+			lookupResults.add(buffer.read(readAddresses[i]));
+		}
+
+		return DFEVectorType.newInstance(lookupResults).rotateElementsRight(readRotate);
 	}
 
 	/**
@@ -221,8 +238,8 @@ public class Transpose {
 	 *	Then the output will return (after 12 cycles since the output does not hide the latency)
 	 *		0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11
 	 *
-	 * width     fast dimension
-	 * height    slow dimension
+	 * @param width fast dimension
+	 * @param height slow dimension
 	 **/
 	public static DFEVar transpose(DFEVar in, int width, int height) {
 		return in.getKernel().stream.offset(
@@ -253,8 +270,8 @@ public class Transpose {
 	 *	Then the output will return (after 12 cycles since the output does not hide the latency)
 	 *		0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11
 	 *
-	 * width     fast dimension
-	 * height    slow dimension
+	 * @param width fast dimension
+	 * @param height slow dimension
 	 **/
 	public static DFEVar transpose(DFEVar in, int width, int height, DFEVar enable) {
 		KernelLib owner = in.getKernel();
@@ -281,18 +298,15 @@ public class Transpose {
 		nextMulDivMod.getQuotient().setReportOnUnused(false);
 		nextMul = nextMulDivMod.getRemainder();
 
-		OffsetExpr offset = owner.stream.makeOffsetAutoLoop("transposerOffset" + offset_counter++, 0, N);
+		OffsetExpr offset = owner.stream.makeOffsetAutoLoop("transposerOffset" + offsetCounter++, 0, N);
 		mul <== owner.control.mux(isFirst#(i===0), owner.stream.offset(mul, -1),
 				owner.stream.offset(nextMul, -offset), owner.constant.var(1), owner.constant.var(1));
-
-		DFEVar writeAddress = address;
-		DFEVar readAddress  = address;
 
 		owner.getManager().logInfo("Depth of RAM in Transposer = " + N);
 
 		Memory<DFEVar> buffer = owner.mem.alloc(in.getType(), N);
-		buffer.write(writeAddress, in, enable);
+		buffer.write(address, in, enable);
 
-		return buffer.read(readAddress);
+		return buffer.read(address);
 	}
 }

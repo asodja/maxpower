@@ -163,6 +163,10 @@ public class FourierTransform {
 	 * decimation in frequency as the twiddle factor is multiplied after the
 	 * linear combination of the inputs.
 	 *
+	 * This function is a more advanced interface to provide more low level access
+	 * to the fft. You should try to use fft() or ifft() and only use this interface
+	 * in special circumstances.
+	 *
 	 * The input is expected in the order ready for the radix-2 butterfly,
 	 * e.g. values 0/128/256/384 then 1/129/257/385 and so on. The output will
 	 * be in bit-reversed order.
@@ -205,12 +209,12 @@ public class FourierTransform {
 
 		int depth = N;
 		List<DFEVector<DFEComplex>> rdx4input;
-		rdx4input = FftBufferLib.applyInputBuffer(input, N);
+		rdx4input = FftBuffer.applyInputBuffer(input, N);
 
 		List<DFEVector<DFEComplex>> fftOut;
 		if (radix2phases == 1) {
-			fftOut = ButterflyLib.butterfly(N, 0, RADIX_2, twiddleType, rdx4input);
-			fftOut = FftBufferLib.applyMixedRadixBuffer(fftOut, N);
+			fftOut = Butterfly.butterfly(N, 0, RADIX_2, twiddleType, rdx4input);
+			fftOut = FftBuffer.applyMixedRadixBuffer(fftOut, N);
 			depth /= RADIX_2;
 		} else if (radix2phases == 0) {
 			fftOut = rdx4input;
@@ -220,16 +224,16 @@ public class FourierTransform {
 		}
 
 		for (int phase = 1; phase <= radix4phases; phase++) {
-			fftOut = ButterflyLib.butterfly(N, phase, RADIX_4, twiddleType, fftOut);
+			fftOut = Butterfly.butterfly(N, phase, RADIX_4, twiddleType, fftOut);
 
 			if(phase < radix4phases) {
-				fftOut = FftBufferLib.applyInterStageBuffer(fftOut, depth);
+				fftOut = FftBuffer.applyInterStageBuffer(fftOut, depth);
 				depth /= RADIX_4;
 			}
 		}
 
 		if (doBitReverse) {
-			fftOut = FftBufferLib.applyBitReverseBuffer(fftOut, N);
+			fftOut = FftBuffer.applyBitReverseBuffer(fftOut, N);
 		}
 
 		if (doIfft) {

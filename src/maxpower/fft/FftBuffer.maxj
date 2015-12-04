@@ -24,7 +24,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * @author Stephen Girdlestone
  * @author Nils Voss
  */
-public class FftBufferLib {
+public class FftBuffer {
 
 	static final int ADDRESSING_BIT_REVERSE_RAM0[][] = {{0, 1, 2, 3}, {0, 2, 3, 1}, {0, 3, 1, 2}};
 	static final int ADDRESSING_BIT_REVERSE_RAM1[][] = {{0, 1, 2, 3}, {1, 3, 0, 2}, {3, 2, 1, 0}, {2, 0, 3, 1}};
@@ -99,7 +99,7 @@ public class FftBufferLib {
 		return unpackOutput(outputTranspose, input[0].getType());
 	}
 
-	private static <T extends KernelObject<T>> List<T>transpose(List<T> input, int numOutputs) {
+	private static <T extends KernelObject<T>> List<T> transpose(List<T> input, int numOutputs) {
 		KernelLib kernel = input[0].getKernel();
 
 		List<DFEVar> packedInput = packInput(input);

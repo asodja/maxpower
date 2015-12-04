@@ -31,6 +31,19 @@ public class Complex  implements Cloneable {
 		return new Complex(real + number.real, imag + number.imag);
 	}
 
+	public Complex mul(Complex number) {
+		return new Complex(real * number.real - imag * number.imag,
+				real * number.imag + imag * number.real);
+	}
+
+	public Complex conjugate() {
+		return new Complex(real, -imag);
+	}
+
+	public Complex divideBy(double number) {
+		return new Complex(real / number, imag / number);
+	}
+
 	public double real() {
 		return real;
 	}
