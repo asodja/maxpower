@@ -7,6 +7,7 @@ import maxpower.kernel.mem.Transpose;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Params;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
@@ -41,7 +42,7 @@ public class FftBuffer {
 	 * @param radix Radix of the fft stages connected to the buffer.
 	 * @return Data to be feed into the next fft stage.
 	 */
-	protected static <T extends KernelObject<T>> List<T> applyInterStageBuffer(List<T> input, int fftSize) {
+	static <T extends KernelObject<T>> List<T> applyInterStageBuffer(List<T> input, int fftSize) {
 		int numPipes = FourierTransform.NUM_FFT_PIPES;
 
 		if (fftSize % numPipes != 0) {
@@ -77,13 +78,15 @@ public class FftBuffer {
 
 	/**
 	 * Buffer used to arrange the input data for the fft
-	 * Only tested for 4 Pipes and a Radix of 4.
 	 * @param input Input data
 	 * @param fftSize Size of the fft
 	 * @return Data ready to be feed into the first fft stage
 	 */
-	protected static <T extends KernelObject<T>> List<T> applyInputBuffer(List<T> input, int fftSize) {
-		int numPipes = FourierTransform.NUM_FFT_PIPES;
+	static <T extends KernelObject<T>> List<T> applyInputBuffer(List<T> input, int fftSize) {
+		int numPipes = input.size();
+		if (numPipes != 4) {
+			throw new IllegalArgumentException("The input buffer only works for 4 pipes.");
+		}
 
 		List<DFEVar> packedInput = packInput(input);
 
@@ -156,7 +159,7 @@ public class FftBuffer {
 	 * height    medium dimension
 	 * depth     slow dimension
 	 **/
-	protected static DFEVar transpose(DFEVar in, int width, int height, int depth) {
+	static DFEVar transpose(DFEVar in, int width, int height, int depth) {
 		KernelLib owner = in.getKernel();
 
 		if (width != depth) {
@@ -193,12 +196,15 @@ public class FftBuffer {
 
 	/**
 	 * Buffer used to rearrange the date between the dual radix 2 stage and the first radix 4 stage
-	 * Only tested for 4 Pipes.
 	 * @param input Input data
 	 * @param fftSize Size of the fft
 	 * @return Data ready to be feed in the first fft stage
 	 */
-	protected static <T extends KernelObject<T>> List<T> applyMixedRadixBuffer(List<T> input, int fftSize) {
+	static <T extends KernelObject<T>> List<T> applyMixedRadixBuffer(List<T> input, int fftSize) {
+		if (input.size() != 4) {
+			throw new IllegalArgumentException("The mixed radix buffer only works for 4 pipes.");
+		}
+
 		KernelLib owner = input[0].getKernel();
 
 		List<DFEVar> packedInput = packInput(input);
@@ -272,18 +278,17 @@ public class FftBuffer {
 
 	/**
 	 * Bit reverse the result of the FFT.
-	 * This will break for not equal to 4 pipes and non power of 2 input sizes
 	 * @param input fft results.
 	 * @param fftSize Size of the fft.
 	 * @return bit reversed result of the fft.
 	 */
-	protected static  <T extends KernelObject<T>> List<T> applyBitReverseBuffer(List<T> input, int fftSize) {
+	static  <T extends KernelObject<T>> List<T> applyBitReverseBuffer(List<T> input, int fftSize) {
 		KernelLib owner = input[0].getKernel();
 
 		DFEVector<DFEVar> packedInput = DFEVectorType.newInstance(packInput(input));
 
-		if (!MathUtils.isPowerOf2(fftSize) && fftSize >= 32) {
-			throw new RuntimeException("The bit reverse buffer currently only works for 4 pipes and " +
+		if (!(MathUtils.isPowerOf2(fftSize) && fftSize >= 32 && input.size() != 4)) {
+			throw new IllegalArgumentException("The bit reverse buffer currently only works for 4 pipes and " +
 					"fft sizes of power of 2. Also the fft size has to be at least 32");
 		}
 
@@ -304,7 +309,7 @@ public class FftBuffer {
 		// Now we have to calculate the addresses
 
 		DFEVar addresses[] = new DFEVar[4];
-		DFEVar ramAddressLowerBits = state ? bitReverse(position) : position;
+		DFEVar ramAddressLowerBits = state ? Bitops.bitreverse(position) : position;
 		for (int i = 0; i < 4; i++) {
 			DFEVar ramAddressUpperBits = getUpperBitsForBitReverse(owner, i, fftSize);
 			addresses[i] = ramAddressUpperBits + i # ramAddressLowerBits;
@@ -329,21 +334,6 @@ public class FftBuffer {
 		}
 
 		return unpackOutput(owner.stream.offset(result, ramSize), input[0].getType());
-	}
-
-	/**
-	 * Function to reverse the bits of a given DFEVar.
-	 * @param x DFEVar to revert the bits of.
-	 * @return Bit reversed DFEVar
-	 */
-	private static DFEVar bitReverse(DFEVar x) {
-		DFEVar result = x.slice(0);
-
-		for (int i = 1; i < x.getType().getTotalBits(); i++) {
-			result = result # x.slice(i);
-		}
-
-		return result.cast(x.getType());
 	}
 
 	private static DFEVar getUpperBitsForBitReverse(KernelLib owner, int ramNumber, int fftSize) {
