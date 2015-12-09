@@ -1,5 +1,6 @@
 package maxpower.kernel.io;
 
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
@@ -14,16 +15,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  *
  * @author David Packwood
  */
-public class VariableWidthIO extends KernelLib {
-
-
-	/**
-	 * Create an io port of a given maximum width so that a variable width input can be created.
-	 * @param owner The Kernel or KernelLib the object is being used in.
-	 */
-	public VariableWidthIO(KernelLib owner) {
-		super (owner);
-	}
+public class VariableWidthIO {
 
 	/**
 	 * Create an input of a given maximum width which can return a variable number of valid data (up to the maximum width) each cycle from the input.
@@ -32,33 +24,76 @@ public class VariableWidthIO extends KernelLib {
 	 * @param numToRead A stream giving the number of valid number of inputs needed on a given cycle (each value must be leq the maximum width for defined behaviour)
 	 * @return A DFEVector of size maximum width, the first <code> numToRead </code> elements of which are read linearly from the input.
 	 */
-	public <T extends KernelObjectVectorizable<T,?>> DFEVector<T> input(String name, DFEVectorType<T> wideInputType, DFEVar numToRead) {
+	public static <T extends KernelObjectVectorizable<T,?>>
+	DFEVector<T> input(String name, DFEVectorType<T> wideInputType, DFEVar numToRead) {
+		Kernel owner = numToRead.getKernel();
+		return getInput(name, wideInputType, numToRead, false, 0, owner.constant.var(false));
+	}
+
+	/**
+	 * Create an input of a given maximum width which can return a variable number of valid data (up to the maximum width) each cycle from the input.
+	 * @param name The name of the input as referenced in the manager
+	 * @param wideInputType A DFEVectorType representing the input port
+	 * @param numToRead A stream giving the number of valid number of inputs needed on a given cycle (each value must be leq the maximum width for defined behaviour)
+	 * @param portWidth The width of the port in hardware in bits (128,1536,3072).
+	 * @return A DFEVector of size maximum width, the first <code> numToRead </code> elements of which are read linearly from the input.
+	 */
+
+	public static <T extends KernelObjectVectorizable<T,?>>
+	DFEVector<T> input(String name, DFEVectorType<T> wideInputType, DFEVar numToRead, int portWidth) {
+		Kernel owner = numToRead.getKernel();
+		return getInput(name, wideInputType, numToRead, true, portWidth, owner.constant.var(false));
+	}
+
+	/**
+ * Create an input of a given maximum width which can return a variable number of valid data (up to the maximum width) each cycle from the input.
+	 * @param name The name of the input as referenced in the manager
+	 * @param wideInputType A DFEVectorType representing the input port
+	 * @param numToRead A stream giving the number of valid number of inputs needed on a given cycle (each value must be leq the maximum width for defined behaviour)
+	 * @param portWidth The width of the port in hardware in bits (128,1536,3072).
+	 * @param doFlush Flush the buffer on this cycle.
+	 * @return A DFEVector of size maximum width, the first <code> numToRead </code> elements of which are read linearly from the input.
+	 */
+	public static <T extends KernelObjectVectorizable<T,?>>
+	DFEVector<T> input(String name, DFEVectorType<T> wideInputType, DFEVar numToRead, int portWidth, DFEVar doFlush) {
+		return getInput(name, wideInputType, numToRead, true, portWidth, doFlush);
+	}
+
+	private static <T extends KernelObjectVectorizable<T,?>>
+	DFEVector<T> getInput(String name, DFEVectorType<T> wideInputType, DFEVar numToRead, boolean useACIO, int portWidth, DFEVar doFlush){
+		Kernel owner = numToRead.getKernel();
 		int maxWidth = wideInputType.getSize();
 		int shiftBits = MathUtils.bitsToAddress(maxWidth);
-		DFEType shiftType = dfeUInt(shiftBits);
-		DFEType carryType = dfeUInt(shiftBits + 1);
-		DFEVar isFirstTick = control.count.pulse(1);
+		DFEType shiftType = KernelLib.dfeUInt(shiftBits);
+		DFEType carryType = KernelLib.dfeUInt(shiftBits + 1);
 		DFEVar need = numToRead.cast(carryType);
 
-		DFEVar carried = carryType.newInstance(this);
-		DFEVar used = isFirstTick ?  0 : stream.offset(carried,-1);
-		optimization.pushPipeliningFactor(0);
+		DFEVar isFirstTick = owner.control.count.pulse(1);
+		DFEVar carried = carryType.newInstance(owner);
+		DFEVar used = isFirstTick ?  0 : owner.stream.offset(carried,-1);
+		owner.optimization.pushPipeliningFactor(0);
 		DFEVar neededWidth = used + need;
 		carried <== (neededWidth < maxWidth) ?  neededWidth : neededWidth - maxWidth;
-		optimization.popPipeliningFactor();
+		owner.optimization.popPipeliningFactor();
 
 		DFEVar needToGet = (neededWidth > maxWidth) | ((used === 0) & (need !== 0));
-		DFEVector<T> wideInput = io.input(name, wideInputType, needToGet);
+		DFEVector<T> wideInput;
+		if (useACIO){
+			AspectChangeIO acio = new AspectChangeIO(owner,portWidth);
+			wideInput = acio.input(name, wideInputType, needToGet, doFlush);
+		} else {
+			wideInput = owner.io.input(name, wideInputType, needToGet);
+		}
 
-		DFEVector<T> output = wideInputType.newInstance(this);
-		DFEVector<T> remainder = wideInputType.newInstance(this);
-		DFEVector<T> prev = neededWidth > maxWidth ?  stream.offset(remainder, -1) : wideInput ;
+		DFEVector<T> output = wideInputType.newInstance(owner);
+		DFEVector<T> remainder = wideInputType.newInstance(owner);
+		DFEVector<T> prev = neededWidth > maxWidth ?  owner.stream.offset(remainder, -1) : wideInput ;
 		for (int i = 0; i < maxWidth; i++) {
 			output[i] <== (i < used) ?  wideInput[i] : prev[i];
 		}
-		optimization.pushPipeliningFactor(0);
+		owner.optimization.pushPipeliningFactor(0);
 		remainder <==  needToGet ? wideInput: prev;
-		optimization.popPipeliningFactor();
+		owner.optimization.popPipeliningFactor();
 
 		DFEVector<T> outputRotated = output.rotateElementsRight(used.cast(shiftType));
 		return outputRotated;
@@ -70,39 +105,98 @@ public class VariableWidthIO extends KernelLib {
 	 * @param wideData A DFEVector of incoming data, with valid data at the beginning
 	 * @param numToWrite The amount of valid data received this cycle
 	 */
-	public <T extends KernelObjectVectorizable<T,?>> void output(String name, DFEVector<T> wideData, DFEVar numToWrite) {
+	public static <T extends KernelObjectVectorizable<T,?>> void output(String name, DFEVector<T> wideData, DFEVar numToWrite) {
 
+		Kernel owner = wideData.getKernel();
+
+		OutputData<T> output = makeOutput(name, wideData, numToWrite);
+		owner.io.output(name, output.getOutput(), output.getOutput().getType(), output.getNeedToWrite());
+	}
+
+	/**
+	 * Create an output which will accumulate a variable amount of input data each cycle and output it through a fixed width io port.
+	 * @param name The name of the output as referenced in the manager
+	 * @param wideData A DFEVector of incoming data, with valid data at the beginning
+	 * @param numToWrite The amount of valid data received this cycle
+	 * @param portWidth The width of the port in hardware in bits (128,1536,3072).
+	 */
+	public static <T extends KernelObjectVectorizable<T,?>> void output(String name, DFEVector<T> wideData, DFEVar numToWrite, int portWidth) {
+
+		Kernel owner = wideData.getKernel();
+		AspectChangeIO acio = new AspectChangeIO(owner,portWidth);
+
+		OutputData<T> output = makeOutput(name, wideData, numToWrite);
+		acio.output(name, output.getOutput(), output.getNeedToWrite(), owner.constant.var(false));
+	}
+
+	/**
+	 * Create an output which will accumulate a variable amount of input data each cycle and output it through a fixed width AspectChangeIO port.
+	 * @param name The name of the output as referenced in the manager
+	 * @param wideData A DFEVector of incoming data, with valid data at the beginning
+	 * @param numToWrite The amount of valid data received this cycle
+	 * @param portWidth The width of the port in hardware in bits (128,1536,3072).
+	 * @param doFlush Flush the buffer on this cycle.
+	 */
+	public static <T extends KernelObjectVectorizable<T,?>> void output(String name, DFEVector<T> wideData, DFEVar numToWrite, int portWidth, DFEVar doFlush) {
+
+		Kernel owner = wideData.getKernel();
+		AspectChangeIO acio = new AspectChangeIO(owner,portWidth);
+
+		OutputData<T> output = makeOutput(name, wideData, numToWrite);
+		acio.output(name, output.getOutput(), output.getNeedToWrite() | doFlush, doFlush);
+	}
+
+	private static class OutputData<T extends KernelObjectVectorizable<T,?>> {
+
+		private final DFEVector<T> output;
+		private final DFEVar needToWrite;
+
+		public DFEVector<T> getOutput() {
+			return output;
+		}
+
+		public DFEVar getNeedToWrite() {
+			return needToWrite;
+		}
+
+		OutputData(DFEVector<T> outputIn, DFEVar needToWriteIn){
+			output = outputIn;
+			needToWrite = needToWriteIn;
+		}
+	}
+
+	private static <T extends KernelObjectVectorizable<T,?>> OutputData<T> makeOutput(String name, DFEVector<T> wideData, DFEVar numToWrite){
+		Kernel owner = wideData.getKernel();
 		DFEVectorType<T> wideDataType = wideData.getType();
 		int maxWidth = wideDataType.getSize();
 		int shiftBits = MathUtils.bitsToAddress(maxWidth);
-		DFEType shiftType = dfeUInt(shiftBits);
-		DFEType carryType = dfeUInt(shiftBits + 1);
-		DFEVar isFirstTick = control.count.pulse(1);
+		DFEType shiftType = KernelLib.dfeUInt(shiftBits);
+		DFEType carryType = KernelLib.dfeUInt(shiftBits + 1);
 		DFEVar receiving = numToWrite.cast(carryType);
 
-
-		DFEVar carried = carryType.newInstance(this);
-		DFEVar used = isFirstTick ?  0 : stream.offset(carried,-1);
-		optimization.pushPipeliningFactor(0);
+		DFEVar isFirstTick = owner.control.count.pulse(1);
+		DFEVar carried = carryType.newInstance(owner);
+		DFEVar used = isFirstTick ?  0 : owner.stream.offset(carried,-1);
+		owner.optimization.pushPipeliningFactor(0);
 		DFEVar neededWidth = used + receiving;
 		carried <== (neededWidth < maxWidth) ?  neededWidth : neededWidth - maxWidth;
-		optimization.popPipeliningFactor();
+		owner.optimization.popPipeliningFactor();
 
 		DFEVector<T> wideDataRotated = wideData.rotateElementsLeft(used.cast(shiftType));
-		DFEVector<T> output = wideDataType.newInstance(this);
-		DFEVector<T> remainder = wideDataType.newInstance(this);
-		DFEVector<T> prev = stream.offset(remainder, -1);
+		DFEVector<T> output = wideDataType.newInstance(owner);
+		DFEVector<T> remainder = wideDataType.newInstance(owner);
+		DFEVector<T> prev = owner.stream.offset(remainder, -1);
 		for (int i = 0; i < maxWidth; i++) {
 			output[i] <== (i < used) ? prev[i] : wideDataRotated[i];
 		}
 
 		DFEVar needToWrite = neededWidth >= maxWidth;
-		optimization.pushPipeliningFactor(0);
+		owner.optimization.pushPipeliningFactor(0);
 		remainder <==  needToWrite ? wideDataRotated : output;
-		optimization.popPipeliningFactor();
+		owner.optimization.popPipeliningFactor();
 
-		io.output(name, output, wideDataType, needToWrite);
-
+		OutputData<T> outputAsClass = new OutputData<T>(output,needToWrite);
+		return outputAsClass;
 	}
 
 }
