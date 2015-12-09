@@ -287,7 +287,7 @@ public class FftBuffer {
 
 		DFEVector<DFEVar> packedInput = DFEVectorType.newInstance(packInput(input));
 
-		if (!(MathUtils.isPowerOf2(fftSize) && fftSize >= 32 && input.size() != 4)) {
+		if (!(MathUtils.isPowerOf2(fftSize) && fftSize >= 32 && input.size() == 4)) {
 			throw new IllegalArgumentException("The bit reverse buffer currently only works for 4 pipes and " +
 					"fft sizes of power of 2. Also the fft size has to be at least 32");
 		}
@@ -309,7 +309,7 @@ public class FftBuffer {
 		// Now we have to calculate the addresses
 
 		DFEVar addresses[] = new DFEVar[4];
-		DFEVar ramAddressLowerBits = state ? Bitops.bitreverse(position) : position;
+		DFEVar ramAddressLowerBits = state ? Bitops.bitreverse(position) : position.pack();
 		for (int i = 0; i < 4; i++) {
 			DFEVar ramAddressUpperBits = getUpperBitsForBitReverse(owner, i, fftSize);
 			addresses[i] = ramAddressUpperBits + i # ramAddressLowerBits;
