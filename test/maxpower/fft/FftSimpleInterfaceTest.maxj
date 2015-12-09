@@ -1,0 +1,222 @@
+package maxpower.fft;
+
+import static org.junit.Assert.assertTrue;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+import maxpower.fft.utils.Complex;
+import maxpower.fft.utils.Fft;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+
+public class FftSimpleInterfaceTest {
+
+	public final static int NUM_ITERATIONS = 11;   // Minimum of 11 iterations needed to cover complete addressing pattern
+
+	// Bound the acceptable error
+	public final static double MIN_SNR_DB = 69.0;
+
+	private static class FftTestKernel extends Kernel {
+
+		private static int NUM_FFT_PIPES;
+
+		public static DFEVectorType<DFEComplex> ioVectorType;
+		public static DFEComplexType complexType = new DFEComplexType(dfeFloat(8, 24));
+
+		FftTestKernel(KernelParameters parameters, int fftSize) {
+			super(parameters);
+
+			NUM_FFT_PIPES = FourierTransform.NUM_FFT_PIPES;
+
+			ioVectorType = new DFEVectorType<DFEComplex>(complexType, NUM_FFT_PIPES);
+
+			final DFEVector<DFEComplex> in = io.input("Input", ioVectorType);
+
+			DFEVector<DFEComplex> fftOut = FourierTransform.fft(fftSize, in);
+
+			io.output("Output", fftOut, ioVectorType);
+		}
+	}
+
+	@Test public void testFft32()         { testFft(32   ); }
+	@Test public void testFft64()         { testFft(64   ); }
+	@Test public void testFft128()        { testFft(128  ); }
+	@Test public void testFft256()        { testFft(256  ); }
+	@Test public void testFft512()        { testFft(512  ); }
+	@Test public void testFft1024()       { testFft(1024 ); }
+	@Test public void testFft2048()       { testFft(2048 ); }
+	@Test public void testFft4096()       { testFft(4096 ); }
+	@Test public void testFft8192()       { testFft(8192 ); }
+	@Test public void testFft16384()      { testFft(16384); }
+
+	public void testFft(int fftSize) {
+		long seed = System.currentTimeMillis();
+		Random rn = new Random(seed);
+
+		Complex[][] pairs       = generateInputData(rn, fftSize);
+		Complex[][] expected    = calculateExpected(pairs, fftSize);
+
+		SimulationManager manager = new SimulationManager("FftTest");
+		manager.setKernel(new FftTestKernel(manager.makeKernelParameters(), fftSize));
+		manager.logMsg("Using random seed: %d", seed);
+
+		List<Bits> bitsIn = convertInputToRaw(pairs, fftSize);
+
+		final int numKernelCycles = NUM_ITERATIONS * (fftSize / FourierTransform.NUM_FFT_PIPES);
+		manager.setInputDataRaw("Input", bitsIn);
+		manager.setKernelCycles(numKernelCycles);
+		manager.runTest();
+
+		List<Bits> bitsOut = manager.getOutputDataRaw("Output");
+
+		Complex[][] results = convertRawToOutput(bitsOut, fftSize);
+
+		double snr_db = calculateSnr(expected, results);
+
+		if (snr_db < MIN_SNR_DB) {
+			for (int i = 0; i < expected.length; i++) {
+				for (int j = 0; j < expected[i].length; j++) {
+					System.out.println("expected["+i+"]["+j+"] = " + expected[i][j].toString());
+					System.out.println("results ["+i+"]["+j+"] = " + results[i][j].toString());
+				}
+			}
+		}
+		assertTrue("SNR = " + snr_db + "dB", snr_db > MIN_SNR_DB);
+	}
+
+	/**
+	 * Convert input arrays to raw bits, ready for kernel input streams.
+	 */
+	private List<Bits> convertInputToRaw(final Complex[][] pairs, final int fftSize) {
+
+		final List<Bits> bits = new ArrayList<Bits>();
+		for (int i = 0; i < NUM_ITERATIONS; i++) {
+			for (int j = 0; j < fftSize / FourierTransform.NUM_FFT_PIPES; j++) {
+				final ArrayList<DFEComplexType.ConstantValue> value =
+					new ArrayList<DFEComplexType.ConstantValue>();
+				for (int k = 0; k < FourierTransform.NUM_FFT_PIPES; k++) {
+					value.add(new DFEComplexType.ConstantValue(
+							pairs[i][j * FourierTransform.NUM_FFT_PIPES + k].real(),
+							pairs[i][j * FourierTransform.NUM_FFT_PIPES + k].imag()));
+				}
+
+				bits.add(FftTestKernel.ioVectorType.encodeConstant(value));
+			}
+		}
+		return bits;
+	}
+
+
+	/**
+	 * Convert raw bits from kernel output streams back to standard arrays.
+	 *
+	 * This is largely the inverse of the process described for
+	 * convertRawToInput.  The results are digit-reversed, but we don't
+	 * deal with that here.
+	 */
+	private Complex[][] convertRawToOutput(List<Bits> bits, final int fftSize) {
+
+		Complex[][] results = new Complex[NUM_ITERATIONS][fftSize];
+
+		for (int i = 0; i < NUM_ITERATIONS; i++) {
+			for (int j = 0; j < fftSize / FourierTransform.NUM_FFT_PIPES; j++) {
+
+				@SuppressWarnings("rawtypes")
+				List word = FftTestKernel.ioVectorType.decodeConstant(
+						bits[i * fftSize / FourierTransform.NUM_FFT_PIPES + j]);
+
+				for (int k = 0; k < FourierTransform.NUM_FFT_PIPES; k++) {
+					DFEComplexType.ConstantValue z0 =
+						(DFEComplexType.ConstantValue) word[k];
+
+					results[i][j * FourierTransform.NUM_FFT_PIPES + k] =
+						new Complex(z0.getReal(), z0.getImaginary());
+				}
+			}
+		}
+
+		return results;
+	}
+
+	/**
+	 * Generate random input data.
+	 */
+	private Complex[][] generateInputData(Random rn, int fftSize) {
+
+		Complex[][] pairs = new Complex[NUM_ITERATIONS][fftSize];
+
+		for (int i = 0; i < NUM_ITERATIONS; i++) {
+			for (int j = 0; j < fftSize; j++) {
+				pairs[i][j] = new Complex(
+						(rn.nextDouble() - 0.5) / 1024,
+						(rn.nextDouble() - 0.5) / 1024);
+			}
+		}
+
+		return pairs;
+	}
+
+	/**
+	 * Calculate expected output for a given input set.
+	 *
+	 * This is done in double-precision maths, and can be considered "perfect".
+	 */
+	private Complex[][] calculateExpected(Complex[][] pairs, int fftSize) {
+
+		Complex[][] expected = new Complex[NUM_ITERATIONS][fftSize];
+		for (int i = 0; i < NUM_ITERATIONS; i++) {
+
+			List<Complex> a = new ArrayList<Complex>();
+
+			/* Padding */
+			for (int j = 0; j < fftSize; j++) {
+				a.add(pairs[i][j]);
+			}
+
+			/* DFT of 2 traces */
+			List<Complex> A = Fft.fft(a);
+
+			/* Digit-reversed indexing */
+			for (int j = 0; j < fftSize; j++) {
+				expected[i][j] = A[j];
+			}
+		}
+
+		return expected;
+	}
+
+	/**
+	 * Calculate signal-to-noise ratio (SNR) between a reference output, and
+	 * the actual output.
+	 */
+	private static double calculateSnr(Complex[][] ref, Complex[][] out) {
+		double S = 0.0;
+		double N = 0.0;
+
+		for (int i = 0; i < ref.length; i++) {
+			for (int j = 0; j < ref[i].length; j++) {
+
+				Complex res = ref[i][j];
+				Complex exp = out[i][j];
+
+				Complex err = exp.sub(res);
+
+				S += (exp.real() * exp.real()) + (exp.imag() * exp.imag());
+				N += (err.real() * err.real()) + (err.imag() * err.imag());
+			}
+		}
+
+		return 10 * Math.log10(S / N);
+	}
+}

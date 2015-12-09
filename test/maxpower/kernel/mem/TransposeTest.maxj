@@ -1,0 +1,187 @@
+package maxpower.kernel.mem;
+
+import static org.junit.Assert.assertArrayEquals;
+
+import java.util.List;
+import java.util.Random;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+public class TransposeTest {
+
+	final static int NUM_RUNS = 5;
+
+	final static int NUM_DATA_RUNS = 10;
+
+	private static class TransposeTestKernel extends Kernel{
+
+		public TransposeTestKernel(KernelParameters parameters, final int width, final int height) {
+			super(parameters);
+
+			stream.suppressOffsetVectorWarnings();
+
+			DFEVar input = io.input("input", dfeFloat(8, 24));
+
+			io.output("output", dfeFloat(8, 24)) <==
+				stream.offset(Transpose.transpose(input, width, height, constant.var(true)),
+						width * height);
+		}
+	}
+
+	private static class TransposeMultiPipeTestKernel extends Kernel{
+
+		public DFEVectorType<DFEVar> dataType;
+
+		public TransposeMultiPipeTestKernel(KernelParameters parameters, final int width, final int height,
+				final int pipes) {
+			super(parameters);
+
+			stream.suppressOffsetVectorWarnings();
+
+			dataType = new DFEVectorType<DFEVar>(dfeFloat(8, 24), pipes);
+
+			DFEVector<DFEVar> input = io.input("input", dataType);
+
+			io.output("output", dataType) <==
+				stream.offset(Transpose.transpose(input, width, height, constant.var(true)),
+						width * height / pipes);
+		}
+	}
+
+	@Test
+	public void test2DTransposeWrapper() {
+		long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		for (int i = 0; i < NUM_RUNS; i++) {
+			final int width  = Math.abs(rng.nextInt()) % 32 + 1;
+			final int height = Math.abs(rng.nextInt()) % 32 + 1;
+			test2DTranspose(width, height, seed);
+		}
+	}
+
+	@Test
+	public void test2DTransposeMultiPipeWrapper() {
+		long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		for (int i = 0; i < NUM_RUNS; i++) {
+			final int pipes  = Math.abs(rng.nextInt()) % 8 + 2;
+			final int width  =
+				MathUtils.leastCommonMultiple(pipes, Math.abs(rng.nextInt()) % 16 + 1) + pipes;
+			final int height =
+				MathUtils.leastCommonMultiple(pipes, Math.abs(rng.nextInt()) % 16 + 1) + pipes;
+			test2DTransposeMultiPipe(width, height, pipes, seed);
+		}
+	}
+
+	@Test
+	public void test2DTransposeMultiPipePowerOf2PipesWrapper() {
+		long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		for (int i = 0; i < NUM_RUNS; i++) {
+			final int pipes  = 1 << (Math.abs(rng.nextInt()) % 4 + 1);
+			final int width  =
+				MathUtils.leastCommonMultiple(pipes, Math.abs(rng.nextInt()) % 16 + 1) + pipes;
+			test2DTransposeMultiPipe(width, width, pipes, seed);
+		}
+	}
+
+	private void test2DTranspose(final int width, final int height, final long seed) {
+		double input[]    = new double[NUM_DATA_RUNS * height * width];
+		double actual[]   = new double[NUM_DATA_RUNS * height * width];
+		double expected[] = new double[NUM_DATA_RUNS * height * width];
+
+		int pos = 0;
+		for (int i = 0; i < NUM_DATA_RUNS; i++) {
+			for (int j = 0; j < height; j++) {
+				for (int k = 0; k < width; k++) {
+					input[pos++] = j * width + k;
+				}
+			}
+		}
+		pos = 0;
+		for (int i = 0; i < NUM_DATA_RUNS; i++) {
+			for(int j = 0; j < width; j++) {
+				for(int k = 0; k < height; k++) {
+					expected[pos++] = j + k * width;
+				}
+			}
+		}
+
+		SimulationManager manager = new SimulationManager("Transposer2DTest");
+		TransposeTestKernel kernel = new TransposeTestKernel(manager.makeKernelParameters(), width, height);
+		manager.setKernel(kernel);
+		manager.logMsg("Seed: %d, Width: %d, Height: %d", seed, width, height);
+		manager.build();
+
+		manager.setKernelCycles(NUM_DATA_RUNS * height * width);
+		manager.setInputData("input", input);
+		manager.run();
+
+		actual = manager.getOutputDataArray("output");
+
+		assertArrayEquals("Transposer", expected, actual, 0);
+	}
+
+	private void test2DTransposeMultiPipe(final int width, final int height, final int pipes, final long seed) {
+		double input[]    = new double[NUM_DATA_RUNS * height * width];
+		double actual[]   = new double[NUM_DATA_RUNS * height * width];
+		double expected[] = new double[NUM_DATA_RUNS * height * width];
+
+		int pos = 0;
+		for (int i = 0; i < NUM_DATA_RUNS; i++) {
+			for (int j = 0; j < height; j++) {
+				for (int k = 0; k < width; k++) {
+					input[pos++] = j * width + k;
+				}
+			}
+		}
+		pos = 0;
+		for (int i = 0; i < NUM_DATA_RUNS; i++) {
+			for(int j = 0; j < width; j++) {
+				for(int k = 0; k < height; k++) {
+					expected[pos++] = j + k * width;
+				}
+			}
+		}
+
+		SimulationManager manager = new SimulationManager("TransposerMultiPipe2DTest");
+		TransposeMultiPipeTestKernel kernel =
+			new TransposeMultiPipeTestKernel(manager.makeKernelParameters(), width, height, pipes);
+		manager.setKernel(kernel);
+		manager.logMsg("Seed: %d, Width: %d, Height: %d, Pipes: %d", seed, width, height, pipes);
+		manager.build();
+
+		Bits inputBits[] = new Bits[NUM_DATA_RUNS * height * width / pipes];
+		for (int i = 0; i < NUM_DATA_RUNS * height * width / pipes; i++) {
+			double cycleData[] = new double[pipes];
+			for (int j = 0; j < pipes; j++) {
+				cycleData[j] = input[i * pipes + j];
+			}
+			inputBits[i] = kernel.dataType.encodeConstant(cycleData);
+		}
+
+		manager.setKernelCycles(NUM_DATA_RUNS * height * width / pipes);
+		manager.setInputDataRaw("input", inputBits);
+		manager.run();
+
+		Bits[] actualBits = manager.getOutputDataRawArray("output");
+		for (int i = 0; i < NUM_DATA_RUNS * height * width / pipes; i++ ) {
+			@SuppressWarnings("rawtypes")
+			List word = kernel.dataType.decodeConstant(actualBits[i]);
+			for (int j = 0; j < pipes; j++) {
+				actual[i * pipes + j] = (Double) word[j];
+			}
+		}
+
+		assertArrayEquals("Transposer", expected, actual, 0);
+	}
+}
