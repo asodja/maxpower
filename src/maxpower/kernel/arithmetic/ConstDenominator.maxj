@@ -133,12 +133,17 @@ public class ConstDenominator {
 			DFEFix newType = Kernel.dfeUInt(newSize);
 			DFEVar newLhs  = numerator.slice(1, newSize).cast(newType);
 
+			int newResultBits = Math.min(resultBits, newSize);
+
 			ConstDenominator newDenom = new ConstDenominator(m_denom / 2);
-			ConstDivModResult result = newDenom.divModAsRHS(newLhs, resultBits);
+			ConstDivModResult result = newDenom.divModAsRHS(newLhs, newResultBits);
 			//add the remained bit back on
 			DFEVar remainder = result.getRemainder() # numerator[0];
 			remainder = remainder.cast(Kernel.dfeUInt(remainder.getType().getTotalBits()));
-			return new ConstDivModResult(result.getQuotient(), remainder);
+			//add the zero back on the front of the quotient if result bits changed
+			DFEVar quotient = result.getQuotient().cast(Kernel.dfeUInt(resultBits));
+
+			return new ConstDivModResult(quotient, remainder);
 		}
 
 		// if denom too big for this method - revert to standard division

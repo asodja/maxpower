@@ -1,0 +1,284 @@
+package maxpower.fft;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+/**
+ * Class for a mixed-radix Fast Fourier Transform implementation of a size 2^N.
+ *
+ * This methods process 4 inputs at a time, and will output continuously (after an
+ * offset to allow the first values go through all FFT stages). The input is
+ * expected as for a radix-4 FFT, i.e. 4 values per cycle.
+ *
+ * Multiple parallel FFTs can be performed using the same function call assuming they
+ * are running in phase. Please mind that if you reuse the same fft the input has to
+ * be scheduled to arrive in the same time. It might be cheaper to do multiple
+ * distinct ffts to save scheduling resources.
+ *
+ * @author Stephen Girdlestone
+ * @author Simon Tilbury
+ * @author Nils Voss
+ */
+public class FourierTransform {
+
+	// Expose useful parameters
+	// Attention: If you change one of this constants everything will break.
+	public static final int NUM_FFT_PIPES = 4;
+	public static final int RADIX_4 = 4;
+	public static final int RADIX_2 = 2;
+
+	/**
+	 * Fourier transform input using the Fast Fourier Transform.
+	 * @param N The size of the FFT (Must be a power of two or a power of
+	 * 2 and be greater than 32).
+	 * @param input {@link DFEVector} containing complex streams of FFT inputs (4 samples per cycle).
+	 * @return {@link DFEVector} containing complex streams of FFT outputs (4 coefficients per cycle).
+	 */
+	public static DFEVector<DFEComplex> fft(int N, DFEVector<DFEComplex> input) {
+		List<DFEVector<DFEComplex>> inputList = new ArrayList<DFEVector<DFEComplex>>();
+		inputList.add(input);
+		return transform(N, inputList, 1, false)[0];
+	}
+
+	/**
+	 * Fourier transform input using the Fast Fourier Transform.
+	 * This function performs the fft on multiple inputs and reuses
+	 * some of the resources (i. e. Twiddle factors).
+	 * Please mind that if you reuse the same fft the input has to
+	 * be scheduled to arrive in the same time. It might be cheaper to do multiple
+	 * distinct ffts to save scheduling resources.
+	 *
+	 * @param N The size of the FFT (Must be a power of two or a power of
+	 * 2 and be greater than 32).
+	 * @param input {@link List} containing {@link DFEVector} of complex streams
+	 * of FFT inputs (4 samples per cycle).
+	 * @return {@link List} containing {@link DFEVector} of complex streams of FFT outputs
+	 * (4 coefficients per cycle).
+	 */
+	public static List<DFEVector<DFEComplex>> multiFft(int N, List<DFEVector<DFEComplex>> inputs) {
+		return transform(N, inputs, inputs.size(), false);
+	}
+
+	/**
+	 * Fourier transform input using the Fast Fourier Transform.
+	 * This function performs the fft on multiple inputs and reuses
+	 * some of the resources (i. e. Twiddle factors).
+	 * Please mind that if you reuse the same fft the input has to
+	 * be scheduled to arrive in the same time. It might be cheaper to do multiple
+	 * distinct ffts to save scheduling resources.
+	 *
+	 * @param N The size of the FFT (Must be a power of two or a power of
+	 * 2 and be greater than 32).
+	 * @param input {@link List} containing {@link DFEVector} of complex streams
+	 * of FFT inputs (4 samples per cycle).
+	 * @return {@link List} containing {@link DFEVector} of complex streams of FFT outputs
+	 * (4 coefficients per cycle).
+	 */
+	public static List<DFEVector<DFEComplex>> multiFft(int N, DFEVector<DFEComplex>... input) {
+		List<DFEVector<DFEComplex>> inputList = Arrays.asList(input);
+		return transform(N, inputList, inputList.size(), false);
+	}
+
+	/**
+	 * Inverse Fourier transform input using the inverse Fast Fourier Transform.
+	 * @param N The size of the IFFT (Must be a power of two or a power of
+	 * 2 and be greater than 32).
+	 * @param input {@link DFEVector} containing complex streams of FFT inputs (4 samples per cycle).
+	 * @return {@link DFEVector} containing complex streams of FFT outputs (4 coefficients per cycle).
+	 */
+	public static DFEVector<DFEComplex> ifft(int N, DFEVector<DFEComplex> input) {
+		List<DFEVector<DFEComplex>> inputList = new ArrayList<DFEVector<DFEComplex>>();
+		inputList.add(input);
+		return transform(N, inputList, 1, true)[0];
+	}
+
+	/**
+	 * Inverse Fourier transform input using the inverse Fast Fourier Transform.
+	 * This function performs the ifft on multiple inputs and reuses
+	 * some of the resources (i. e. Twiddle factors).
+	 * Please mind that if you reuse the same fft the input has to
+	 * be scheduled to arrive in the same time. It might be cheaper to do multiple
+	 * distinct ffts to save scheduling resources.
+	 *
+	 * @param N The size of the IFFT (Must be a power of two or a power of
+	 * 2 and be greater than 32).
+	 * @param input {@link List} containing {@link DFEVector} of complex streams
+	 * of FFT inputs (4 samples per cycle).
+	 * @return {@link List} containing {@link DFEVector} of complex streams of FFT outputs
+	 * (4 coefficients per cycle).
+	 */
+	public static List<DFEVector<DFEComplex>> multiIfft(int N, List<DFEVector<DFEComplex>> inputs) {
+		return transform(N, inputs, inputs.size(), true);
+	}
+
+	/**
+	 * Inverse Fourier transform input using the inverse Fast Fourier Transform.
+	 * This function performs the ifft on multiple inputs and reuses
+	 * some of the resources (i. e. Twiddle factors).
+	 * Please mind that if you reuse the same fft the input has to
+	 * be scheduled to arrive in the same time. It might be cheaper to do multiple
+	 * distinct ffts to save scheduling resources.
+	 *
+	 * @param N The size of the IFFT (Must be a power of two or a power of
+	 * 2 and be greater than 32).
+	 * @param input {@link List} containing {@link DFEVector} of complex streams
+	 * of FFT inputs (4 samples per cycle).
+	 * @return {@link List} containing {@link DFEVector} of complex streams of FFT outputs
+	 * (4 coefficients per cycle).
+	 */
+	public static List<DFEVector<DFEComplex>> multiIfft(int N, DFEVector<DFEComplex>... input) {
+		List<DFEVector<DFEComplex>> inputList = Arrays.asList(input);
+		return transform(N, inputList, inputList.size(), true);
+	}
+
+	private static List<DFEVector<DFEComplex>> transform(int N,
+			List<DFEVector<DFEComplex>> input, int numFFTs, boolean doIfft) {
+		DFEType twiddleType;
+
+		if (input[0][0].getReal().getType() instanceof DFEFloat) {
+			twiddleType = input[0][0].getReal().getType();
+		} else {
+			twiddleType = Kernel.dfeFixOffset(input[0][0].getReal().getType().getTotalBits(),
+					1.0, SignMode.TWOSCOMPLEMENT);
+		}
+
+		List<DFEVector<DFEComplex>> codedOutput =
+			transform(N, twiddleType, true, doIfft, packFftInput(input, numFFTs));
+		return unpackFftOutput(codedOutput, numFFTs);
+	}
+
+	/**
+	 * Fourier transform input using the Fast Fourier Transform. The decimation used is a
+	 * decimation in frequency as the twiddle factor is multiplied after the
+	 * linear combination of the inputs.
+	 *
+	 * This function is a more advanced interface to provide more low level access
+	 * to the fft. You should try to use fft() or ifft() and only use this interface
+	 * in special circumstances.
+	 *
+	 * The input is expected in the order ready for the radix-2 butterfly,
+	 * e.g. values 0/128/256/384 then 1/129/257/385 and so on. The output will
+	 * be in bit-reversed order.
+	 *
+	 * @param N The size of the FFT (Must be a power of two or a power of
+	 * 2 and be greater than 32).
+	 * @param twiddleType Generic {@link DFEType type} of real and imaginary
+	 * values for the twiddle factors (Twiddle factors are generated between
+	 * -1 and +1.
+	 * @param doBitReverse Flag signalling if the bit reverse should be
+	 * undone by this function.
+	 * @param doIfft flag signalling if an ifft should be executed.
+	 * @param input {@link List} containing complex streams of FFT inputs.
+	 * @return {@link List} containing complex streams of FFT outputs
+	 */
+	public static List<DFEVector<DFEComplex>> transform(int N, DFEType twiddleType,
+			boolean doBitReverse, boolean doIfft, List<DFEVector<DFEComplex>> input) {
+		KernelLib owner = input[0].getKernel();
+
+		owner.stream.suppressOffsetVectorWarnings();
+
+		if (doIfft) {
+			// Do complex conjugate
+			for (int i = 0; i < input.size(); i++) {
+				DFEVector<DFEComplex> vector = input[i].getType().newInstance(owner);
+				for (int j = 0; j < input[i].getSize(); j++) {
+					vector[j] <== input[i][j].conjugate();
+				}
+				input.set(i, vector);
+			}
+		}
+
+		if (N < 16 || !MathUtils.isPowerOf2(N)) {
+			throw new RuntimeException("4 pipe FFT currently only supports sizes that are 2^N for N > 4 " +
+					"(If the result gets reordered to be as expected N > 5).");
+		}
+		int exponent = MathUtils.bitsToAddress(N);
+		int radix4phases = exponent / 2;
+		int radix2phases = exponent % 2;
+
+		int depth = N;
+		List<DFEVector<DFEComplex>> rdx4input;
+		rdx4input = FftBuffer.applyInputBuffer(input, N);
+
+		List<DFEVector<DFEComplex>> fftOut;
+		if (radix2phases == 1) {
+			fftOut = Butterfly.butterfly(N, 0, RADIX_2, twiddleType, rdx4input);
+			fftOut = FftBuffer.applyMixedRadixBuffer(fftOut, N);
+			depth /= RADIX_2;
+		} else if (radix2phases == 0) {
+			fftOut = rdx4input;
+		} else {
+			throw new RuntimeException("Number of radix 2 stages must be either 0 or 1 (negative is impossible," +
+					" and 2 should be a radix 4 stage).");
+		}
+
+		for (int phase = 1; phase <= radix4phases; phase++) {
+			fftOut = Butterfly.butterfly(N, phase, RADIX_4, twiddleType, fftOut);
+
+			if(phase < radix4phases) {
+				fftOut = FftBuffer.applyInterStageBuffer(fftOut, depth);
+				depth /= RADIX_4;
+			}
+		}
+
+		if (doBitReverse) {
+			fftOut = FftBuffer.applyBitReverseBuffer(fftOut, N);
+		}
+
+		if (doIfft) {
+			// Do complex conjugate
+			for (int i = 0; i < fftOut.size(); i++) {
+				DFEVector<DFEComplex> vector = fftOut[i].getType().newInstance(owner);
+				for (int j = 0; j < fftOut[i].getSize(); j++) {
+					vector[j] <== fftOut[i][j].conjugate() / N;
+				}
+				fftOut.set(i, vector);
+			}
+		}
+
+		return fftOut;
+	}
+
+	private static List<DFEVector<DFEComplex>> packFftInput(List<DFEVector<DFEComplex>> input, int nFFT) {
+		List<DFEVector<DFEComplex>> list = new ArrayList<DFEVector<DFEComplex>>();
+		List<List<DFEComplex>> inputList = new ArrayList<List<DFEComplex>>();
+		for (int i = 0; i < NUM_FFT_PIPES; i++) {
+			inputList.add(new ArrayList<DFEComplex>());
+			for (int j = 0; j < input.size(); j++) {
+				inputList[i].add(input[j][i]);
+			}
+		}
+
+		for (int i = 0; i < NUM_FFT_PIPES; i++) {
+			list.add(DFEVectorType.newInstance(inputList[i]));
+		}
+		return list;
+	}
+
+	private static List<DFEVector<DFEComplex>> unpackFftOutput(List<DFEVector<DFEComplex>> input,
+			int nFFT) {
+		DFEVectorType<DFEComplex> outputVectorType =
+			new DFEVectorType<DFEComplex>(input.get(0).getType().getContainedType(), NUM_FFT_PIPES);
+
+		List<DFEVector<DFEComplex>> result = new ArrayList<DFEVector<DFEComplex>>();
+		for (int i = 0; i < nFFT; i++) {
+			DFEVector<DFEComplex> singleFftResult = outputVectorType.newInstance(input[0].getKernel());
+			for (int j = 0; j < NUM_FFT_PIPES; j++) {
+				singleFftResult[j] <== input[j][i];
+			}
+			result.add(singleFftResult);
+		}
+		return result;
+	}
+}

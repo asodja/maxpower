@@ -1,0 +1,59 @@
+package maxpower.fft.utils;
+
+import java.util.Arrays;
+import java.util.List;
+
+public final class Fft {
+
+	public static List<Complex> fft(List<Complex> in) {
+		final int N = in.size();
+
+		Complex[] data = new Complex[N];
+
+		return Arrays.asList(fftCPU(N, in.toArray(data)));
+	}
+
+	public static List<Complex> ifft(List<Complex> in) {
+		final int N = in.size();
+
+		Complex[] data = new Complex[N];
+		data = in.toArray(data);
+		for (int i = 0; i < data.length; i++) {
+			data[i] = data[i].conjugate();
+		}
+
+		Complex[] result = fftCPU(N, data);
+
+		for (int i = 0; i < data.length; i++) {
+			data[i] = data[i].conjugate().divideBy(N);
+		}
+
+		return Arrays.asList(result);
+	}
+
+	private static Complex[] fftCPU(int n, Complex[] values) {
+		if (n > 1) {
+			Complex[] g = new Complex[n / 2];
+			Complex[] u = new Complex[n / 2];
+
+			// reorder data
+			for (int i = 0; i < n / 2; i++) {
+				g[i] = values[i * 2];
+				u[i] = values[i * 2 + 1];
+			}
+
+			// calculate fft recursively
+			g = fftCPU(n / 2, g);
+			u = fftCPU(n / 2, u);
+
+			// combine results
+			for (int k = 0; k < n / 2; k++) {
+				double x = -2.0 * Math.PI * k / n;
+				Complex expFactor = new Complex(Math.cos(x), Math.sin(x));
+				values[k]         = g[k] + u[k].mul(expFactor);
+				values[k + n / 2] = g[k] - u[k].mul(expFactor);
+			}
+		}
+		return values;
+	}
+}

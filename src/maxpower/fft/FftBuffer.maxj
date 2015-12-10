@@ -1,0 +1,405 @@
+package maxpower.fft;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import maxpower.kernel.mem.Transpose;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Params;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+/**
+ * Containing all buffer used in the fft
+ *
+ * @author Stephen Girdlestone
+ * @author Nils Voss
+ */
+public class FftBuffer {
+
+	static final int ADDRESSING_BIT_REVERSE_RAM0[][] = {{0, 1, 2, 3}, {0, 2, 3, 1}, {0, 3, 1, 2}};
+	static final int ADDRESSING_BIT_REVERSE_RAM1[][] = {{0, 1, 2, 3}, {1, 3, 0, 2}, {3, 2, 1, 0}, {2, 0, 3, 1}};
+	static final int ADDRESSING_BIT_REVERSE_RAM2[][] = {{0, 1, 2, 3}, {2, 0, 1, 3}, {1, 2, 0, 3}};
+	static final int ADDRESSING_BIT_REVERSE_RAM3[][] = {{0, 1, 2, 3}, {3, 1, 2, 0}};
+	static final int BIT_REVERSE_RAM_LATENCY[] = {3, 4, 3, 2};
+	static final int SWAPPING_BIT_REVERSE[][] = {{0, 2, 1, 3}, {2, 0, 3, 1}, {1, 3, 2, 0}, {3, 1, 0, 2}};
+
+	/**
+	 * Creates a buffer to store data between two stages in the fft.
+	 *
+	 * @param input Data from the previous fft stage.
+	 * @param fftSize Size of the fft and as a result also size of the buffer.
+	 * @param radix Radix of the fft stages connected to the buffer.
+	 * @return Data to be feed into the next fft stage.
+	 */
+	static <T extends KernelObject<T>> List<T> applyInterStageBuffer(List<T> input, int fftSize) {
+		int numPipes = FourierTransform.NUM_FFT_PIPES;
+
+		if (fftSize % numPipes != 0) {
+			throw new IllegalArgumentException("fftSize must be divisible by numPipes.");
+		}
+		int bufferDepth = fftSize / numPipes;
+
+		List<DFEVar> packedInput = packInput(input);
+		DFEVector<DFEVar> output;
+		int height = bufferDepth / (numPipes * numPipes);
+		if (height > 0) {
+			List<DFEVar> transposedInput = new ArrayList<DFEVar>(numPipes);
+
+			transposedInput.addAll(transpose(packedInput, numPipes));
+
+			DFEVector<DFEVar> packedData = DFEVectorType.newInstance(transposedInput);
+			DFEVectorType<DFEVar> packedType = packedData.getType();
+
+			output = packedType.unpack(transpose(packedData.pack(), numPipes,
+					height, numPipes));
+		} else {
+			DFEVector<DFEVar> packedData = DFEVectorType.newInstance(packedInput);
+			DFEVectorType<DFEVar> packedType = packedData.getType();
+
+			output = packedType.unpack(Transpose.transpose(packedData.pack(),
+					bufferDepth / numPipes, numPipes));
+		}
+
+		List<DFEVar> transposedOutput = transpose(output.getElementsAsList(), numPipes);
+
+		return unpackOutput(transposedOutput, input[0].getType());
+	}
+
+	/**
+	 * Buffer used to arrange the input data for the fft
+	 * @param input Input data
+	 * @param fftSize Size of the fft
+	 * @return Data ready to be feed into the first fft stage
+	 */
+	static <T extends KernelObject<T>> List<T> applyInputBuffer(List<T> input, int fftSize) {
+		int numPipes = input.size();
+		if (numPipes != 4) {
+			throw new IllegalArgumentException("The input buffer only works for 4 pipes.");
+		}
+
+		List<DFEVar> packedInput = packInput(input);
+
+		DFEVector<DFEVar> transposerInput = DFEVectorType.newInstance(packedInput);
+
+		DFEVector<DFEVar> transposerResult =
+			transposerInput.getType().unpack(Transpose.transpose(transposerInput.pack(),
+					fftSize / numPipes / numPipes, numPipes));
+
+		// Now we finish with a small 4 x 4 transpose in the end
+		List<DFEVar> outputTranspose = transpose(transposerResult.getElementsAsList(), numPipes);
+
+		return unpackOutput(outputTranspose, input[0].getType());
+	}
+
+	private static <T extends KernelObject<T>> List<T> transpose(List<T> input, int numOutputs) {
+		KernelLib kernel = input[0].getKernel();
+
+		List<DFEVar> packedInput = packInput(input);
+
+		List<DFEVector<DFEVar>> inputToMux = new ArrayList<DFEVector<DFEVar>>(numOutputs);
+
+		for (int i = 0; i < input.size(); i++) {
+			DFEVectorType<DFEVar> arrayType = new DFEVectorType<DFEVar>(packedInput[i].getType(), numOutputs);
+			DFEVector<DFEVar> array = arrayType.newInstance(kernel);
+			for (int j = 0; j < numOutputs; j++) {
+				array.connect(j, kernel.stream.offset(packedInput[i], j));
+			}
+			inputToMux.add(kernel.stream.offset(array, -i));
+		}
+		Params params = kernel.control.count.makeParams(MathUtils.bitsToAddress(input.size()))
+				.withMax(input.size());
+		DFEVar  select = kernel.control.count.makeCounter(params).getCount();
+		DFEVector<DFEVar> packedOutput = kernel.control.mux(select, inputToMux);
+
+		return unpackOutput(packedOutput, input[0].getType());
+	}
+
+	/** Example:
+	 * Assume width (fast) of 5 and height (medium) of 3 and depth (slow) of 2, with values
+	 *
+	 * <table>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <tbody>
+	 *     <tr><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td></tr>
+	 *     <tr><td>10</td><td>11</td><td>12</td><td>13</td><td>14</td></tr>
+	 *     <tr><td>20</td><td>21</td><td>22</td><td>23</td><td>24</td></tr>
+	 *   </tbody>
+	 * </table>
+	 *
+	 * <table>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <col width="25%"/>
+	 *   <tbody>
+	 *     <tr><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td></tr>
+	 *     <tr><td>15</td><td>16</td><td>17</td><td>18</td><td>19</td></tr>
+	 *     <tr><td>25</td><td>26</td><td>27</td><td>28</td><td>29</td></tr>
+	 *   </tbody>
+	 * </table>
+	 *
+	 *	Then the output will return
+	 *		0, 15, 5, 20, 10, 25, 1, 16, 6, 21, ...
+	 *
+	 * width     fast dimension
+	 * height    medium dimension
+	 * depth     slow dimension
+	 **/
+	static DFEVar transpose(DFEVar in, int width, int height, int depth) {
+		KernelLib owner = in.getKernel();
+
+		if (width != depth) {
+			throw new IllegalArgumentException("Width and depth must be equal!");
+		}
+		if (height == 1) {
+			return Transpose.transpose(in, width, depth);
+		}
+
+		int N = width * height * depth;
+
+		DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(N));
+
+		CounterChain readCounter = owner.control.count.makeCounterChain();
+
+		DFEVar changePattern = readCounter.addCounter(2,      1);
+		DFEVar slow          = readCounter.addCounter(width,  1).cast(addressType);
+		DFEVar medium        = readCounter.addCounter(height, 1).cast(addressType);
+		DFEVar fast          = readCounter.addCounter(depth,  1).cast(addressType);
+
+		DFEVar cycleCounter = owner.control.count.simpleCounter(MathUtils.bitsToAddress(N), N);
+
+		DFEVar address = changePattern === 0 ? cycleCounter :
+				(fast * height + medium) * width + slow;
+
+		DFEVar writeAddress = address;
+		DFEVar readAddress = address;
+
+		Memory<DFEVar> buffer = owner.mem.alloc(in.getType(), N);
+		buffer.write(writeAddress, in, owner.constant.var(true));
+
+		return owner.stream.offset(buffer.read(readAddress), N);
+	}
+
+	/**
+	 * Buffer used to rearrange the date between the dual radix 2 stage and the first radix 4 stage
+	 * @param input Input data
+	 * @param fftSize Size of the fft
+	 * @return Data ready to be feed in the first fft stage
+	 */
+	static <T extends KernelObject<T>> List<T> applyMixedRadixBuffer(List<T> input, int fftSize) {
+		if (input.size() != 4) {
+			throw new IllegalArgumentException("The mixed radix buffer only works for 4 pipes.");
+		}
+
+		KernelLib owner = input[0].getKernel();
+
+		List<DFEVar> packedInput = packInput(input);
+		List<DFEVar> mergedInput = new ArrayList<DFEVar>();
+		List<DFEVector<DFEVar>> smallVectorList = new ArrayList<DFEVector<DFEVar>>();
+		DFEVectorType<DFEVar> smallVectorType;
+		for (int i = 0; i < packedInput.size() / 2; i++) {
+			DFEVector<DFEVar> smallVector =
+				DFEVectorType.newInstance(packedInput.subList(i * 2, (i + 1) * 2));
+			smallVectorList.add(smallVector);
+		}
+		smallVectorType = smallVectorList[0].getType();
+		for (int i = 0; i < smallVectorList.size(); i++) {
+			mergedInput.add(smallVectorList[i].pack());
+		}
+		DFEVector<DFEVar> mergedInputVector = DFEVectorType.newInstance(mergedInput);
+
+		int ramSize = fftSize / FourierTransform.NUM_FFT_PIPES;
+
+		CounterChain counterChain = owner.control.count.makeCounterChain();
+		// if we write in linear order or in our crazy pattern
+		DFEVar state       = counterChain.addCounter(2, 1);
+		// We have for states that determine rotates, swaps and addresses
+		DFEVar bufferState = counterChain.addCounter(2, 1);
+		DFEVar position =
+			counterChain.addCounter(ramSize / 2, 1).cast(Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize)));
+
+		// First we write to the buffer. We have to rotate buffer state times
+		mergedInputVector = mergedInputVector.rotateElementsLeft(bufferState);
+
+		// Now we can finally access the RAM and do some reading and writing
+		ArrayList<DFEVar> lookupResults = new ArrayList<DFEVar>();
+		DFEVar dataCount =
+			bufferState.cast(Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize))) * (ramSize / 2) + position;
+		// Set addresses
+		List<DFEVar> addresses = new ArrayList<DFEVar>();
+		addresses.add(dataCount);
+		addresses.add(bufferState ? position : position + (ramSize / 2));
+		for (int i = 0; i < 2; i++) {
+			Memory<DFEVar> buffer = owner.mem.alloc(mergedInputVector[0].getType(), ramSize);
+			DFEVar finalAddress = state ? addresses[i] : dataCount;
+			lookupResults.add(buffer.read(finalAddress));
+			buffer.write(finalAddress, mergedInputVector[i], owner.constant.var(true));
+		}
+
+		List<DFEVector<DFEVar>> resultVectors = new ArrayList<DFEVector<DFEVar>>();
+		for (int i = 0; i < lookupResults.size(); i++) {
+			DFEVector<DFEVar> smallVector = smallVectorType.unpack(lookupResults[i]);
+			smallVector = owner.stream.offset(smallVector, ramSize);
+			resultVectors.add(smallVector);
+		}
+
+		List<DFEVector<DFEVar>> resultsReordered = new ArrayList<DFEVector<DFEVar>>();
+		for (int i = 0; i < 2; i++) {
+			DFEVector<DFEVar> smallVector = smallVectorType.newInstance(owner);
+			for (int j = 0; j < resultVectors.size(); j++) {
+				smallVector[j] <== resultVectors[j][i];
+			}
+			resultsReordered.add(smallVector.rotateElementsLeft(bufferState));
+		}
+
+		List<DFEVar> results = new ArrayList<DFEVar>();
+		for (int i = 0; i < resultsReordered.size(); i++) {
+			for (int j = 0; j < 2; j++) {
+				results.add(resultsReordered[i][j]);
+			}
+		}
+
+		return unpackOutput(results, input[0].getType());
+	}
+
+	/**
+	 * Bit reverse the result of the FFT.
+	 * @param input fft results.
+	 * @param fftSize Size of the fft.
+	 * @return bit reversed result of the fft.
+	 */
+	static  <T extends KernelObject<T>> List<T> applyBitReverseBuffer(List<T> input, int fftSize) {
+		KernelLib owner = input[0].getKernel();
+
+		DFEVector<DFEVar> packedInput = DFEVectorType.newInstance(packInput(input));
+
+		if (!(MathUtils.isPowerOf2(fftSize) && fftSize >= 32 && input.size() == 4)) {
+			throw new IllegalArgumentException("The bit reverse buffer currently only works for 4 pipes and " +
+					"fft sizes of power of 2. Also the fft size has to be at least 32");
+		}
+
+		int ramSize = fftSize / FourierTransform.NUM_FFT_PIPES;
+
+		int N = MathUtils.bitsToAddress(fftSize);
+
+		CounterChain counterChain = owner.control.count.makeCounterChain();
+		// if we write in linear order or in our crazy pattern
+		DFEVar state       = counterChain.addCounter(2, 1);
+		// We have four states that determine rotates, swaps and addresses
+		DFEVar bufferState = counterChain.addCounter(4, 1);
+		DFEVar position    = counterChain.addCounter(1 << (N - 4), 1);
+
+		// First we write to the buffer. We have to rotate buffer state times
+		packedInput = packedInput.rotateElementsLeft(bufferState);
+
+		// Now we have to calculate the addresses
+
+		DFEVar addresses[] = new DFEVar[4];
+		DFEVar ramAddressLowerBits = state ? Bitops.bitreverse(position) : position.pack();
+		for (int i = 0; i < 4; i++) {
+			DFEVar ramAddressUpperBits = getUpperBitsForBitReverse(owner, i, fftSize);
+			addresses[i] = ramAddressUpperBits + i # ramAddressLowerBits;
+			addresses[i] = addresses[i].cast(Kernel.dfeUInt(2 + N - 4));
+		}
+
+		// Now we can finally access the RAM and do some reading and writing
+		ArrayList<DFEVar> lookupResults = new ArrayList<DFEVar>();
+		for (int i = 0; i < 4; i++) {
+			Memory<DFEVar> buffer = owner.mem.alloc(packedInput[0].getType(), ramSize);
+			buffer.write(addresses[i], packedInput[i], owner.constant.var(true));
+			lookupResults.add(buffer.read(addresses[i]));
+		}
+
+		// Now we still have to swap the output a bit
+		ArrayList<ArrayList<DFEVar>> swapMuxSelectMuxInput = getMagicNumbersForSwappingBitReverse(owner);
+
+		DFEVector<DFEVar> result = packedInput.getType().newInstance(owner);
+		for (int i = 0; i < 4; i++) {
+			DFEVar swapMuxSelect = owner.control.mux(bufferState, swapMuxSelectMuxInput[i]);
+			result[i] <== owner.control.mux(swapMuxSelect, lookupResults);
+		}
+
+		return unpackOutput(owner.stream.offset(result, ramSize), input[0].getType());
+	}
+
+	private static DFEVar getUpperBitsForBitReverse(KernelLib owner, int ramNumber, int fftSize) {
+		final int bufferCount = 4;
+
+		ArrayList<int[][]> ramAddressUpperBitsPatternList = new ArrayList<int[][]>();
+		ramAddressUpperBitsPatternList.add(ADDRESSING_BIT_REVERSE_RAM0);
+		ramAddressUpperBitsPatternList.add(ADDRESSING_BIT_REVERSE_RAM1);
+		ramAddressUpperBitsPatternList.add(ADDRESSING_BIT_REVERSE_RAM2);
+		ramAddressUpperBitsPatternList.add(ADDRESSING_BIT_REVERSE_RAM3);
+
+		DFEType muxSelectType =
+			Kernel.dfeUInt(MathUtils.bitsToAddress(BIT_REVERSE_RAM_LATENCY[ramNumber] * bufferCount));
+
+		CounterChain counterChain = owner.control.count.makeCounterChain();
+		DFEVar patternState =
+			counterChain.addCounter(BIT_REVERSE_RAM_LATENCY[ramNumber], 1).cast(muxSelectType);
+		DFEVar bufferState = counterChain.addCounter(bufferCount, 1).cast(muxSelectType);
+		counterChain.addCounter(fftSize /
+				(bufferCount * FourierTransform.NUM_FFT_PIPES), 1).setReportOnUnused(false);
+
+		ArrayList<DFEVar> upperBitsPatternMuxInput = new ArrayList<DFEVar>();
+
+		for (int i = 0; i < BIT_REVERSE_RAM_LATENCY[ramNumber]; i++) {
+			for (int j = 0; j < bufferCount; j++) {
+				upperBitsPatternMuxInput.add(owner.constant.var(Kernel.dfeUInt(2),
+						ramAddressUpperBitsPatternList[ramNumber][i][j]));
+			}
+		}
+
+		DFEVar muxSelect = bufferCount * patternState + bufferState;
+
+		return owner.control.mux(muxSelect, upperBitsPatternMuxInput);
+	}
+
+	private static ArrayList<ArrayList<DFEVar>> getMagicNumbersForSwappingBitReverse(KernelLib owner) {
+		ArrayList<ArrayList<DFEVar>> swapMuxSelectMuxInput = new ArrayList<ArrayList<DFEVar>>();
+		for (int i = 0; i < 4; i++) {
+			swapMuxSelectMuxInput.add(new ArrayList<DFEVar>());
+			for (int j = 0; j < 4; j++) {
+				swapMuxSelectMuxInput[i].add(owner.constant.var(Kernel.dfeUInt(2),
+						SWAPPING_BIT_REVERSE[i][j]));
+			}
+		}
+		return swapMuxSelectMuxInput;
+	}
+
+	private static <T extends KernelObject<T>> List<DFEVar> packInput(List<T> input) {
+		List<DFEVar> packedInput = new ArrayList<DFEVar>(input.size());
+		for (int i = 0; i < input.size(); i++) {
+			packedInput.add(input[i].pack());
+		}
+		return packedInput;
+	}
+
+	private static <T extends KernelObject<T>> List<T> unpackOutput(DFEVector<DFEVar> packedOutput,
+			KernelType<T> type) {
+		return unpackOutput(packedOutput.getElementsAsList(), type);
+	}
+
+	private static <T extends KernelObject<T>> List<T> unpackOutput(List<DFEVar> packedOutput,
+			KernelType<T> type) {
+		List<T> output = new ArrayList<T>(packedOutput.size());
+		for (int i = 0; i < packedOutput.size(); i++) {
+			output.add(type.unpack(packedOutput[i]));
+		}
+		return output;
+	}
+}
