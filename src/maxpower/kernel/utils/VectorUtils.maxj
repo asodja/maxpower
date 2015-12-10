@@ -1,6 +1,7 @@
 package maxpower.kernel.utils;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
@@ -69,6 +70,20 @@ public class VectorUtils {
 		}
 		List<T> output = first.getElementsAsList();
 		output.addAll(second.getElementsAsList());
+		return DFEVectorType.newInstance(output);
+	}
+
+	/**
+	 * Rotate a DFEVector by a specified distance
+	 *
+	 * @param DFEVector to be rotated
+	 * @param Distance to be rotated
+	 * @return The rotated DFEVector
+	 */
+	public static <T extends KernelObjectVectorizable<T,?>>
+	DFEVector<T> rotate(DFEVector<T> input, int distance) {
+		List<T> output = new ArrayList<T>(input.getElementsAsList());
+		Collections.rotate(output, distance);
 		return DFEVectorType.newInstance(output);
 	}
 
