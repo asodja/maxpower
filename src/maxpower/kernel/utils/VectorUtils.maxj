@@ -74,10 +74,10 @@ public class VectorUtils {
 	}
 
 	/**
-	 * Rotate a DFEVector by a specified distance
+	 * Rotate the elements in a DFEVector by a specified distance. Use positive distances to rotate the vector to the right, negative to rotate to the left.
 	 *
-	 * @param DFEVector to be rotated
-	 * @param Distance to be rotated
+	 * @param input The DFEVector to be rotated
+	 * @param distance The distance to rotate the DFEVector, distance can be positive or negative and larger than the size of the vector (will then rotate by distance modulo size).
 	 * @return The rotated DFEVector
 	 */
 	public static <T extends KernelObjectVectorizable<T,?>>
