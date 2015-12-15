@@ -103,13 +103,13 @@ public class VectorUtils {
 		List<List<T>> list = new ArrayList<List<T>>();
 		for (int i = 0; i < input[0].getSize(); i++) {
 			list.add(new ArrayList<T>());
-			for (int j = 0; j < input.size(); j++) {
-				list[i].add(input[j][i]);
+			for (DFEVector<T> v : input) {
+				list[i].add(v[i]);
 			}
 		}
 
-		for (int i = 0; i < input[0].getSize(); i++) {
-			result.add(DFEVectorType.newInstance(list[i]));
+		for (List<T> l : list) {
+			result.add(DFEVectorType.newInstance(l));
 		}
 		return result;
 	}
