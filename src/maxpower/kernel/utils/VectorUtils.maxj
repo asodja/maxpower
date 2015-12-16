@@ -88,14 +88,14 @@ public class VectorUtils {
 	}
 
 	/**
-	 * Switches the dimensions of a List of DFEVecotors.
+	 * Switches the dimensions of a List of DFEVectors.
 	 * E.g. you have a list of 3 DFEVectors of size 2 then the result will be a List
 	 * of 2 DFEVectors with size 3. The first element of all 3 DFEVectors will end up in the
 	 * first DFEVector in the list and the second element of all 3 DFEVectors will end up in the second
 	 * DFEVector in the list.
 	 *
 	 * @param input List of DFEVectors
-	 * @param Row to colum transposed List of DFEVEctors
+	 * @param Row to column transposed List of DFEVectors
 	 */
 	public static <T extends KernelObjectVectorizable<T,?>>
 	List<DFEVector<T>> rowsToColumns(List<DFEVector<T>> input) {
@@ -115,14 +115,14 @@ public class VectorUtils {
 	}
 
 	/**
-	 * Switches the dimensions of a DFEVector of DFEVecotors.
+	 * Switches the dimensions of a DFEVector of DFEVectors.
 	 * E.g. you have a DFEVector of 3 DFEVectors of size 2 then the result will be a DFEVector
 	 * of 2 DFEVectors with size 3. The first element of all 3 DFEVectors will end up in the
 	 * first DFEVector in the outer DFEVector and the second element of
 	 * all 3 DFEVectors will end up in the second DFEVector in the outer DFEVector.
 	 *
 	 * @param input List of DFEVectors
-	 * @param Row to colum transposed List of DFEVEctors
+	 * @param Row to column transposed DFEVector of DFEVectors
 	 */
 	public static <T extends KernelObjectVectorizable<T,?>>
 	DFEVector<DFEVector<T>> rowsToColumns(DFEVector<DFEVector<T>> input) {
