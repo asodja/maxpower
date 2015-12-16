@@ -100,16 +100,12 @@ public class VectorUtils {
 	public static <T extends KernelObjectVectorizable<T,?>>
 	List<DFEVector<T>> rowsToColumns(List<DFEVector<T>> input) {
 		List<DFEVector<T>> result = new ArrayList<DFEVector<T>>();
-		List<List<T>> list = new ArrayList<List<T>>();
 		for (int i = 0; i < input[0].getSize(); i++) {
-			list.add(new ArrayList<T>());
+			List<T> elements = new ArrayList<T>(input.size());
 			for (DFEVector<T> v : input) {
-				list[i].add(v[i]);
+				elements.add(v[i]);
 			}
-		}
-
-		for (List<T> l : list) {
-			result.add(DFEVectorType.newInstance(l));
+			result.add(DFEVectorType.newInstance(elements));
 		}
 		return result;
 	}
