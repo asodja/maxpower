@@ -56,8 +56,8 @@ public class Transpose {
 	 * @param height slow dimension
 	 **/
 	public static <T extends KernelObjectVectorizable<T,?>>
-	DFEVector<T> transpose(DFEVector<T> in, int width, int height) {
-		return in.getKernel().stream.offset(transpose(in, width, height, in.getKernel().constant.var(true)),
+	DFEVector<T> transposeElementWise(DFEVector<T> in, int width, int height) {
+		return in.getKernel().stream.offset(transposeElementWise(in, width, height, in.getKernel().constant.var(true)),
 				width * height / in.getSize());
 	}
 
@@ -87,7 +87,7 @@ public class Transpose {
 	 * @param height slow dimension
 	 **/
 	public static <T extends KernelObjectVectorizable<T,?>>
-	DFEVector<T> transpose(DFEVector<T> in, int width, int height, DFEVar enable) {
+	DFEVector<T> transposeElementWise(DFEVector<T> in, int width, int height, DFEVar enable) {
 		KernelLib owner = in.getKernel();
 
 		final int pipes = in.getSize();
