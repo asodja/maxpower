@@ -52,7 +52,7 @@ public class TransposeTest {
 			DFEVector<DFEVar> input = io.input("input", dataType);
 
 			io.output("output", dataType) <==
-				stream.offset(Transpose.transpose(input, width, height, constant.var(true)),
+				stream.offset(Transpose.transposeElementWise(input, width, height, constant.var(true)),
 						width * height / pipes);
 		}
 	}
