@@ -55,15 +55,19 @@ public class FftBuffer {
 		DFEVector<DFEVar> output;
 		int height = bufferDepth / (numPipes * numPipes);
 		if (height > 0) {
+			// 4x4 transpose with stream offsets
 			List<DFEVar> transposedInput = transpose(packedInput, numPipes);
 
+			// private 3D transpose
 			output = transpose(DFEVectorType.newInstance(transposedInput), numPipes,
 					height, numPipes);
 		} else {
+			// 2D transpose based on DFEVectors
 			output = Transpose.transpose(DFEVectorType.newInstance(packedInput),
 					bufferDepth / numPipes, numPipes);
 		}
 
+		// 4x4 transpose with stream offsets
 		List<DFEVar> transposedOutput = transpose(output.getElementsAsList(), numPipes);
 
 		return unpackOutput(transposedOutput, input[0].getType());
@@ -83,6 +87,7 @@ public class FftBuffer {
 
 		List<DFEVar> packedInput = packInput(input);
 
+		// 2d Transpose based on DFEVectors
 		DFEVector<DFEVar> transposerResult = Transpose.transpose(DFEVectorType.newInstance(packedInput),
 					fftSize / numPipes / numPipes, numPipes);
 
