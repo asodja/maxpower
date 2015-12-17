@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import maxpower.kernel.utils.VectorUtils;
+
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
@@ -11,7 +13,6 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 /**
@@ -154,8 +155,8 @@ public class FourierTransform {
 		}
 
 		List<DFEVector<DFEComplex>> codedOutput =
-			transform(N, twiddleType, true, doIfft, packFftInput(input, numFFTs));
-		return unpackFftOutput(codedOutput, numFFTs);
+			transform(N, twiddleType, true, doIfft, VectorUtils.rowsToColumns(input));
+		return VectorUtils.rowsToColumns(codedOutput);
 	}
 
 	/**
@@ -248,37 +249,5 @@ public class FourierTransform {
 		}
 
 		return fftOut;
-	}
-
-	private static List<DFEVector<DFEComplex>> packFftInput(List<DFEVector<DFEComplex>> input, int nFFT) {
-		List<DFEVector<DFEComplex>> list = new ArrayList<DFEVector<DFEComplex>>();
-		List<List<DFEComplex>> inputList = new ArrayList<List<DFEComplex>>();
-		for (int i = 0; i < NUM_FFT_PIPES; i++) {
-			inputList.add(new ArrayList<DFEComplex>());
-			for (int j = 0; j < input.size(); j++) {
-				inputList[i].add(input[j][i]);
-			}
-		}
-
-		for (int i = 0; i < NUM_FFT_PIPES; i++) {
-			list.add(DFEVectorType.newInstance(inputList[i]));
-		}
-		return list;
-	}
-
-	private static List<DFEVector<DFEComplex>> unpackFftOutput(List<DFEVector<DFEComplex>> input,
-			int nFFT) {
-		DFEVectorType<DFEComplex> outputVectorType =
-			new DFEVectorType<DFEComplex>(input.get(0).getType().getContainedType(), NUM_FFT_PIPES);
-
-		List<DFEVector<DFEComplex>> result = new ArrayList<DFEVector<DFEComplex>>();
-		for (int i = 0; i < nFFT; i++) {
-			DFEVector<DFEComplex> singleFftResult = outputVectorType.newInstance(input[0].getKernel());
-			for (int j = 0; j < NUM_FFT_PIPES; j++) {
-				singleFftResult[j] <== input[j][i];
-			}
-			result.add(singleFftResult);
-		}
-		return result;
 	}
 }

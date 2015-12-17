@@ -87,4 +87,42 @@ public class VectorUtils {
 		return DFEVectorType.newInstance(output);
 	}
 
+	/**
+	 * Switches the dimensions of a List of DFEVectors.
+	 * E.g. you have a list of 3 DFEVectors of size 2 then the result will be a List
+	 * of 2 DFEVectors with size 3. The first element of all 3 DFEVectors will end up in the
+	 * first DFEVector in the list and the second element of all 3 DFEVectors will end up in the second
+	 * DFEVector in the list.
+	 *
+	 * @param input List of DFEVectors
+	 * @param Row to column transposed List of DFEVectors
+	 */
+	public static <T extends KernelObjectVectorizable<T,?>>
+	List<DFEVector<T>> rowsToColumns(List<DFEVector<T>> input) {
+		List<DFEVector<T>> result = new ArrayList<DFEVector<T>>();
+		for (int i = 0; i < input[0].getSize(); i++) {
+			List<T> elements = new ArrayList<T>(input.size());
+			for (DFEVector<T> v : input) {
+				elements.add(v[i]);
+			}
+			result.add(DFEVectorType.newInstance(elements));
+		}
+		return result;
+	}
+
+	/**
+	 * Switches the dimensions of a DFEVector of DFEVectors.
+	 * E.g. you have a DFEVector of 3 DFEVectors of size 2 then the result will be a DFEVector
+	 * of 2 DFEVectors with size 3. The first element of all 3 DFEVectors will end up in the
+	 * first DFEVector in the outer DFEVector and the second element of
+	 * all 3 DFEVectors will end up in the second DFEVector in the outer DFEVector.
+	 *
+	 * @param input List of DFEVectors
+	 * @param Row to column transposed DFEVector of DFEVectors
+	 */
+	public static <T extends KernelObjectVectorizable<T,?>>
+	DFEVector<DFEVector<T>> rowsToColumns(DFEVector<DFEVector<T>> input) {
+		return DFEVectorType.newInstance(rowsToColumns(input.getElementsAsList()));
+	}
+
 }
