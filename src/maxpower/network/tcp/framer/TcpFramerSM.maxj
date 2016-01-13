@@ -668,6 +668,7 @@ public class TcpFramerSM extends ManagerStateMachine implements SMPrinting {
 
 			CASE (FramerStates.ConnectionRecordPipe) {
 				// Load defaults
+				errorCode.next <== FramerErrorCodes.NoError.ordinal();
 				connectionRecordWriteBack.next <== connectionRecords.dataOut;
 				levelReg.next <== rLevel.cast(levelReg.getType()) + eventSize.cast(levelReg.getType());
 				header.next <== rHeader;
@@ -703,7 +704,6 @@ public class TcpFramerSM extends ManagerStateMachine implements SMPrinting {
 			}
 
 			CASE (FramerStates.EvalConnection) {
-				errorCode.next <== FramerErrorCodes.NoError.ordinal();
 				requestedBytesCounter.next <== 0;
 				currentState.next <== FramerStates.CommitBack;
 				rxBytesCounter.next <== 0;
