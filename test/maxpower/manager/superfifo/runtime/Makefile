@@ -1,5 +1,5 @@
 NAME=superFifoTest
-DESIGNNAME=SuperFifoTest_HW
+DESIGNNAME=SuperFifoTest_SIM
 CC=gcc
 
 USE_SLIC = 1

@@ -77,7 +77,7 @@ class SuperFifoTest extends NetworkManager {
 	}
 
 	private SuperFifoTest(boolean sim) {
-		super(new EngineParameters("SuperFifoTestStallFix_" + (sim ? "SIM" : "HW"), DFEModel.ISCA,
+		super(new EngineParameters("SuperFifoTest_" + (sim ? "SIM" : "HW"), DFEModel.ISCA,
 				sim ? com.maxeler.maxcompiler.v2.build.EngineParameters.Target.DFE_SIM :
 					com.maxeler.maxcompiler.v2.build.EngineParameters.Target.DFE));
 
@@ -97,7 +97,7 @@ class SuperFifoTest extends NetworkManager {
 
 		MemoryManager lmemOrganizer = new MemoryManager(this);
 
-		FifoIO io = SuperFifo.create(this, "superFifo", DFETypeFactory.dfeUInt(192), 1024*1024*1024L, lmemOrganizer);
+		FifoIO io = SuperFifo.create(this, "superFifo", DFETypeFactory.dfeUInt(192), 32*1024L, lmemOrganizer);
 
 		KernelBlock dataGen = addKernel(new DataGen(makeKernelParameters("dataGenKernel"), fifoWidth));
 
@@ -110,7 +110,7 @@ class SuperFifoTest extends NetworkManager {
 	}
 
 	public static void main(String [] args) {
-		boolean isSim = false;
+		boolean isSim = true;
 		SuperFifoTest m = new SuperFifoTest(isSim);
 		m.build();
 	}

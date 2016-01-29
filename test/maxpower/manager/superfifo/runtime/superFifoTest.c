@@ -40,8 +40,8 @@ typedef struct PACKED {
 } single_entry_t;
 
 #define PAGE_ALIGNMENT 4096
-#define MAX_DEPTH (128*1024*1024)
-#define READ_LEN (1024*1024)
+#define MAX_DEPTH (1024*1024)
+#define READ_LEN (1024)
 
 uint8_t compare(single_entry_t* outputData, uint64_t configBase, size_t len)
 {
