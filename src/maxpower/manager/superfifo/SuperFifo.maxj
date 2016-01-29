@@ -183,6 +183,8 @@ public class SuperFifo extends ManagerStateMachine {
 	private final PipelinedMux pmux;
 	private final DFEsmStateValue latencyCounter;
 	private final DFEsmStateValue externalWriteStall;
+	private DFEsmStateValue externalWritePointer_r;
+	private DFEsmStateValue externalReadPointer_r;
 
 
 
@@ -239,7 +241,10 @@ public class SuperFifo extends ManagerStateMachine {
 		writeInputRegValid = _State.value(state, dfeBool(), false, "writeInputRegValid");
 
 		externalWritePointer = _State.value(state, dfeUInt(1 + MathUtils.bitsToAddress(superFifoDepth)), 0, "externalWritePointer");
+		externalWritePointer_r  = _State.value(state, dfeUInt(1 + MathUtils.bitsToAddress(superFifoDepth)), 0, "externalWritePointer_r");
 		externalReadPointer = _State.value(state, dfeUInt(1 + MathUtils.bitsToAddress(superFifoDepth)), 0, "externalReadPointer");
+		externalReadPointer_r  = _State.value(state, dfeUInt(1 + MathUtils.bitsToAddress(superFifoDepth)), 0, "externalReadPointer_r");
+
 		externalReadNow  = _State.value(state, dfeBool(), false, "externalReadNow");
 		externalReadNow_r = _State.value(state, dfeBool(), false, "externalReadNow_r");
 		inboundStagingReg  = _State.value(state, dfeUInt(burstSizeBits), "inboundStagingReg");
@@ -297,6 +302,12 @@ public class SuperFifo extends ManagerStateMachine {
 		internalFifo.input.dataIn <== internalFifoInputReg;
 		internalFifo.input.writeEnable <== internalFifoInputRegValid;
 
+		externalReadPointer_r.next <== externalReadPointer;
+		externalWritePointer_r.next <== externalWritePointer;
+
+		IF (externalWritePointer !== externalWritePointer_r | externalReadPointer !== externalReadPointer_r) {
+			printf("External Pointers: Write --> %6d , %6d <-- Read\n", externalWritePointer, externalReadPointer);
+		}
 
 		internalFifoInputReg.next <== stagingFifo.output.dataOut;
 		stagingFifo.output.readEnable <== false;
@@ -333,6 +344,7 @@ public class SuperFifo extends ManagerStateMachine {
 
 			CASE (States.PushBurst) {
 				IF (~externalWriteStall) {
+					printf("Writer [PushBurst]: offloading burst... 0x%x\n", outboundStagingRegLoadEnable);
 					stagingFifo.output.readEnable <== true;
 					IF (outboundStagingRegLoadEnable[wordsPerBurst-1] !== true) {
 						outboundStagingRegLoadEnable.next <== SMUtils.shiftLeft(this, outboundStagingRegLoadEnable, 1);
@@ -342,6 +354,8 @@ public class SuperFifo extends ManagerStateMachine {
 						currentState.next <== States.ExternalFifo;
 						externalWritePointer.next <== externalWritePointer + 1;
 					}
+				} ELSE {
+					outboundStagingRegLoadEnable.next <== outboundStagingRegLoadEnable;
 				}
 			}
 		}

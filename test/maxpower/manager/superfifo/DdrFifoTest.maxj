@@ -31,7 +31,7 @@ public class DdrFifoTest extends CustomManager {
 		DFELink readMemStream = addStreamFromOnCardMemory("readMemStream", ctrlGroup);
 		ctrlGroup.finalise();
 
-		StateMachineBlock ddrFifo = addStateMachine("ddrFifo", new DdrFifo(this, 1000000, 16 * 1024 * 1024,
+		StateMachineBlock ddrFifo = addStateMachine("ddrFifo", new DdrFifo(this, 0, 32 * 1024,
 				ctrlGroup.getStreamIndexIdWithinGroup("writeMemStream"),
 				ctrlGroup.getStreamIndexIdWithinGroup("readMemStream"),
 				0, 1));
