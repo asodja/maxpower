@@ -1,0 +1,82 @@
+package maxpower.kernel.control;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+
+/**
+ * Creates a boolean stream which is active for a DFEVar {@code numTicks}. In the expected use case this DFEVar is constant, but not known at bitstream build time (e.g. set by a scalar parameter).
+ * An example use is for switching modes on a kernel when the duration of each mode is not known at bitstream build time.
+ *
+ * In the case where the DFEVar {@code numTicks} is nonconstant the output will switch value (and remain switched forever) on the first cycle where {@code numTicks} exactly equals the number of enabled ticks so far.
+ *
+ * @author David Packwood
+ */
+public class VarPulse {
+
+	/**
+	 * Create a Boolean stream that has the same value for a fixed number of 'enabled' ticks before permanently changing to the negated value.
+	 *
+	 * @param numTicks The number of enabled ticks that the stream will take it's initial value for.
+	 * @return A stream of type dfeBool().
+	 */
+	public static DFEVar pulse(DFEVar numTicks) {
+		Kernel owner = numTicks.getKernel();
+		return pulse(numTicks, true, owner.constant.var(true));
+	}
+
+	/**
+	 * Create a Boolean stream that has the same value for a fixed number of 'enabled' ticks before permanently changing to the negated value.
+	 *
+	 * @param numTicks The number of enabled ticks that the stream will take it's initial value for.
+	 * @param enable A Boolean stream indicating if the current tick should be counted.
+	 * @return A stream of type dfeBool().
+	 */
+	public static DFEVar pulse(DFEVar numTicks, DFEVar enable) {
+		return pulse(numTicks, true, enable);
+	}
+
+	/**
+	 * Create a Boolean stream that has the same value for a fixed number of 'enabled' ticks before permanently changing to the negated value.
+	 *
+	 * @param numTicks The number of enabled ticks that the stream will take it's initial value for.
+	 * @param initialValue The intial value for the stream.
+	 * @return A stream of type dfeBool().
+	 */
+	public static DFEVar pulse(DFEVar numTicks, boolean initialValue) {
+		Kernel owner = numTicks.getKernel();
+		return pulse(numTicks, initialValue, owner.constant.var(true));
+	}
+
+	/**
+	 * Create a Boolean stream that has the same value for a fixed number of 'enabled' ticks before permanently changing to the negated value.
+	 *
+	 * @param numTicks The number of enabled ticks that the stream will take it's initial value for.
+	 * @param initialValue The intial value for the stream.
+	 * @param enable A Boolean stream indicating if the current tick should be counted.
+	 * @return A stream of type dfeBool().
+	 */
+	public static DFEVar pulse(DFEVar numTicks, boolean initialValue, DFEVar enable) {
+
+		Kernel owner = numTicks.getKernel();
+
+		if (!numTicks.getType().isUInt()){
+			throw new RuntimeException("numTicks must be of type dfeUInt.");
+		}
+
+		int counterBits = numTicks.getType().getTotalBits();
+		Count.Params countParams = owner.control.count.makeParams(counterBits)
+			.withMax(numTicks)
+			.withEnable(enable);
+		Count.Counter counter = owner.control.count.makeCounter(countParams);
+		DFEVar wrap = counter.getWrap();
+		DFEVar count = counter.getCount();
+		count.setReportOnUnused(false);
+
+		DFEVar flipped = owner.constant.var(!initialValue);
+		DFEVar held = Reductions.streamHold(flipped, wrap, KernelLib.dfeBool().encodeConstant(initialValue));
+		return (numTicks === 0) ? flipped : owner.stream.offset(held, -1);
+	}
+}

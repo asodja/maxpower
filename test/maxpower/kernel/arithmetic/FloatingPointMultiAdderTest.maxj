@@ -3,8 +3,7 @@ package maxpower.kernel.arithmetic;
 import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeFloat;
 import static org.junit.Assert.assertTrue;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Random;
 
 import org.junit.Test;
 
@@ -18,7 +17,7 @@ import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
 import com.maxeler.maxcompiler.v2.utils.Bits;
 
 public class FloatingPointMultiAdderTest {
-	private static final int N = 100; // length of test input data
+	private static final int N = 100000; // length of test input data
 
 	static class FPMATestKernel extends Kernel {
 		protected FPMATestKernel(KernelParameters parameters, DFEFloat type, int numOperands, int numGuardBits) {
@@ -31,104 +30,59 @@ public class FloatingPointMultiAdderTest {
 		}
 	}
 
-	@Test
-	public void testFloat7_7_13() {
-		runTest(dfeFloat(7, 7), 13, 13);
-	}
+	@Test public void testSingle()     { runTest(dfeFloat( 8, 24), 2); }
+	@Test public void testFloat7_41()  { runTest(dfeFloat( 7, 41), 2); }
+	@Test public void testFloat11_41() { runTest(dfeFloat(11, 41), 1); }
+	@Test public void testDouble()     { runTest(dfeFloat(11, 53), 0); }
 
-	@Test
-	public void testFloat7_7_17() {
-		runTest(dfeFloat(7, 7), 17, 13);
-	}
-
-	@Test
-	public void testSingle_23() {
-		runTest(dfeFloat(8, 24), 17, 13);
-	}
-
-	@Test
-	public void testDouble_47() {
-		runTest(dfeFloat(11, 53), 47, 13);
-	}
-
-	private void runTest(DFEFloat type, int numOperands, int numGuardBits) {
+	private void runTest(DFEFloat type, int numGuardBits) {
 		SimulationManager m = new SimulationManager("FloatingPointMultiAdderTest");
+		long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		m.logMsg("Random seed: %d", seed);
+
+		int numOperands = rng.nextInt(32) + 8;
+		m.logMsg("Type = %s, numOperands = %d", type, numOperands);
 		m.setKernel(new FPMATestKernel(m.makeKernelParameters(), type, numOperands, numGuardBits));
 
-		List<Double> elements = new ArrayList<Double>();
-
-		for (int i = 0; i < N; i++) {
-			elements.add((double) i);
-			elements.add((double)-i);
-			if (i != 0)
-				elements.add(1.0 / i);
-		}
-
-		// add all values with single bit set
-		for (int i = 0; i < type.getTotalBits(); i++) {
-			Bits bits = Bits.allZeros(type.getTotalBits());
-			bits.setBit(i, 1);
-
-			elements.add(type.decodeConstant(bits));
-		}
-
-		// add all values with two bits set
-		for (int i = 0; i < type.getTotalBits(); i++) {
-			for (int j = 0; j < type.getTotalBits(); j++) {
-				Bits bits = Bits.allZeros(type.getTotalBits());
-				bits.setBit(i, 1);
-				bits.setBit(j, 1);
-
-				elements.add(type.decodeConstant(bits));
-			}
-		}
-
-		int numElements = elements.size();
-		int numCycles   = numElements * numElements;
-
-		Bits[]   input    = new Bits[numCycles];
-		double[] expected = new double[numCycles];
-		double[] maxAbs   = new double[numCycles];
+		Bits[]   input    = new Bits[N];
+		double[] expected = new double[N];
+		double[] maxAbs   = new double[N];
 
 		DFEVectorType<DFEVar> arrayType = new DFEVectorType<DFEVar>(type, numOperands);
 
-		int idx = 0;
-		for (int i = 0; i < numElements; i++) {
-			for (int j = 0; j < numElements; j++, idx++) {
-				double[] operands = new double[numOperands];
+		for (int i = 0; i < N; ++i) {
+			double[] operands = new double[numOperands];
+			Bits[]   operBits = new Bits[numOperands];
 
-				operands[0] = elements[i];
-				operands[1] = elements[j];
-				for (int k = 2; k < numOperands; k++) {
-					operands[k] = elements[(i+k-1)%numElements];
-				}
-				input[idx] = arrayType.encodeConstant(operands);
+			for (int j = 0; j < numOperands; ++j) {
+				operBits[j] = type.encodeConstant(rng.nextGaussian() * i);
+				// encode and decode, rather than using value directly, so simulation
+				// and model have inputs at the same precision.
+				operands[j] = type.decodeConstant(operBits[j]);
+			}
 
-				expected[idx] = 0;
-				maxAbs[idx]   = Double.MIN_NORMAL;
-				for (int k = 0; k < numOperands; k++) {
-					expected[idx] += operands[k];
-					maxAbs[idx]    = Math.max(maxAbs[idx], Math.abs(operands[k]));
-				}
+			input[i] = arrayType.encodeConstant(operBits);
 
-				// handle expected values which are not encodable with our float type
-				try {
-					double d = type.decodeConstant(type.encodeConstant(expected[idx]));
-					if (d == 0) {
-						expected[idx] = 0;
-					}
-				} catch (Throwable t) {}
+			expected[i] = 0;
+			maxAbs[i]   = Double.MIN_NORMAL;
+			for (int j = 0; j < numOperands; j++) {
+				expected[i] += operands[j];
+				maxAbs[i]    = Math.max(maxAbs[i], Math.abs(operands[j]));
 			}
 		}
 
 		m.setInputDataRaw("input", input);
-		m.setKernelCycles(numCycles);
+		m.setKernelCycles(N);
 		m.runTest();
 
 		double[] actual = m.getOutputDataArray("fpma_out");
 
-		for (int i = 0; i < numCycles; i++) {
-			myAssertEquals(i, expected[i] , actual[i], maxAbs[i], 2.0 / (1 << type.getMantissaBits()));
+		for (int i = 0; i < N; i++) {
+			// TODO do we need to account for numGuardBits?
+			double errorThreshold = 4 /* fudge factor */
+			                      * Math.scalb(Math.sqrt(numOperands), 1 /* implicit '1' */ - type.getMantissaBits());
+			myAssertEquals(i, expected[i] , actual[i], maxAbs[i], errorThreshold);
 		}
 	}
 
@@ -137,8 +91,8 @@ public class FloatingPointMultiAdderTest {
 		double relDiff = absDiff / Math.max(maxAbs, expected);
 
 		String msgOnError =
-			String.format("idx = %d, expected = %f, actual = %f, absDiff = %f, relDiff = %f, maxAbs = %f",
-					idx, expected, actual , absDiff, relDiff, maxAbs);
+			String.format("idx = %d, expected = %g, actual = %g, absDiff = %g, relDiff = %g, errorThreshold = %g, maxAbs = %g",
+					idx, expected, actual , absDiff, relDiff, errorThreshold, maxAbs);
 		assertTrue(msgOnError, relDiff <= errorThreshold);
 	}
 }

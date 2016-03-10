@@ -1,0 +1,17 @@
+package maxpower.kernel.random.testProject;
+
+import com.maxeler.maxcompiler.v2.build.EngineParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.Manager;
+
+public class MersenneTwisterManager extends Manager {
+	public MersenneTwisterManager(EngineParameters params) {
+		super(params);
+
+		setKernel(new MersenneTwisterKernel(makeKernelParameters()));
+		setIO(IOType.ALL_CPU);
+	}
+
+	public static void main(String[] args) {
+		new MersenneTwisterManager(new EngineParameters(args)).build();
+	}
+}

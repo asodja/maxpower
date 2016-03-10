@@ -64,39 +64,52 @@ public class VariableWidthIO {
 		Kernel owner = numToRead.getKernel();
 		int maxWidth = wideInputType.getSize();
 		int shiftBits = MathUtils.bitsToAddress(maxWidth);
-		DFEType shiftType = KernelLib.dfeUInt(shiftBits);
-		DFEType carryType = KernelLib.dfeUInt(shiftBits + 1);
-		DFEVar need = numToRead.cast(carryType);
+		if (shiftBits > 0) {
+			DFEType shiftType = KernelLib.dfeUInt(shiftBits);
+			DFEType carryType = KernelLib.dfeUInt(shiftBits + 1);
+			DFEVar need = numToRead.cast(carryType);
 
-		DFEVar isFirstTick = owner.control.count.pulse(1);
-		DFEVar carried = carryType.newInstance(owner);
-		DFEVar used = isFirstTick ?  0 : owner.stream.offset(carried,-1);
-		owner.optimization.pushPipeliningFactor(0);
-		DFEVar neededWidth = used + need;
-		carried <== (neededWidth < maxWidth) ?  neededWidth : neededWidth - maxWidth;
-		owner.optimization.popPipeliningFactor();
+			DFEVar isFirstTick = owner.control.count.pulse(1);
+			DFEVar carried = carryType.newInstance(owner);
+			DFEVar used = isFirstTick ?  0 : owner.stream.offset(carried,-1);
+			owner.optimization.pushPipeliningFactor(0);
+			DFEVar neededWidth = used + need;
+			carried <== (neededWidth < maxWidth) ?  neededWidth : neededWidth - maxWidth;
+			owner.optimization.popPipeliningFactor();
 
-		DFEVar needToGet = (neededWidth > maxWidth) | ((used === 0) & (need !== 0));
-		DFEVector<T> wideInput;
-		if (useACIO){
-			AspectChangeIO acio = new AspectChangeIO(owner,portWidth);
-			wideInput = acio.input(name, wideInputType, needToGet, doFlush);
+			DFEVar needToGet = (neededWidth > maxWidth) | ((used === 0) & (need !== 0));
+			DFEVector<T> wideInput;
+			if (useACIO){
+				AspectChangeIO acio = new AspectChangeIO(owner,portWidth);
+				wideInput = acio.input(name, wideInputType, needToGet, doFlush);
+			} else {
+				wideInput = owner.io.input(name, wideInputType, needToGet);
+			}
+
+			DFEVector<T> output = wideInputType.newInstance(owner);
+			DFEVector<T> remainder = wideInputType.newInstance(owner);
+			DFEVector<T> prev = neededWidth > maxWidth ?  owner.stream.offset(remainder, -1) : wideInput ;
+			for (int i = 0; i < maxWidth; i++) {
+				output[i] <== (i < used) ?  wideInput[i] : prev[i];
+			}
+			owner.optimization.pushPipeliningFactor(0);
+			remainder <==  needToGet ? wideInput: prev;
+			owner.optimization.popPipeliningFactor();
+
+			DFEVector<T> outputRotated = output.rotateElementsRight(used.cast(shiftType));
+
+			return outputRotated;
 		} else {
-			wideInput = owner.io.input(name, wideInputType, needToGet);
+			DFEVar needToGet = numToRead === 1;
+			DFEVector<T> singleInput;
+			if (useACIO){
+				AspectChangeIO acio = new AspectChangeIO(owner,portWidth);
+				singleInput = acio.input(name, wideInputType, needToGet, doFlush);
+			} else {
+				singleInput = owner.io.input(name, wideInputType, needToGet);
+			}
+			return singleInput;
 		}
-
-		DFEVector<T> output = wideInputType.newInstance(owner);
-		DFEVector<T> remainder = wideInputType.newInstance(owner);
-		DFEVector<T> prev = neededWidth > maxWidth ?  owner.stream.offset(remainder, -1) : wideInput ;
-		for (int i = 0; i < maxWidth; i++) {
-			output[i] <== (i < used) ?  wideInput[i] : prev[i];
-		}
-		owner.optimization.pushPipeliningFactor(0);
-		remainder <==  needToGet ? wideInput: prev;
-		owner.optimization.popPipeliningFactor();
-
-		DFEVector<T> outputRotated = output.rotateElementsRight(used.cast(shiftType));
-		return outputRotated;
 	}
 
 	/**
@@ -170,32 +183,46 @@ public class VariableWidthIO {
 		DFEVectorType<T> wideDataType = wideData.getType();
 		int maxWidth = wideDataType.getSize();
 		int shiftBits = MathUtils.bitsToAddress(maxWidth);
-		DFEType shiftType = KernelLib.dfeUInt(shiftBits);
-		DFEType carryType = KernelLib.dfeUInt(shiftBits + 1);
-		DFEVar receiving = numToWrite.cast(carryType);
 
-		DFEVar isFirstTick = owner.control.count.pulse(1);
-		DFEVar carried = carryType.newInstance(owner);
-		DFEVar used = isFirstTick ?  0 : owner.stream.offset(carried,-1);
-		owner.optimization.pushPipeliningFactor(0);
-		DFEVar neededWidth = used + receiving;
-		carried <== (neededWidth < maxWidth) ?  neededWidth : neededWidth - maxWidth;
-		owner.optimization.popPipeliningFactor();
+		OutputData<T> outputAsClass;
+		if (shiftBits > 0) {
+			DFEType shiftType = KernelLib.dfeUInt(shiftBits);
+			DFEType carryType = KernelLib.dfeUInt(shiftBits + 1);
+			DFEVar receiving = numToWrite.cast(carryType);
 
-		DFEVector<T> wideDataRotated = wideData.rotateElementsLeft(used.cast(shiftType));
-		DFEVector<T> output = wideDataType.newInstance(owner);
-		DFEVector<T> remainder = wideDataType.newInstance(owner);
-		DFEVector<T> prev = owner.stream.offset(remainder, -1);
-		for (int i = 0; i < maxWidth; i++) {
-			output[i] <== (i < used) ? prev[i] : wideDataRotated[i];
+			DFEVar isFirstTick = owner.control.count.pulse(1);
+			DFEVar carried = carryType.newInstance(owner);
+			DFEVar used = isFirstTick ?  0 : owner.stream.offset(carried,-1);
+			owner.optimization.pushPipeliningFactor(0);
+			DFEVar neededWidth = used + receiving;
+			carried <== (neededWidth < maxWidth) ?  neededWidth : neededWidth - maxWidth;
+			owner.optimization.popPipeliningFactor();
+
+			DFEVector<T> wideDataRotated = wideData.rotateElementsLeft(used.cast(shiftType));
+			DFEVector<T> output = wideDataType.newInstance(owner);
+			DFEVector<T> remainder = wideDataType.newInstance(owner);
+			DFEVector<T> prev = owner.stream.offset(remainder, -1);
+			for (int i = 0; i < maxWidth; i++) {
+				output[i] <== (i < used) ? prev[i] : wideDataRotated[i];
+			}
+
+			DFEVar needToWrite = neededWidth >= maxWidth;
+			owner.optimization.pushPipeliningFactor(0);
+			remainder <==  needToWrite ? wideDataRotated : output;
+			owner.optimization.popPipeliningFactor();
+
+			DFEVar getFromNextTick = KernelLib.dfeBool().newInstance(owner);
+			owner.optimization.pushPipeliningFactor(0);
+			getFromNextTick <== ~needToWrite | (owner.stream.offset(getFromNextTick,-1) & ~isFirstTick);
+			owner.optimization.popPipeliningFactor();
+
+			DFEVector<T> forwardMuxedOutput = getFromNextTick ? owner.stream.offset(output,1) : output;
+			DFEVar forwardMuxedWriteControl =  getFromNextTick ? owner.stream.offset(needToWrite,1) : needToWrite;
+			outputAsClass = new OutputData<T>(forwardMuxedOutput, forwardMuxedWriteControl);
+
+		} else {
+			outputAsClass = new OutputData<T>(wideData, numToWrite===1);
 		}
-
-		DFEVar needToWrite = neededWidth >= maxWidth;
-		owner.optimization.pushPipeliningFactor(0);
-		remainder <==  needToWrite ? wideDataRotated : output;
-		owner.optimization.popPipeliningFactor();
-
-		OutputData<T> outputAsClass = new OutputData<T>(output,needToWrite);
 		return outputAsClass;
 	}
 

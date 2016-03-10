@@ -280,6 +280,7 @@ public class VariableWidthIOTest {
 	@Test public void testInputWithSomeUnpleasantNumbers() { testFlexibleWidthInput(7, new int[]{2,3,5,7,2,1,1}); }
 	@Test public void testInputWithSomeUnpleasantNumbersAndReadingNothing() { testFlexibleWidthInput(7, new int[]{2,0,3,5,0,7,2,1,1,0}); }
 	@Test public void testInputWithSomeUnpleasantNumbersAndReadingNothingAndFlushing() { testFlexibleWidthInput(7, new int[]{2,0,3,5,0,7,2,1,1,0,3}); }
+	@Test public void testOnePipeInput() { testFlexibleWidthInput(1, new int[]{0,1,1,0,0,0}); }
 
 	@Test public void testOutputAsPassThrough() { testFlexibleWidthOutput(2, new int[]{2}); }
 	@Test public void testOutputWritingNothing() { testFlexibleWidthOutput(2, new int[]{0,2,2,0,0,2,0}); }
@@ -288,6 +289,8 @@ public class VariableWidthIOTest {
 	@Test public void testOutputWithSomeUnpleasantNumbers() { testFlexibleWidthOutput(7, new int[]{2,3,5,7,2,1,1}); }
 	@Test public void testOutputWithSomeUnpleasantNumbersAndReadingNothing() { testFlexibleWidthOutput(7, new int[]{2,0,3,5,0,7,2,1,1,0}); }
 	@Test public void testOutputWithSomeUnpleasantNumbersAndReadingNothingAndFlushing() { testFlexibleWidthOutput(7, new int[]{2,0,3,5,0,7,2,1,1,0,3}); }
+	@Test public void testOutputWithSomeLeftOverOnLastCycle() { testFlexibleWidthOutput(4, new int[]{2,4,4}); }
+	@Test public void testOnePipeOutput() { testFlexibleWidthOutput(1, new int[]{0,1,1,0,0,1,0}); }
 
 }
 

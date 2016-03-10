@@ -15,13 +15,14 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
-import com.maxeler.maxcompiler.v2.managers.standard._SimulationManager;
+import com.maxeler.maxcompiler.v2.managers.SimulationParams;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
 import com.maxeler.maxcompiler.v2.utils.Bits;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 public class AspectChangeIOTest {
 
-	private static final int ITERATIONS = 10;
+	private static final int ITERATIONS = 7;
 
 	private class TestData {
 		private final Double [] data;
@@ -32,11 +33,12 @@ public class AspectChangeIOTest {
 		private final boolean   hasOutputPadding;
 		private final int       length;
 
-		protected TestData(int inputWidth, int outputWidth, boolean hasPadding, int enableFrequency) {
+		protected TestData(int inputWidth, int outputWidth, int paddingMultiplier, int enableFrequency) {
+			boolean hasPadding = paddingMultiplier != 0;
 			hasInputPadding  = hasPadding && inputWidth > outputWidth;
 			hasOutputPadding = hasPadding && inputWidth < outputWidth;
 			final int padding = Math.min(inputWidth, outputWidth);
-			this.length = inputWidth * outputWidth - (hasPadding ? padding : 0);
+			this.length = inputWidth * outputWidth - paddingMultiplier * padding;
 			final int length = this.length * ITERATIONS;
 			data = new Double[length];
 			for (int i = 0; i < data.length; i++) {
@@ -61,7 +63,7 @@ public class AspectChangeIOTest {
 			final DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(dataType, inputWidth);
 			int index = 0;
 			for (int i = 0; i < ITERATIONS; i++) {
-				for (int j = 0; j < (hasOutputPadding ? outputWidth - 1 : outputWidth); j++) {
+				for (int j = 0; j < MathUtils.ceilDivide(length, inputWidth); j++) {
 					final double[] vector = new double[inputWidth];
 					for (int k = 0; k < vector.length; k++) {
 						//add padding to the input if required
@@ -140,37 +142,40 @@ public class AspectChangeIOTest {
 		}
 	}
 
-	@Test public void testNoMultipleInput()             { testACIO( 5, 3, false, 2); }
-	@Test public void testWithMultipleInput()           { testACIO(10, 4, false, 2); }
-	@Test public void testExactMultipleInput()          { testACIO( 6, 2, false, 2); }
+	@Test public void testNoMultipleInput()             { testACIO( 5, 3,  0, 2); }
+	@Test public void testWithMultipleInput()           { testACIO(10, 4,  0, 2); }
+	@Test public void testExactMultipleInput()          { testACIO( 6, 2,  0, 2); }
 
-	@Test public void testPassThrough()                 { testACIO( 2, 2, false, 2); }
+	@Test public void testPassThrough()                 { testACIO( 2, 2,  0, 2); }
 
-	@Test public void testNoMultipleOutput()            { testACIO( 3, 4, false, 2); }
-	@Test public void testWithMultipleOutput()          { testACIO( 2, 9, false, 2); }
-	@Test public void testExactMultipleOutput()         { testACIO( 1, 4, false, 2); }
+	@Test public void testNoMultipleOutput()            { testACIO( 3, 4,  0, 2); }
+	@Test public void testWithMultipleOutput()          { testACIO( 2, 9,  0, 2); }
+	@Test public void testExactMultipleOutput()         { testACIO( 1, 4,  0, 2); }
 
-	@Test public void testNoMultipleInputPadding()      { testACIO( 5, 3, true,  2); }
-	@Test public void testWithMultipleInputPadding()    { testACIO(10, 4, true,  2); }
-	@Test public void testExactMultipleInputPadding()   { testACIO( 6, 2, true,  2); }
+	@Test public void testNoMultipleInputPadding()      { testACIO( 5, 3,  1,  2); }
+	@Test public void testWithMultipleInputPadding()    { testACIO(10, 4,  1,  2); }
+	@Test public void testExactMultipleInputPadding()   { testACIO( 6, 2,  1,  2); }
 
-	@Test public void testNoMultipleOutputPadding()     { testACIO( 3, 4, true,  2); }
-	@Test public void testWithMultipleOutputPadding()   { testACIO( 2, 9, true,  2); }
-	@Test public void testExactMultipleOutputPadding()  { testACIO( 1, 4, true,  2); }
+	@Test public void testNoMultipleOutputPadding()     { testACIO( 3, 4,  1,  2); }
+	@Test public void testWithMultipleOutputPadding()   { testACIO( 2, 9,  1,  2); }
+	@Test public void testExactMultipleOutputPadding()  { testACIO( 1, 4,  1,  2); }
 
-	@Test public void testNoMultipleOutputPaddingF()    { testACIO( 3, 4, true,  1); }
-	@Test public void testWithMultipleOutputPaddingF()  { testACIO( 2, 9, true,  1); }
-	@Test public void testExactMultipleOutputPaddingF() { testACIO( 1, 4, true,  1); }
+	@Test public void testNoMultipleOutputPaddingFa()   { testACIO( 6, 7,  1,  1); }
+	@Test public void testNoMultipleOutputPaddingFb()   { testACIO( 6, 7, -1,  1); }
+	@Test public void testWithMultipleOutputPaddingFa()  { testACIO( 2, 9,  1,  1); }
+	@Test public void testWithMultipleOutputPaddingFb()  { testACIO( 2, 9, -1,  1); }
+	@Test public void testExactMultipleOutputPaddingFa() { testACIO( 1, 4,  1,  1); }
+	@Test public void testExactMultipleOutputPaddingFb() { testACIO( 1, 4, -1,  1); }
 
-	private void testACIO(final int inputWidth, final int outputWidth, final boolean hasPadding, int enableFrequency) {
+	private void testACIO(final int inputWidth, final int outputWidth, final int paddingMultiplier, int enableFrequency) {
 		final DFEType type   = KernelLib.dfeUInt(32);
-		TestData     data   = new TestData(inputWidth, outputWidth, hasPadding, enableFrequency);
+		TestData     data   = new TestData(inputWidth, outputWidth, paddingMultiplier, enableFrequency);
 
-		_SimulationManager m = new _SimulationManager("AspectChangeIoTest");
+		SimulationManager m = new SimulationManager("AspectChangeIoTest", SimulationParams.BITACCURATE_MAX4);
 		m.setKernel(new ACIOIoTestKernel(m.makeKernelParameters(), type, inputWidth, outputWidth, enableFrequency));
 		m.setKernelCycles(data.getRunCycles() * enableFrequency);
 		m.setInputDataRaw("input", data.encodeInput(type));
-		if (hasPadding) {//force input/output to add or remove padding
+		if (paddingMultiplier != 0) {//force input/output to add or remove padding
 			m.setScalarInput("length", data.getLength() / Math.min(inputWidth, outputWidth));
 		} else {//occasionally force anyway on the cycle we would expect to be outputting, just to make sure that works
 			m.setScalarInput("length", (ITERATIONS / 2) * data.getLength() / Math.min(inputWidth, outputWidth));
@@ -184,4 +189,98 @@ public class AspectChangeIOTest {
 			assertEquals(goldenOutput[i].intValue(), output[i].intValue());
 		}
 	}
+
+	private class MoreTestData {
+
+		private final int wordWidth;
+		private final int cycles;
+		private final int portWidth;
+
+		protected MoreTestData(int wordWidthIn, int cyclesIn, int portWidthIn) {
+
+			wordWidth = wordWidthIn;
+			cycles = cyclesIn;
+			portWidth = portWidthIn;
+		}
+
+		protected List<Bits> encodeInput() {
+			DFEType inputType = KernelLib.dfeUInt(wordWidth);
+			Bits singleInput = inputType.encodeConstant(0);
+			for (int i = 1; i < cycles; i++) {
+				singleInput = inputType.encodeConstant(i).cat(singleInput);
+			}
+			int totalBits = wordWidth*cycles;
+			int remainder = totalBits%portWidth;
+			int paddingSize = portWidth - remainder;
+			singleInput = Bits.allZeros(paddingSize).cat(singleInput);
+			int finalBits = singleInput.getWidth();
+			System.out.printf("Final Test Bits = %d\n", finalBits);
+			List<Bits> output = new ArrayList<Bits>();
+			int nInputs = finalBits/portWidth;
+			for (int i = 0; i < nInputs; i++) {
+				output.add(singleInput.getBitsRaw(i*portWidth,portWidth));
+			}
+			output.add(Bits.allZeros(portWidth));
+			return output;
+		}
+
+		protected Integer[] decodeOutput(List<Bits> bits) {
+			Integer[] output = new Integer[cycles];
+			for (int i = 0; i < cycles; i++) {
+				output[i] = KernelLib.dfeUInt(32).decodeConstant(bits[i]).intValue();
+			}
+			return output;
+		}
+
+		protected Integer[] getExpectedOutput() {
+			Integer[] output = new Integer[cycles];
+			for (int i = 0; i < cycles; i++) output[i] = i;
+			return output;
+		}
+	}
+
+	private class AnotherACIOTestKernel extends Kernel{
+		protected AnotherACIOTestKernel(KernelParameters params, int wordWidth, int portWidth) {
+			super(params);
+
+			DFEVar cycles = io.scalarInput("cycles", dfeUInt(32));
+			DFEVar counter = control.count.makeCounterChain().addCounter(cycles, 1);
+			DFEVar doFlush = cycles === (counter-1);
+			DFEType inputType = dfeUInt(wordWidth);
+			DFEType outputType = dfeUInt(32);
+
+			AspectChangeIO acio = new AspectChangeIO(this, portWidth);
+			DFEVar input = acio.input("input", inputType, constant.var(true), doFlush);
+			debug.simPrintf("Kernel Processing: %d\n",input);
+			io.output("output", input.cast(outputType), outputType);
+
+		}
+	}
+
+	private void anotherACIOTest(final int wordWidth, final int portWidth, final int cycles) {
+
+		MoreTestData data = new MoreTestData(wordWidth, cycles, portWidth);
+
+		SimulationManager m = new SimulationManager("ACIOTest");
+		m.setKernel(new AnotherACIOTestKernel(m.makeKernelParameters(), wordWidth, portWidth));
+		m.setKernelCycles(cycles);
+		m.setInputDataRaw("input", data.encodeInput());
+		m.setScalarInput("cycles",cycles);
+		m.build();
+		m.run();
+
+		Integer[] output = data.decodeOutput(m.getOutputDataRaw("output"));
+		Integer[] expectedOutput = data.getExpectedOutput();
+		for (int i = 0; i < output.length; i++) {
+			System.out.printf("Expected: %d, Got: %d\n", expectedOutput[i], output[i]);
+		}
+		for (int i = 0; i < output.length; i++) {
+			assertEquals(expectedOutput[i], output[i]);
+		}
+	}
+
+
+	@Test public void testNastyMultiple() { anotherACIOTest(30, 3072, 1000); }
+	@Test public void testAnotherNastyMultiple() { anotherACIOTest(30, 42, 1000); }
+	@Test public void exactProblem() { anotherACIOTest(192,256,3235); }
 }

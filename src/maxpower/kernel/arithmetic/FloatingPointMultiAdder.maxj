@@ -1,9 +1,7 @@
 package maxpower.kernel.arithmetic;
 
-import static com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops.bitreverse;
-import static com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops.leading1Detect;
-import static com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops.onehotDecode;
 import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeBool;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeFix;
 import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeFixOffset;
 import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeInt;
 import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeUInt;
@@ -20,7 +18,6 @@ import maxpower.utils.TreeReduce;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
-import com.maxeler.maxcompiler.v2.kernelcompiler.RoundingMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.SMIO;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.FloatingPoint;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
@@ -111,50 +108,16 @@ public class FloatingPointMultiAdder {
 		DFEVar sumNeg = sum["neg"];
 		DFEVar sumVal = sum["val"];
 
-		// Fix the signs of the result after the reduction
-		sumNeg ^= (sumVal < 0);
-		// FIXME There is a ticket open on the compiler which will make abs work in a single cycle
-		//       without manual pipelining.
+		DFEVar sumFlt = sumVal.cast(type);
+		// fix sign
 		owner.optimization.pushPipeliningFactor(0);
-		sumVal  = owner.optimization.pipeline(asUnsigned(KernelMath.abs(sumVal)));
+		sumFlt = ((FloatingPoint.getSignBit(sumFlt) ^ sumNeg)
+		         # FloatingPoint.getExponentBits(sumFlt)
+		         # FloatingPoint.getMantissaBits(sumFlt)).cast(type);
 		owner.optimization.popPipeliningFactor();
-
-		// Reinterpret our result as though it has a single integer bit and calculate appropriate exponent.
-		DFEVar sumValExp = maxExponent.get() + (((DFEFix) sumVal.getType()).getIntegerBits() - 1);
-		int sumValBits = sumVal.getType().getTotalBits();
-		sumVal = reinterpretCast(sumVal, dfeFixOffset(sumValBits, 1-sumValBits, SignMode.UNSIGNED));
-
-		// Shift to get rid of any leading zeroes
-		DFEVar shift           = getLeadingZeroes(sumVal);
-		DFEVar shiftCast       = shift.cast(sumValExp.getType());
-		DFEVar underflows      = (shiftCast >= sumValExp);
-		// We don't support denormalized numbers
-		DFEVar shiftedExponent = ((sumVal === 0) | underflows) ? 0 : (sumValExp - shiftCast);
-		DFEVar shiftedSumVal   = underflows ? 0 : (sumVal << shift);
-
-		// FIXME Floating point typically uses near-even rounding. To do this properly, we'd have to do
-		//       the reduction with 2*mantissa bits.
-		owner.optimization.pushRoundingMode(RoundingMode.TONEAR);
-		// Cast away guard bits to perform the rounding. We need the extra integer bit in case it rounds up to 2.
-		DFEVar roundedMantissa =
-			shiftedSumVal.cast(dfeFixOffset(type.getMantissaBits()+1, 1-type.getMantissaBits(), SignMode.UNSIGNED));
-		owner.optimization.popRoundingMode();
-
-		// Renormalize as necessary and slice out the fractional bits of the mantissa.
-		// Comparison to 2 depends on only a single bit, so remove pipelining.
-		owner.optimization.pushPipeliningFactor(0);
-		DFEVar gteTwo  = (roundedMantissa >= 2);
-		owner.optimization.popPipeliningFactor();
-		// It is not possible that resultMantissa > 2. If gteTwo, fractional bits must be zero.
-		DFEVar roundedFractionBits = gteTwo ? 0 : roundedMantissa.slice(0, type.getMantissaBits()-1);
-		DFEVar roundedExponent     = shiftedExponent + gteTwo.cast(shiftedExponent.getType());
-
-		return (sumNeg # roundedExponent # roundedFractionBits).cast(type);
-	}
-
-	// Count the number of '0's before the first '1' (starting from MSB)
-	private static DFEVar getLeadingZeroes(DFEVar v) {
-		return onehotDecode(bitreverse(leading1Detect(v)));
+		// fix exponent and we're done
+		DFEVar scale = asSigned(maxExponent.get()) - type.getExponentBias();
+		return KernelMath.scalb(sumFlt, scale);
 	}
 
 	private static FanoutLimiter<DFEVar> getMaxExponent(List<DFEVar> summands) {
@@ -188,9 +151,7 @@ public class FloatingPointMultiAdder {
 		if (numGuardBits > 0)
 			mantissa = mantissa # owner.constant.zero(dfeUInt(numGuardBits));
 
-		int bits = mantissa.getType().getTotalBits();
-		// fixed point type with one integer bit (the rest fractional bits)
-		return mantissa.cast(dfeFixOffset(bits, 1-bits, SignMode.UNSIGNED));
+		return mantissa.cast(dfeFix(1, mantissa.getType().getTotalBits() - 1, SignMode.UNSIGNED));
 	}
 
 	private static DFEVar getShift(DFEVar maxExponent, DFEVar summand, int maxShiftBits) {
@@ -223,12 +184,6 @@ public class FloatingPointMultiAdder {
 		DFEFix unsignedType = (DFEFix) v.getType();
 		DFEFix signedType   = dfeFixOffset(unsignedType.getTotalBits()+1, unsignedType.getOffset(), SignMode.TWOSCOMPLEMENT);
 		return v.cast(signedType);
-	}
-
-	private static DFEVar asUnsigned(DFEVar v) {
-		DFEFix signedType   = (DFEFix) v.getType();
-		DFEFix unsignedType = dfeFixOffset(signedType.getTotalBits()-1, signedType.getOffset(), SignMode.UNSIGNED);
-		return v.cast(unsignedType);
 	}
 
 	private static DFEVar reinterpretCast(DFEVar v, DFEType type) {
@@ -295,7 +250,10 @@ public class FloatingPointMultiAdder {
 			owner.optimization.pushEnableBitGrowth(true);
 			DFEVar unusedSum = aVal + bVal;
 			unusedSum.setReportOnUnused(false);
-			DFEType rValType = unusedSum.getType(); // this addition will be optimized away
+			DFEFix rValType = (DFEFix) unusedSum.getType(); // this addition will be optimized away
+			// don't grow beyond 64 bits - we cannot cast more than 64bits to float
+			if (rValType.getTotalBits() > 64)
+				rValType = dfeFixOffset(64, rValType.getOffset(), SignMode.TWOSCOMPLEMENT);
 			owner.optimization.popEnableBitGrowth();
 
 			SMIO sm = owner.addStateMachine("CondAddSubSM"+i++, new SM(owner, rValType.getTotalBits()));

@@ -32,7 +32,6 @@ public class AspectChangeIO extends KernelLib {
 		super(owner);
 		m_portWidth = portWidth;
 		m_pushToManager = false;
-		stream.suppressOffsetVectorWarnings();
 	}
 
 	/**
@@ -263,7 +262,8 @@ public class AspectChangeIO extends KernelLib {
 			outputEnable  = (outputCounter === 0) & enable;
 		} else {
 			outputCounter = counter;
-			final DFEVar getEnoughToOutput = (counter === maximum - 1) & enable;
+			final DFEVar getEnoughToOutput = ((counter === maximum - 1) & (enable | stream.offset(resetEverything, 1)))
+			                               | (stream.offset(resetEverything, 1) & counter === 0 & enable);
 			//in the case where we don't have padding, most of the following logic should be optimised away
 			final DFEVar outputPadding = stream.offset(resetEverything, 1) & counter !== 0;//output only if we have data to output
 			outputEnable = getEnoughToOutput | outputPadding;
@@ -315,7 +315,8 @@ public class AspectChangeIO extends KernelLib {
 			output = new DataWithEnable(outputCounter, outputEnable);
 		} else {
 			final DFEVar nextValue = counter.cast(dfeUInt(counterBits+1)) + increment;
-			final DFEVar outputEnable = (nextValue >= maximum) & (enable | stream.offset(resetEverything, 1));
+			final DFEVar outputEnable = (nextValue >= maximum & (enable | stream.offset(resetEverything, 1)))
+			                          | (stream.offset(resetEverything, 1) & nextValue > 0 & enable);
 
 			//in the case where we don't have padding, most of the following logic should be optimised away
 			//If we do have padding the extra outputs are to cope with the fact that we might have more data

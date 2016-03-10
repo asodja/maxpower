@@ -1,0 +1,190 @@
+package maxpower.kernel.random;
+
+import java.util.ArrayList;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.WarningOptions.Warning;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.WarningOptions.WarningBehaviour;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+
+public class GaussianRng {
+
+	private static final KernelMath.Range LOG_RANGE = new KernelMath.Range(0, 1);
+
+	/**
+	 * Generate Gaussian distributed random numbers
+	 * @param mu Mean of the Gaussian distribution
+	 * @param sigma Square root of the variance of the Gaussian distribution
+	 * @param uniformRnd A stream of uniformly distributed random numbers. Data type and size has to match with outputType
+	 * @param outputType DFEVectorType of the number to generate
+	 * @return Vectors of Gaussian distributed random numbers
+	 */
+	public static DFEVector<DFEVar> transform(DFEVar mu, DFEVar sigma, DFEVector<DFEVar> uniformRnd,
+			DFEVectorType<DFEVar> outputType) {
+		if (outputType.getSize() != uniformRnd.getSize()) {
+			throw new IllegalArgumentException("Size of result vector has to match size of vector providing the random numbers!");
+		}
+		if (!(uniformRnd.getType().getContainedType() instanceof DFEFix)) {
+			throw new IllegalArgumentException("The provided random numbers have to be provided as fix point numbers!");
+		}
+		if (!(outputType.getContainedType() instanceof DFEFix || outputType.getContainedType() instanceof DFEFloat)) {
+			throw new IllegalArgumentException("Result type can only be DFEFloat or DFEFix!");
+		}
+
+		DFEVar parity = mu.getKernel().control.count.simpleCounter(1);
+		return build((DFEType) outputType.getContainedType(), mu, sigma, parity, uniformRnd);
+	}
+
+	/**
+	 * Generate Gaussian distributed random numbers
+	 * @param mu Mean of the Gaussian distribution
+	 * @param sigma Square root of the variance of the Gaussian distribution
+	 * @param uniformRnd A stream of uniformly distributed random numbers. Data type and size has to match with outputType
+	 * @param outputType DFEType of the number to generate
+	 * @return Vectors of Gaussian distributed random numbers
+	 */
+	public static DFEVector<DFEVar> transform(DFEVar mu, DFEVar sigma, DFEVector<DFEVar> uniformRnd,
+			DFEType outputType) {
+		return transform(mu, sigma, uniformRnd, new DFEVectorType<DFEVar>(outputType, uniformRnd.getSize()));
+	}
+
+	/**
+	 * Generate Gaussian distributed random numbers
+	 * @param name Name of the random number generator
+	 * @param mu Mean of the Gaussian distribution
+	 * @param sigma Square root of the variance of the Gaussian distribution
+	 * @param outputType DFEVectorType of the number to generate
+	 * @return Vectors of Gaussian distributed random numbers
+	 */
+	public static DFEVector<DFEVar> getRand(String name, DFEVar mu, DFEVar sigma, DFEVectorType<DFEVar> outputType) {
+		return transform(mu, sigma,
+				MersenneTwister.getRand(mu.getKernel(), name + "_mt",
+						new DFEVectorType<DFEVar>(Kernel.dfeUInt(32), outputType.getSize())), outputType);
+	}
+
+	/**
+	 * Generate Gaussian distributed random numbers
+	 * @param name Name of the random number generator
+	 * @param mu Mean of the Gaussian distribution
+	 * @param sigma Square root of the variance of the Gaussian distribution
+	 * @param outputType DFEType of the number to generate
+	 * @return Vectors of Gaussian distributed random numbers
+	 */
+	public static DFEVector<DFEVar> getRand(String name, DFEVar mu, DFEVar sigma, DFEType outputType, int count) {
+		return transform(mu, sigma,
+				MersenneTwister.getRand(mu.getKernel(), name + "_mt",
+						new DFEVectorType<DFEVar>(Kernel.dfeUInt(32), count)),
+						new DFEVectorType<DFEVar>(outputType, count));
+	}
+
+	/**
+	 * Generate Gaussian distributed random numbers
+	 * @param mu Mean of the Gaussian distribution
+	 * @param sigma Square root of the variance of the Gaussian distribution
+	 * @param uniformRnd A stream of uniformly distributed random numbers. Data type has to match with outputType
+	 * @param outputType DFEType of the number to generate
+	 * @return Gaussian distributed random numbers
+	 */
+	public static DFEVar transform(DFEVar mu, DFEVar sigma, DFEVar uniformRnd, DFEType outputType) {
+		return transform(mu, sigma, DFEVectorType.newInstance(uniformRnd), new DFEVectorType<DFEVar>(outputType, 1))[0];
+	}
+
+	/**
+	 * Generate Gaussian distributed random numbers
+	 * @param name Name of the random number generator
+	 * @param mu Mean of the Gaussian distribution
+	 * @param sigma Square root of the variance of the Gaussian distribution
+	 * @param outputType DFEType of the number to generate
+	 * @return Gaussian distributed random numbers
+	 */
+	public static DFEVar getRand(String name, DFEVar mu, DFEVar sigma, DFEType outputType) {
+		return transform(mu, sigma,
+				MersenneTwister.getRand(mu.getKernel(), name + "_mt", Kernel.dfeUInt(32)), outputType);
+	}
+
+	private static DFEVector<DFEVar> build(DFEType outputType, DFEVar mu, DFEVar sigma, DFEVar parity,
+			DFEVector<DFEVar> uniformRnd) {
+		KernelLib owner = mu.getKernel();
+
+		DFEVectorType<DFEVar> mpTypes = new DFEVectorType<DFEVar>(outputType, uniformRnd.getSize());
+		DFEVector<DFEVar> resultVector = mpTypes.newInstance(owner);
+
+		owner.debug.pushWarningBehaviour(Warning.CONSTANT_ENCODING, WarningBehaviour.IGNORE);
+
+		int uniformRndBitWidth = uniformRnd.getType().getContainedType().getTotalBits();
+		DFEFix type = Kernel.dfeFixOffset(uniformRndBitWidth, -uniformRndBitWidth, SignMode.UNSIGNED);
+		DFEType computeType = getComputeType(outputType);
+
+		DFEVar a[] = new DFEVar[uniformRnd.getSize()];
+		for(int i = 0; i < uniformRnd.getSize(); i++) {
+			a[i] = uniformRnd[i].pack().cast(type).cast(computeType);
+		}
+		DFEVar r[] = calculateLogAndSquareRoot(uniformRnd.getSize(), a, parity, computeType);
+		for (int i = 0; i < uniformRnd.getSize(); i++) {
+			DFEVar b = owner.control.mux(parity, owner.stream.offset(a[i], 1), a[i] - 0.25);
+			DFEVar t = ((2 * Math.PI) * b);
+			// we use KernelMath.cos to alternatively, switching every cycle, compute a cos and a sin. Using sin(x) = cos(x-PI/2)
+			DFEVar c = KernelMath.cos(t);
+			owner.optimization.pushEnableBitGrowth(true);
+			DFEVar result = (r[i] * c * sigma + mu);
+			owner.optimization.popEnableBitGrowth();
+			resultVector[i] <== result.cast(outputType);
+		}
+
+		owner.debug.popWarningBehaviour(Warning.CONSTANT_ENCODING);
+
+		return resultVector;
+	}
+
+	private static DFEVar[] calculateLogAndSquareRoot(int count, DFEVar a[], DFEVar parity, DFEType computeType) {
+		KernelLib owner = a[0].getKernel();
+
+		DFEVar r[] = new DFEVar[count];
+
+		//This calculation is so complicated because the log and square root hardware blocks are shared between two iterations
+		for (int i = 0; i < count / 2; i++) {
+			ArrayList<DFEVar> muxInputs = new ArrayList<DFEVar>(2);
+			muxInputs.add(a[i * 2]);
+			muxInputs.add(owner.stream.offset(a[i * 2 + 1], -1));
+			DFEVar rInput = owner.control.mux(parity, muxInputs);
+			DFEVar rResult;
+			if (computeType instanceof DFEFloat) {
+				rResult = KernelMath.sqrt(-2 * KernelMath.log(LOG_RANGE, rInput, computeType));
+			} else {
+				rResult = KernelMath.sqrt(new KernelMath.Range(-2, 0),
+						-2 * KernelMath.log(LOG_RANGE, rInput, computeType), computeType);
+			}
+			r[i * 2] = Reductions.streamHold(rResult , ~parity);
+			r[i * 2 + 1] = Reductions.streamHold(owner.stream.offset(rResult, 1), ~parity);
+		}
+		if (count % 2 != 0) {
+			if (computeType instanceof DFEFloat) {
+				r[count - 1] = Reductions.streamHold(KernelMath.sqrt(-2 * KernelMath.log(new KernelMath.Range(0, 1),
+						a[count - 1], computeType)), ~parity);
+			} else {
+				r[count - 1] = Reductions.streamHold(KernelMath.sqrt(new KernelMath.Range(-2, 0),
+						-2 * KernelMath.log(LOG_RANGE, a[count - 1], computeType), computeType), ~parity);
+			}
+		}
+		return r;
+	}
+
+	private static DFEType getComputeType(DFEType outputType) {
+		if (outputType instanceof DFEFloat) {
+			DFEFloat floatType = (DFEFloat) outputType;
+			return Kernel.dfeFloat(floatType.getExponentBits(), Math.min(floatType.getMantissaBits(), 36));
+		} else {
+			DFEFix fixType = (DFEFix) outputType;
+			return Kernel.dfeFix(fixType.getIntegerBits() + 4, fixType.getFractionBits() - 4, fixType.getSignMode());
+		}
+	}
+}

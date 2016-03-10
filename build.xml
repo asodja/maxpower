@@ -3,6 +3,7 @@
 <project xmlns:jacoco="antlib:org.jacoco.ant" name="MaxPower" default="all" basedir=".">
 	<property environment="env"/>
 	<property name="bin.dir" location="bin"/>
+	<property name="jar.dir" location="jar"/>
 	<property name="report.dir" location="report"/>
 	<property name="maxjdoc.dir" location="maxjdoc"/>
 	<property name="jacoco.exec.file" location="${report.dir}/jacoco.exec"/>
@@ -110,6 +111,16 @@ Using maxeda classpath '${maxeda.classpath}'
 			</structure>
 			<html destdir="${report.dir}/jacoco"/>
 		</jacoco:report>
+	</target>
+
+	<target name="jar" depends="compile">
+		<mkdir dir="${jar.dir}"/>
+		<jar destfile="${jar.dir}/MaxPower.jar" basedir="${bin.dir}">
+			<manifest>
+				<attribute name="Implementation-Title"   value="MaxPower" />
+				<attribute name="Implementation-Vendor"  value="Maxeler Technologies" />
+			</manifest>
+		</jar>
 	</target>
 
 	<target name="maxjdoc">

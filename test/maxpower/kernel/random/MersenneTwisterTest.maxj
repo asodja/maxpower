@@ -1,0 +1,98 @@
+package maxpower.kernel.random;
+
+import static org.junit.Assert.assertTrue;
+
+import java.util.Random;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class MersenneTwisterTest {
+
+	private final int NUM_RUNS = 5;
+	private final int TICKS = 1000000;
+
+	public static class MersenneTwisterTestKernel extends Kernel {
+		public MersenneTwisterTestKernel(KernelParameters parameters, int iteration) {
+			super(parameters);
+			DFEVector<DFEVar> mt = MersenneTwister.getRand(this, "mt" + iteration, new DFEVectorType<DFEVar>(dfeUInt(32), 2));
+			io.output("mt0", mt[0].getType()) <== mt[0];
+			io.output("mt1", mt[0].getType()) <== mt[1];
+		}
+
+	}
+
+	@Test
+	public void mersenneTwisterWrapper(){
+		for (int i = 0; i < NUM_RUNS; i++) {
+			Random rng = new Random(System.currentTimeMillis());
+			mersenneTwisterTest(i, rng.nextInt());
+		}
+	}
+
+	private void mersenneTwisterTest(int iteration, int seed) {
+		SimulationManager manager = new SimulationManager("MersenneTwisterTest");
+		MersenneTwisterTestKernel kernel =
+			new MersenneTwisterTestKernel(manager.makeKernelParameters(), iteration);
+		manager.setKernel(kernel);
+		manager.logMsg("Seed: %d", seed);
+
+		manager.setMappedRom("MersenneTwisterTestKernelmt" + iteration + "_seeds" + 0, getMappedRomContent(seed, 0));
+		manager.setMappedRom("MersenneTwisterTestKernelmt" + iteration + "_seeds" + 1, getMappedRomContent(seed, 1));
+
+		manager.setKernelCycles(TICKS);
+		manager.runTest();
+
+		long mt0[] = manager.getOutputDataLongArray("mt0");
+		long mt1[] = manager.getOutputDataLongArray("mt1");
+
+		// Pearson's chi squared test (https://en.wikipedia.org/wiki/Pearson's_chi-squared_test)
+		// Critical value for 99%
+		final double criticalValue = 118.498;
+		final int n = 100;
+		int[] bucketsmt0 = new int[n];
+		int[] bucketsmt1 = new int[n];
+		for (int i = 0; i < n; i++) {
+			bucketsmt0[i] = 0;
+			bucketsmt1[i] = 0;
+		}
+		for (int i = 0; i < TICKS; i++) {
+			bucketsmt0[(int)(((double)mt0[i] / ((long)Integer.MAX_VALUE * 2)) * n)]++;
+			bucketsmt1[(int)(((double)mt1[i] / ((long)Integer.MAX_VALUE * 2)) * n)]++;
+		}
+		final int E = TICKS / n;
+		double summt0 = 0;
+		double summt1 = 0;
+		for (int i = 0; i < 100; i++) {
+			summt0 += (double) ((bucketsmt0[i] - E) * (bucketsmt0[i] - E)) / (double) E;
+			summt1 += (double) ((bucketsmt1[i] - E) * (bucketsmt1[i] - E)) / (double) E;
+		}
+
+		assertTrue("Not uniformly distributed", summt0 <= criticalValue);
+		assertTrue("Not uniformly distributed", summt1 <= criticalValue);
+	}
+
+	public static double[] getMappedRomContent(long seed, int num) {
+		long[] seeds = getSeeds(seed + num * MersenneTwister.seedOffset);
+		double[] seedsD = new double[seeds.length];
+		for (int j = 0; j < seeds.length; j++)
+			seedsD[j] = seeds[j];
+		return seedsD;
+	}
+
+	public static long[] getSeeds(long seed) {
+		long[] mt = new long[MersenneTwister.n];
+		mt[0] = Math.abs(seed);
+		for (int i = 1; i < MersenneTwister.n; i++) {
+			mt[i] = Math.abs(((1812433253 * (mt[i - 1] ^ (mt[i - 1] >> 30)) + i) & 0xFFFFFFFFL));
+		}
+
+		return mt;
+	}
+}
