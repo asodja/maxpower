@@ -1,0 +1,199 @@
+package maxpower.kernel.random;
+
+import java.util.HashSet;
+import java.util.Set;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.WrapMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+/**
+ * Mersenne Twister random number generators.
+ *
+ * Generate numbers with uniform distribution.
+ */
+public class MersenneTwister {
+
+	// Explanation for the following numbers can be found at: https://en.wikipedia.org/wiki/Mersenne_Twister
+
+	// Random Word Size
+	private static final int w = 32;
+	/**
+	 *  Degrees of Recurrence
+	 */
+	public static final int n = 624;
+	// Middle Word (number of parallel sequences)
+	private static final int m = 397;
+	// Separation point
+	private static final int r = 31;
+	// Co-efficient of rational normal form matrix
+	private static final long a = 0x9908B0DFL;
+	// TGFSR(R) tempering bitmasks
+	private static final long b = 0x9D2C5680L, c = 0xEFC60000L;
+	// TGFSR(R) tempering bit shifts
+	private static final int s = 7, t = 15;
+	// Additional Mersenne Twister tempering bit shifts
+	private static final int u = 11, l = 18;
+
+	public static final int seedOffset = 8256754;
+
+	private static final Set<String> namedInstances = new HashSet<String>();
+
+	private static boolean maxFileConstantsSet = false;
+
+	/**
+	 * Generates random uniformly distributed numbers
+	 * @param owner KernelLib using this function
+	 * @param name Name for the random number generator
+	 * @param outputType DFEType of the numbers to generate
+	 * @return Uniformly distributed numbers of type outputType
+	 */
+	public static DFEVar getRand(KernelLib owner, String name, DFEType outputType) {
+		return getRand(owner, name, new DFEVectorType<DFEVar>(outputType, 1)).get(0);
+	}
+
+	/**
+	 * Generates random uniformly distributed numbers
+	 * @param owner KernelLib using this function
+	 * @param name Name for the random number generator
+	 * @param outputType DFEVectorType of the numbers to generate
+	 * @return Vectors of uniformly distributed numbers of type outputType
+	 */
+	public static DFEVector<DFEVar> getRand(KernelLib owner, String name, DFEVectorType<DFEVar> outputType) {
+		// Create Maxfile constants
+		if (maxFileConstantsSet == false) {
+			owner.getManager().addMaxFileConstant("MersenneTwister_n", n);
+			owner.getManager().addMaxFileConstant("MersenneTwister_seedOffset", seedOffset);
+			maxFileConstantsSet = true;
+		}
+
+		DFEVector<DFEVar> result;
+		if (outputType.getContainedType() instanceof DFEFloat) {
+			int bitWidth = ((DFEFloat) outputType.getContainedType()).getMantissaBits() * outputType.getSize();
+			DFEVectorType<DFEVar> mpType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(w), MathUtils.ceilDivide(bitWidth, w));
+			DFEVectorType<DFEVar> fixedPointType =
+				new DFEVectorType<DFEVar>(Kernel.dfeFixOffset(bitWidth, -bitWidth, SignMode.UNSIGNED), outputType.getSize());
+			result = fixedPointType.unpack(build(owner, name, mpType).pack().slice(0, bitWidth)).cast(outputType);
+		} else {
+			int bitWidth = outputType.getTotalBits();
+			DFEVectorType<DFEVar> mpType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(w), MathUtils.ceilDivide(bitWidth, w));
+			result = outputType.unpack(build(owner, name, mpType).pack().slice(0, bitWidth));
+		}
+		return result;
+	}
+
+	private static DFEVector<DFEVar> build(KernelLib owner, String name, DFEVectorType<DFEVar> mpType) {
+		name = owner.getKernel().getName() + name;
+		if (namedInstances.contains(name)) {
+			throw new MaxCompilerAPIError(
+					"Cannot create two Mersenne Twisters with name " + name);
+		}
+		namedInstances.add(name);
+
+		DFEVector<DFEVar> seedStream = mpType.newInstance(owner);
+
+		DFEVar count = createCounter(owner);
+
+		owner.getManager().addMaxFileConstant(name, mpType.getSize());
+		for(int i = 0; i < mpType.getSize(); ++i) {
+			seedStream.get(i) <== createRom(name + "_seeds" + i,
+					count, (DFEType)mpType.getContainedType());
+		}
+
+		return build(seedStream, count);
+	}
+
+	private static DFEVar createCounter(KernelLib owner) {
+		Count.Params countParams = owner.control.count
+			.makeParams(MathUtils.bitsToRepresent(n))
+			.withWrapMode(WrapMode.STOP_AT_MAX).withMax(n + 1);
+		return owner.control.count.makeCounter(countParams).getCount();
+	}
+
+	private static DFEVar createRom(final String name, final DFEVar address, final DFEType type) {
+
+		final DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(n));
+
+		final DFEVar romData =
+			address.getKernel().mem.romMapped(name, address.cast(addressType), type, n);
+
+		return romData;
+	}
+
+	/**
+	 *
+	 * @param seeds
+	 *            Has to be getWordWidth() bits. Only first 624 values will be
+	 *            used. Following values will be ignored.
+	 * @return
+	 */
+	private static DFEVector<DFEVar> build(DFEVector<DFEVar> seeds, DFEVar count) {
+		DFEVectorType<DFEVar> mpType = seeds.getType();
+		KernelLib owner = seeds.getKernel();
+
+		// The untempered numbers we will use come from the previous 'loop' via
+		// a wormhole
+		DFEVector<DFEVar> loopFb = mpType.newInstance(owner);
+
+		// When the count is done, switch the input mux to the feedback loop
+		DFEVector<DFEVar> countDone = DFEVectorType.newInstance(mpType.getSize(), count >= n);
+
+		// Get untempered data either from seed for first 'n' cycles, of from
+		// the previous 'loop' via a wormhole
+		@SuppressWarnings("unchecked")
+		DFEVector<DFEVar> untempered = owner.control.mux(countDone, seeds,
+				owner.stream.offset(loopFb, -n));
+		//
+		// Output Function
+		//
+
+		DFEVector<DFEVar> y0 = untempered;
+
+		// Tempering
+		DFEVector<DFEVar> y1 = y0 ^ (y0 >> u);
+		DFEVector<DFEVar> y2 = y1 ^ ((y1 << s) & b);
+		DFEVector<DFEVar> y3 = y2 ^ ((y2 << t) & c);
+		DFEVector<DFEVar> y4 = y3 ^ (y3 >> l);
+
+		// Output the random numbers
+		// y4 is mersenne twisted output
+		DFEVector<DFEVar> out0 = y4;
+
+		//
+		// Update function
+		//
+
+		// Various numbers we need for the update
+		DFEVector<DFEVar> index0 = untempered;
+		DFEVector<DFEVar> index1 = owner.stream.offset(untempered, 1);
+		DFEVector<DFEVar> indexM = owner.stream.offset(untempered, m);
+
+		// Mixbits
+		DFEVector<DFEVar> mixbits = index0.slice(r, w - r).cat(index1.slice(0, r));
+		mixbits = untempered.getType().unpack(mixbits.pack());
+
+		// Compute twist matrix
+		@SuppressWarnings("unchecked")
+		DFEVector<DFEVar> twist = owner.control.mux(index1.slice(0, 1),
+				owner.constant.vect(mpType.getSize(), (DFEFix)mpType.getContainedType(), 0),
+				owner.constant.vect(mpType.getSize(), a)) ^ (mixbits >> 1);
+
+		// Compute final update result
+		DFEVector<DFEVar> result = indexM ^ twist;
+
+		// Connect up the loop
+		loopFb.connect(result);
+		return out0;
+	}
+
+}

@@ -1,0 +1,16 @@
+package maxpower.kernel.random.testProject;
+
+import maxpower.kernel.random.MersenneTwister;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+
+public class MersenneTwisterKernel extends Kernel {
+	public MersenneTwisterKernel(KernelParameters parameters) {
+		super(parameters);
+		DFEVar mt = MersenneTwister.getRand(this, "mt", dfeUInt(32));
+		io.output("mt", mt.getType()) <== mt;
+	}
+
+}

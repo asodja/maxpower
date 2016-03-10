@@ -1,0 +1,140 @@
+package maxpower.kernel.control;
+
+import static org.junit.Assert.assertEquals;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+
+public class VarPulseTest {
+
+	private class VarPulseTestData {
+
+		private final int runTime;
+		private final int numTicks;
+		private final boolean initialValue;
+		private final boolean enableSignal[];
+		private final boolean expectedOutput[];
+
+		VarPulseTestData(int numTicksIn, int runTimeIn, boolean initialValueIn, EnableType enable) {
+
+			runTime = runTimeIn;
+			numTicks = numTicksIn;
+			initialValue = initialValueIn;
+			enableSignal = new boolean[runTime];
+			expectedOutput = new boolean[runTime];
+
+			boolean currentEnable = (enable == EnableType.ALTERNATING_FALSE_START) | (enable == EnableType.FALSE_THEN_FLIP_AT_THREE) ? false : true;
+			boolean hitPulse = false;
+			int usedTicks = 0;
+			for (int i = 0; i < runTime; i++) {
+
+				hitPulse = (numTicks == usedTicks) | hitPulse ? true : false;
+
+				currentEnable = enable.eq(EnableType.CONSTANT) |  (enable.eq(EnableType.FALSE_THEN_FLIP_AT_THREE) & (i !=3)) ? currentEnable : !currentEnable;
+				enableSignal[i] = currentEnable;
+				usedTicks = currentEnable ? usedTicks + 1 : usedTicks;
+
+				if (!hitPulse) {
+					expectedOutput[i] = initialValue;
+				} else {
+					expectedOutput[i] = !initialValue;
+				}
+
+			}
+		}
+
+		protected List<Bits> encodeEnableSignal() {
+			final List<Bits> encodedSignal = new ArrayList<Bits>(runTime);
+			for (int i = 0; i < runTime; i++) {
+				encodedSignal.add(KernelLib.dfeBool().encodeConstant(enableSignal[i]));
+			}
+			return encodedSignal;
+		}
+
+		protected boolean[] decodeOutput(List<Bits> input) {
+			final boolean[] output = new boolean[runTime];
+			for (int i = 0; i < runTime; i++) {
+				output[i] = input[i].getBit(0);
+			}
+			return output;
+		}
+
+		protected boolean[] getExpectedOutput() {
+			return expectedOutput;
+		}
+
+	}
+
+	private static enum EnableType {
+		CONSTANT(0),
+		ALTERNATING(1),
+		ALTERNATING_FALSE_START(2),
+		FALSE_THEN_FLIP_AT_THREE(3);
+
+		private final int val;
+		EnableType(int x) {
+			val = x;
+		}
+
+		public boolean eq(EnableType other) {
+			return val == other.val;
+		}
+	}
+
+	private class VarPulseTestKernel extends Kernel {
+		protected VarPulseTestKernel(KernelParameters parameters, boolean initialValue) {
+			super(parameters);
+
+			DFEVar numTicks = io.scalarInput("numTicks", dfeUInt(4));
+			DFEVar enable = io.input("enable", dfeBool());
+
+			DFEVar output = VarPulse.pulse(numTicks, initialValue, enable);
+
+			io.output("output", output, dfeBool());
+		}
+	}
+
+	private void testVarPulse(int numTicks, int runTime, boolean initialValue, EnableType enable){
+
+		VarPulseTestData testData = new VarPulseTestData(numTicks, runTime, initialValue, enable);
+
+		SimulationManager m = new SimulationManager("VarPulseTest");
+		m.setKernel(new VarPulseTestKernel(m.makeKernelParameters(), initialValue));
+		m.setInputDataRaw("enable",testData.encodeEnableSignal());
+		m.setScalarInput("numTicks", numTicks);
+		m.setKernelCycles(runTime);
+		m.build();
+		m.run();
+
+		boolean[] output = testData.decodeOutput(m.getOutputDataRaw("output"));
+		boolean[] expectedOutput = testData.getExpectedOutput();
+
+		for (int i = 0; i < runTime; i++){
+			System.out.printf("Expected: %b, Got: %b\n", expectedOutput[i], output[i]);
+		}
+
+		for (int i = 0; i < runTime; i++){
+			assertEquals(expectedOutput[i],output[i]);
+		}
+	}
+
+	@Test public void testSimpleCase() { testVarPulse(8, 10, true, EnableType.CONSTANT); }
+	@Test public void testNeverPulse() { testVarPulse(0, 10, true, EnableType.CONSTANT); }
+	@Test public void testAlwaysPulse() {testVarPulse(12, 10, true, EnableType.CONSTANT); }
+	@Test public void testWithEnable() { testVarPulse(2, 10, true, EnableType.ALTERNATING); }
+	@Test public void testWithEnablePartTwo() { testVarPulse(2, 10, true, EnableType.ALTERNATING_FALSE_START); }
+	@Test public void testWithEnablePartThree() { testVarPulse(2, 10, true, EnableType.FALSE_THEN_FLIP_AT_THREE); }
+	@Test public void testStartingFalse() { testVarPulse(5, 10, false, EnableType.CONSTANT); }
+	@Test public void testWithMaxValNumTicks() { testVarPulse(15, 20, true, EnableType.CONSTANT); } //Using a dfeUInt(4) for numTicks
+
+
+}

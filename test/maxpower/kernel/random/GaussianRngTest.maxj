@@ -1,0 +1,119 @@
+package maxpower.kernel.random;
+
+import static org.junit.Assert.assertTrue;
+
+import java.util.Random;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+/**
+ * Generate stream of Gaussian random numbers.
+ */
+public class GaussianRngTest {
+
+	private static final int NUM_TICKS = 1000000;
+	private static final int NUM_RUNS = 5;
+	private static final int NUM_PIPES_TO_TEST = 5;
+	private static final double THRESHOLD = 5e-3;
+
+	public class GaussianRngTestKernel extends Kernel {
+		public DFEType type = dfeFloat(8, 24);
+
+		public GaussianRngTestKernel(KernelParameters parameters, final int numPipes, final String name) {
+			super(parameters);
+			DFEVector<DFEVar> varMP = GaussianRng.getRand(name, constant.var(0), constant.var(1),
+					new DFEVectorType<DFEVar>(type, numPipes));
+			for(int i=0; i<varMP.getSize(); ++i) {
+				io.output("gaussian" + i, type) <== varMP[i].cast(dfeFloat(8, 24));
+			}
+		}
+	}
+
+	@Test
+	public void testGaussianRng() {
+		Random rng = new Random(System.currentTimeMillis());
+		for (int i = 1; i <= NUM_PIPES_TO_TEST; i++) {
+			for (int j = 0; j < NUM_RUNS; j++) {
+				testGaussian(i, NUM_TICKS, j + i * NUM_PIPES_TO_TEST, rng.nextInt(),
+						THRESHOLD, "Gaussian" + i + "Pipe");
+			}
+		}
+	}
+
+	private void testGaussian(final int numPipes, final int ticks, final int iteration, final int seed,
+			final double threshold, final String name) {
+		System.out.println("Testing GaussianRng " + name);
+
+		SimulationManager manager = new SimulationManager("GaussianRngTest");
+		GaussianRngTestKernel kernel = new GaussianRngTestKernel(manager.makeKernelParameters(), numPipes, name + iteration);
+		manager.setKernel(kernel);
+		manager.logMsg("Seed: %d", seed);
+
+		for (int i = 0; i < numPipes; i++) {
+			manager.setMappedRom("GaussianRngTestKernel" + name + iteration + "_mt_seeds" + i, MersenneTwisterTest.getMappedRomContent(seed, i));
+		}
+
+		manager.setKernelCycles(ticks);
+		manager.runTest();
+
+		double hw_out[][] = new double[numPipes][];
+		for(int i=0; i<hw_out.length; i++) {
+			hw_out[i] = manager.getOutputDataArray("gaussian" + i);
+		}
+
+		for (int i = 0; i < hw_out.length; i++) {
+			testGaussianDistribution(hw_out[i], ticks, threshold);
+		}
+	}
+
+	@Test
+	public void testFixedPointGaussianRng() {
+		Random rng = new Random(System.currentTimeMillis());
+		for (int i = 0; i < NUM_RUNS; i++) {
+			testFixedPointDataTypes(NUM_TICKS, i, (rng.nextInt() % 30) + 30, "FixedGaussianRngTest", THRESHOLD);
+		}
+	}
+
+	private void testFixedPointDataTypes(final int ticks, final int iteration, final int bits,
+			final String name, final double threshold) {
+		SimulationManager manager = new SimulationManager("GaussianRngTest");
+		GaussianRngTestKernel kernel = new GaussianRngTestKernel(manager.makeKernelParameters(), 1, name + iteration);
+		manager.setKernel(kernel);
+		manager.logMsg("Bits: %d", bits);
+		kernel.type = Kernel.dfeFix(bits, -bits + 4, SignMode.TWOSCOMPLEMENT);
+
+		manager.setMappedRom("GaussianRngTestKernel" + name + iteration + "_mt_seeds0" , MersenneTwisterTest.getMappedRomContent(0, 0));
+
+		manager.setKernelCycles(ticks);
+		manager.runTest();
+
+		double hwOut[] = manager.getOutputDataArray("gaussian0");
+
+		testGaussianDistribution(hwOut, ticks, threshold);
+	}
+
+	private void testGaussianDistribution(double[] hwOut, int ticks, double threshold) {
+		double sum = 0;
+		double sumSquared = 0;
+		for (int i = 0; i < ticks; i++) {
+			sum += hwOut[i];
+			sumSquared += hwOut[i] * hwOut[i];
+		}
+		double mu = sum / ticks;
+		double sigma = Math.sqrt(sumSquared / ticks - mu * mu);
+
+		System.out.println("Mu: " + mu + " Sigma: " + sigma);
+		assertTrue("Mu wrong", mu <= threshold);
+		assertTrue("Sigma wrong", sigma - 1 <= threshold);
+	}
+}
+

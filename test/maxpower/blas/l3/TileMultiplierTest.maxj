@@ -1,0 +1,63 @@
+package maxpower.blas.l3;
+
+import java.util.Random;
+
+import org.junit.Assert;
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class TileMultiplierTest {
+	@Test public void testFloat() { runTest(Kernel.dfeFloat(8, 24)); }
+	@Test public void testFixed() { runTest(Kernel.dfeInt(64)); }
+
+	private static void runTest(DFEType type) {
+		long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+
+		int numTiles = 5;
+		int N = 8 + rng.nextInt(32);
+
+		SimulationManager m = new SimulationManager("TileMultiplierTest");
+		m.logMsg("Random seed: %d, tile size = %d", seed, N);
+		m.setKernel(new TileMultiplierKernel(m.makeKernelParameters(), type, N));
+
+		double[] a = new double[numTiles * N * N];
+		double[] b = new double[numTiles * N * N];
+
+		for (int i = 0; i < numTiles * N * N; ++i) {
+			// encode, then decode, so inputs are at the same precision as the kernel
+			a[i] = type.decodeConstant(type.encodeConstant(rng.nextGaussian() * 1000));
+			b[i] = type.decodeConstant(type.encodeConstant(rng.nextGaussian() * 1000));
+		}
+
+		m.setKernelCycles(numTiles * N * N);
+		m.setInputData(TileMultiplierKernel.INPUT_A_NAME, a);
+		m.setInputData(TileMultiplierKernel.INPUT_B_NAME, b);
+		m.runTest();
+
+		double[] expected = new double[numTiles * N * N];
+
+		for (int tile = 0; tile < numTiles; ++tile) {
+			for (int i = 0; i < N; ++i) {
+				for (int j = 0; j < N; ++j) {
+					expected[tile*N*N + i*N + j] = 0;
+					for (int k = 0; k < N; ++k) {
+						expected[tile*N*N + i*N + j] += a[tile*N*N + i*N + k] * b[tile*N*N + k*N + j];
+					}
+				}
+			}
+		}
+
+		double[] actual = m.getOutputDataArray(TileMultiplierKernel.OUTPUT_NAME);
+
+		for (int tile = 0; tile < numTiles; ++tile) {
+			for (int i = 0; i < N * N; ++i) {
+				Assert.assertEquals("tile " + tile + ", position " + i,
+						expected[i], actual[i], 0.0001 * Math.abs(expected[i]));
+			}
+		}
+	}
+}

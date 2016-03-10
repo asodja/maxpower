@@ -2,6 +2,8 @@ package maxpower.blas.l3;
 
 import maxpower.kernel.KernelBinaryOp.Add;
 import maxpower.kernel.arithmetic.FloatingPointMultiAdder;
+import maxpower.kernel.io.ShiftRegister;
+import maxpower.kernel.pipeline.FanoutLimiter;
 import maxpower.utils.TreeReduce;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
@@ -9,9 +11,9 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
-import com.maxeler.maxcompiler.v2.utils.MathUtils;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxdc.altera.platform.AlteraPlatform;
 
 /**
  * A tile multiplier for use in dense matrix multiplication.
@@ -21,6 +23,8 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * @author Chris Jones
  */
 public class TileMultiplier extends KernelLib {
+	private static final int FANOUT_LIMIT = 16;
+
 	private final DFEVar output;
 
 	/**
@@ -35,27 +39,40 @@ public class TileMultiplier extends KernelLib {
 
 		CounterChain cc = control.count.makeCounterChain();
 		DFEVar oddTile = cc.addCounter(2, 1); // counter will wrap, giving 0, 1, 0, 1, ...
-		DFEVar i = cc.addCounter(N, 1);
-		DFEVar j = cc.addCounter(N, 1);
+		       /* i */   cc.addCounter(N, 1).setReportOnUnused(false);
+		DFEVar    j    = cc.addCounter(N, 1);
+
+		// By encoding 'i' in one hot, 'i === n' becomes 'iOneHot.slice(n)' (see below).
+		// As 'i' is just an incrementing counter, we can use a rotating counter with the same enable
+		// to produce the one hot encoded value.
+		DFEVar iOneHot = oneHotCounter(N, cc.getCurrentCounterWrap());
+
+		FanoutLimiter<DFEVar> wrAddr = limitFanout(j #  oddTile);
+		FanoutLimiter<DFEVar> rdAddr = limitFanout(j # ~oddTile);
+		FanoutLimiter<DFEVar> bInFl  = limitFanout(bIn);
+
+		DFEVector<DFEVar> a = Reductions.streamHold(ShiftRegister.serialToParallel(N, aIn), j === 0);
 
 		DFEVar[] summands = new DFEVar[N];
 
 		for (int n = 0; n < N; ++n) {
-			DFEVar a = Reductions.streamHold(stream.offset(aIn, +n), (j === 0));
-
-			DFEType addrType = dfeUInt(MathUtils.bitsToAddress(2*N));
-			DFEVar  wrAddr   = j.cast(addrType) + (oddTile ? constant.var(addrType, N) : 0);
-			DFEVar  rdAddr   = j.cast(addrType) + (oddTile ? constant.var(addrType, 0) : N);
-
 			// double buffer within a single memory
 			Memory<DFEVar> bBuf = mem.alloc(bIn.getType(), 2*N);
 			// write vertically; read horizontally
-			bBuf.write(wrAddr, bIn, (i === n));
+			bBuf.write(wrAddr.get(), bInFl.get(), iOneHot.slice(n));
 
 			// stream offset into future, so we can see entire tile within the buffer and read it transposed
-			DFEVar b = stream.offset(bBuf.read(rdAddr), +N*N);
-			optimization.pushPipeliningFactor(0.1);
-			summands[n] = a * b;
+			DFEVar b = stream.offset(bBuf.read(rdAddr.get()), +N*N);
+
+			if ((getManager().getBuildManager().getPlatform() instanceof AlteraPlatform)
+					&& (aIn.getType() instanceof DFEFloat)) {
+				optimization.pushPipeliningFactor(0.1);
+			} else {
+				optimization.pushPipeliningFactor(0.7);
+			}
+
+			summands[n] = a[n] * b;
+
 			optimization.popPipeliningFactor();
 		}
 
@@ -68,5 +85,15 @@ public class TileMultiplier extends KernelLib {
 
 	public DFEVar getOutput() {
 		return output;
+	}
+
+	private DFEVar oneHotCounter(int width, DFEVar enable) {
+		DFEVar v = dfeRawBits(width).newInstance(this);
+		v <== stream.offset(Reductions.streamHold(v.rotateLeft(1), enable, v.getType().encodeConstant(1)), -1);
+		return v;
+	}
+
+	private static FanoutLimiter<DFEVar> limitFanout(DFEVar v) {
+		return new FanoutLimiter<DFEVar>(v, FANOUT_LIMIT);
 	}
 }
