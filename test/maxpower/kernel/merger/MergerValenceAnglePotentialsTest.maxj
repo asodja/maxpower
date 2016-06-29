@@ -1,0 +1,836 @@
+package maxpower.kernel.merger;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+import org.junit.Assert;
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+
+public class MergerValenceAnglePotentialsTest {
+
+	private final static int DIMENSIONS = 3;
+	private final static int RUNS_PER_KERNEL = 10000;
+	private final static int KERNEL_COUNT = 14;
+	private final static int a = 4;
+	private final static int o = 5;
+
+	// examples from: http://community.hartree.stfc.ac.uk/access/content/group/DL_SOFTWARE/DL_POLY/USRMAN4.pdf page 29f.
+	// 1
+	private class HarmonicTest extends KMKernel {
+		public HarmonicTest(int dimension) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVector k   = io.input("k", dimension);
+			KMVar theta0 = io.input("theta0");
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = (k / 2) * pow(thetajik - theta0, 2);
+
+			io.output("result", result);
+		}
+	}
+
+	// 2
+	private class QuarticTest extends KMKernel {
+		public QuarticTest(int dimension) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVector k   = io.input("k", dimension);
+			KMVector k1  = io.input("k1", dimension);
+			KMVector k2  = io.input("k2", dimension);
+			KMVar theta0 = io.input("theta0");
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = (k / 2) * pow(thetajik - theta0, 2) +
+				(k1 / 3) * pow(thetajik - theta0, 3) +
+				(k2 / 4) * pow(thetajik - theta0, 4);
+
+			io.output("result", result);
+		}
+	}
+
+	// 3
+	private class TruncatedHarmonicTest extends KMKernel {
+		public TruncatedHarmonicTest(int dimension) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVector k   = io.input("k", dimension);
+			KMVar theta0 = io.input("theta0");
+			KMVector rho = io.input("rho", dimension);
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = (k / 2) * pow(thetajik - theta0, 2) * exp(-1 * (pow(rij, 8) + pow(rik, 8)) / pow(rho, 8));
+
+			io.output("result", result);
+		}
+	}
+
+	// 4
+	private class ScreenedHarmonicTest extends KMKernel {
+		public ScreenedHarmonicTest(int dimension) {
+			KMVector rij  = io.input("rij", dimension);
+			KMVector rik  = io.input("rik", dimension);
+			KMVector k    = io.input("k", dimension);
+			KMVar theta0  = io.input("theta0");
+			KMVector rho1 = io.input("rho1", dimension);
+			KMVector rho2 = io.input("rho2", dimension);
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = (k / 2) * pow(thetajik - theta0, 2) * exp(-1 * (rij / rho1 + rik / rho2));
+
+			io.output("result", result);
+		}
+	}
+
+	// 5
+	private class ScreenedVessalTest extends KMKernel {
+		public ScreenedVessalTest(int dimension) {
+			KMVector rij  = io.input("rij", dimension);
+			KMVector rik  = io.input("rik", dimension);
+			KMVector k    = io.input("k", dimension);
+			KMVar theta0  = io.input("theta0");
+			KMVector rho1 = io.input("rho1", dimension);
+			KMVector rho2 = io.input("rho2", dimension);
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = (k / (8 * pow(thetajik - Math.PI, 2))) *
+				pow(pow(theta0 - Math.PI, 2) - pow(thetajik - Math.PI, 2), 2) *
+				exp(-1 * (rij / rho1 + rik / rho2));
+
+			io.output("result", result);
+		}
+	}
+
+	// 6
+	private class TruncatedVessalTest extends KMKernel {
+		public TruncatedVessalTest(int dimension, int a) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVector k   = io.input("k", dimension);
+			KMVar theta0 = io.input("theta0");
+			KMVector rho = io.input("rho", dimension);
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = k * pow(thetajik - theta0, 2) *
+				(pow(thetajik, a) * pow(thetajik + theta0 - 2 * Math.PI, 2) +
+				a / 2 * Math.pow(Math.PI, a - 1) * pow(theta0 - Math.PI, 3)) *
+				exp(-1 * (pow(rij, 8) + pow(rik, 8)) / pow(rho, 8));
+
+			io.output("result", result);
+		}
+	}
+
+	// 7
+	private class HarmonicCosineTest extends KMKernel {
+		public HarmonicCosineTest(int dimension) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVector k   = io.input("k", dimension);
+			KMVar theta0 = io.input("theta0");
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = (k / 2) * pow(cos(thetajik) - cos(theta0), 2);
+
+			io.output("result", result);
+		}
+	}
+
+	// 8
+	private class CosineTest extends KMKernel {
+		public CosineTest(int dimension) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVar m      = io.input("m");
+			KMVar delta  = io.input("delta");
+			KMVector A   = io.input("A", dimension);
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = A * (1 + cos(m * thetajik - delta));
+
+			io.output("result", result);
+		}
+	}
+
+	// 9
+	private class MM3StretchBendTest extends KMKernel {
+		public MM3StretchBendTest(int dimension, int o) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVar theta0 = io.input("theta0");
+			KMVector A   = io.input("A", dimension);
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = A * (thetajik - theta0) * (rij - pow(rij, o)) * (rik - pow(rik, o));
+
+			io.output("result", result);
+		}
+	}
+
+	// 10
+	private class CompassStretchStretchTest extends KMKernel {
+		public CompassStretchStretchTest(int dimension, int o) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVector A   = io.input("A", dimension);
+
+			KMVector result = A * (rij - pow(rij, o)) * (rik - pow(rik, o));
+
+			io.output("result", result);
+		}
+	}
+
+	// 11
+	private class CompassStretchBendTest extends KMKernel {
+		public CompassStretchBendTest(int dimension, int o) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVar theta0 = io.input("theta0");
+			KMVector A   = io.input("A", dimension);
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = A * (thetajik - theta0) * (rij - pow(rij, o));
+
+			io.output("result", result);
+		}
+	}
+
+	// 12
+	private class CompassAllTermsTest extends KMKernel {
+		public CompassAllTermsTest(int dimension, int o) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVar theta0 = io.input("theta0");
+			KMVector A   = io.input("A", dimension);
+			KMVector B   = io.input("B", dimension);
+			KMVector C   = io.input("C", dimension);
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = A * (rij - pow(rij, o)) * (rik - pow(rik, o)) +
+				(thetajik - theta0) * (B * (rij - pow(rij, o)) + C * (rik - pow(rik, o)));
+
+			io.output("result", result);
+		}
+	}
+
+	// 13
+	private class AMOEBAForceFieldAngleTest extends KMKernel {
+		public AMOEBAForceFieldAngleTest(int dimension) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVector k   = io.input("k", dimension);
+			KMVar theta0 = io.input("theta0");
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result = k * pow(thetajik - theta0, 2) * (1 -
+				1.4 * Math.pow(10, -2) * pow(thetajik - theta0, 1) + 5.6 * Math.pow(10, -5) * pow(thetajik - theta0, 2) -
+				7.0 * Math.pow(10, -7) * pow(thetajik - theta0, 3) + 2.2 * Math.pow(10, -8) * pow(thetajik - theta0, 4));
+
+			io.output("result", result);
+		}
+	}
+
+	// 14
+	private class KKYTest extends KMKernel {
+		public KKYTest(int dimension) {
+			KMVector rij = io.input("rij", dimension);
+			KMVector rik = io.input("rik", dimension);
+			KMVector ro  = io.input("ro", dimension);
+			KMVar theta0 = io.input("theta0");
+			KMVar fk     = io.input("fk");
+			KMVar gr     = io.input("gr");
+
+			KMVar thetajik = calculateThetajik(rij, rik);
+
+			KMVector result =
+				fk * sin(2 * (thetajik - theta0)) * sqrt((1 / exp(gr * (rij - ro))) * (1 / exp(gr * (rik - ro))));
+
+			io.output("result", result);
+		}
+	}
+
+	private static KMVar calculateThetajik(KMVector rij, KMVector rik) {
+		KMKernel owner = rij.getOwner();
+		// Actually has to be arccos. But that is not supported for now.
+		return owner.cos(owner.scalarProduct(rij, rik) /
+				(owner.sqrt(owner.scalarProduct(rij, rij)) * owner.sqrt(owner.scalarProduct(rik, rik))));
+	}
+
+	public class MergerValenceAnglePotentialsTestKernel extends Kernel {
+
+		public final DFEType type = dfeFloat(8, 24);
+		public final DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(type, DIMENSIONS);
+		public final DFEType kernelSelectType = dfeUInt(32);
+
+		public MergerValenceAnglePotentialsTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+
+			merger.dumpInputGraph("/tmp/");
+			merger.dumpResultGraph("/tmp/");
+			merger.showNodeCount();
+			merger.showDetailedStatistics();
+			merger.showResourceUsage();
+
+			merger.addInput("rij", io.input("rij", vectorType));
+			merger.addInput("rik", io.input("rik", vectorType));
+			merger.addInput("k", io.input("k", vectorType));
+			merger.addInput("k1", io.input("k1", vectorType));
+			merger.addInput("k2", io.input("k2", vectorType));
+			merger.addInput("rho", io.input("rho", vectorType));
+			merger.addInput("rho1", io.input("rho1", vectorType));
+			merger.addInput("rho2", io.input("rho2", vectorType));
+			merger.addInput("A", io.input("A", vectorType));
+			merger.addInput("B", io.input("B", vectorType));
+			merger.addInput("C", io.input("C", vectorType));
+			merger.addInput("ro", io.input("ro", vectorType));
+			merger.addInput("theta0", io.input("theta0", type));
+			merger.addInput("m", io.input("m", type));
+			merger.addInput("delta", io.input("delta", type));
+			merger.addInput("fk", io.input("fk", type));
+			merger.addInput("gr", io.input("gr", type));
+			merger.setKernel(io.input("KernelSelect", kernelSelectType));
+
+			KMKernel kmKernel1  = new HarmonicTest(DIMENSIONS);
+			KMKernel kmKernel2  = new QuarticTest(DIMENSIONS);
+			KMKernel kmKernel3  = new TruncatedHarmonicTest(DIMENSIONS);
+			KMKernel kmKernel4  = new ScreenedHarmonicTest(DIMENSIONS);
+			KMKernel kmKernel5  = new ScreenedVessalTest(DIMENSIONS);
+			KMKernel kmKernel6  = new TruncatedVessalTest(DIMENSIONS, a);
+			KMKernel kmKernel7  = new HarmonicCosineTest(DIMENSIONS);
+			KMKernel kmKernel8  = new CosineTest(DIMENSIONS);
+			KMKernel kmKernel9  = new MM3StretchBendTest(DIMENSIONS, o);
+			KMKernel kmKernel10 = new CompassStretchStretchTest(DIMENSIONS, o);
+			KMKernel kmKernel11 = new CompassStretchBendTest(DIMENSIONS, o);
+			KMKernel kmKernel12 = new CompassAllTermsTest(DIMENSIONS, o);
+			KMKernel kmKernel13 = new AMOEBAForceFieldAngleTest(DIMENSIONS);
+			KMKernel kmKernel14 = new KKYTest(DIMENSIONS);
+
+			merger.addKernel(kmKernel1);
+			merger.addKernel(kmKernel2);
+			merger.addKernel(kmKernel3);
+			merger.addKernel(kmKernel4);
+			merger.addKernel(kmKernel5);
+			merger.addKernel(kmKernel6);
+			merger.addKernel(kmKernel7);
+			merger.addKernel(kmKernel8);
+			merger.addKernel(kmKernel9);
+			merger.addKernel(kmKernel10);
+			merger.addKernel(kmKernel11);
+			merger.addKernel(kmKernel12);
+			merger.addKernel(kmKernel13);
+			merger.addKernel(kmKernel14);
+
+			merger.build();
+
+			@SuppressWarnings("unchecked")
+			DFEVector<DFEVar> result = (DFEVector<DFEVar>) merger.getOutput("result");
+			io.output("result", result.getType()) <== result;
+		}
+	}
+
+	@Test
+	public void testMergerValenceAnglePotentials() {
+		long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+
+		float[][][] rij  = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][][] rik  = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][][] k    = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][][] k1   = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][][] k2   = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][][] rho  = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][][] rho1 = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][][] rho2 = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][][] A    = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][][] B    = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][][] C    = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][][] ro   = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		float[][] theta0 = new float[KERNEL_COUNT][RUNS_PER_KERNEL];
+		float[][] m      = new float[KERNEL_COUNT][RUNS_PER_KERNEL];
+		float[][] delta  = new float[KERNEL_COUNT][RUNS_PER_KERNEL];
+		float[][] fk     = new float[KERNEL_COUNT][RUNS_PER_KERNEL];
+		float[][] gr     = new float[KERNEL_COUNT][RUNS_PER_KERNEL];
+		int[][] kernelSelect = new int[KERNEL_COUNT][RUNS_PER_KERNEL];
+
+		generateTestData(rng, rij, rik, k, k1, k2, rho, rho1, rho2, A, B, C, ro, theta0, m, delta, fk, gr, kernelSelect);
+
+		SimulationManager manager = new SimulationManager("KernelMergerTest");
+		MergerValenceAnglePotentialsTestKernel kernel =
+			new MergerValenceAnglePotentialsTestKernel(manager.makeKernelParameters());
+		manager.setKernel(kernel);
+		manager.build();
+
+		manager.logInfo("Seed: %d", seed);
+
+		manager.setInputDataRaw("rij",    getVectorAsRaw(kernel, rij   ));
+		manager.setInputDataRaw("rik",    getVectorAsRaw(kernel, rik   ));
+		manager.setInputDataRaw("k",      getVectorAsRaw(kernel, k     ));
+		manager.setInputDataRaw("k1",     getVectorAsRaw(kernel, k1    ));
+		manager.setInputDataRaw("k2",     getVectorAsRaw(kernel, k2    ));
+		manager.setInputDataRaw("rho",    getVectorAsRaw(kernel, rho   ));
+		manager.setInputDataRaw("rho1",   getVectorAsRaw(kernel, rho1  ));
+		manager.setInputDataRaw("rho2",   getVectorAsRaw(kernel, rho2  ));
+		manager.setInputDataRaw("A",      getVectorAsRaw(kernel, A     ));
+		manager.setInputDataRaw("B",      getVectorAsRaw(kernel, B     ));
+		manager.setInputDataRaw("C",      getVectorAsRaw(kernel, C     ));
+		manager.setInputDataRaw("ro",     getVectorAsRaw(kernel, ro    ));
+		manager.setInputDataRaw("theta0", getScalarAsRaw(kernel, theta0));
+		manager.setInputDataRaw("m",      getScalarAsRaw(kernel, m     ));
+		manager.setInputDataRaw("delta",  getScalarAsRaw(kernel, delta ));
+		manager.setInputDataRaw("fk",     getScalarAsRaw(kernel, fk    ));
+		manager.setInputDataRaw("gr",     getScalarAsRaw(kernel, gr    ));
+		manager.setInputDataRaw("KernelSelect", getKernelSelectAsRaw(kernel, kernelSelect));
+
+		manager.setKernelCycles(KERNEL_COUNT * RUNS_PER_KERNEL);
+		manager.run();
+
+		float[][][] result   = getResultFromRaw(kernel, manager.getOutputDataRaw("result"));
+		float[][][] expected = getExpectedData(rij, rik, k, k1, k2, rho, rho1, rho2, A, B, C, ro, theta0, m, delta, fk, gr);
+
+		checkEquality(result, expected);
+	}
+
+	private static void generateTestData(Random rng, float[][][] rij, float[][][] rik, float[][][] k, float[][][] k1,
+			float[][][] k2, float[][][] rho, float[][][] rho1, float[][][] rho2, float[][][] A, float[][][] B,
+			float[][][] C, float[][][] ro, float[][] theta0, float[][] m, float[][] delta, float[][] fk, float[][] gr,
+			int[][] kernelSelect) {
+		fillVectorWithTestData(rng, rij);
+		fillVectorWithTestData(rng, rik);
+		fillVectorWithTestData(rng, k);
+		fillVectorWithTestData(rng, k1);
+		fillVectorWithTestData(rng, k2);
+		fillVectorWithTestData(rng, rho);
+		fillVectorWithTestData(rng, rho1);
+		fillVectorWithTestData(rng, rho2);
+		fillVectorWithTestData(rng, A);
+		fillVectorWithTestData(rng, B);
+		fillVectorWithTestData(rng, C);
+		fillVectorWithTestData(rng, ro);
+		fillScalarWithTestData(rng, theta0);
+		fillScalarWithTestData(rng, m);
+		fillScalarWithTestData(rng, delta);
+		fillScalarWithTestData(rng, fk);
+		fillScalarWithTestData(rng, gr);
+
+		for (int i = 0; i < kernelSelect.length; i++) {
+			for (int j = 0; j < kernelSelect[i].length; j++) {
+				kernelSelect[i][j] = i;
+			}
+		}
+	}
+
+	private static void fillVectorWithTestData(Random rng, float[][][] vec) {
+		for (int i = 0; i < vec.length; i++) {
+			for (int j = 0; j < vec[i].length; j++) {
+				for (int k = 0; k < vec[i][j].length; k++) {
+					vec[i][j][k] = rng.nextFloat();
+				}
+			}
+		}
+	}
+
+	private static void fillScalarWithTestData(Random rng, float[][] scalar) {
+		for (int i = 0; i < scalar.length; i++) {
+			for (int j = 0; j < scalar[i].length; j++) {
+				scalar[i][j] = rng.nextFloat();
+			}
+		}
+	}
+
+	private static List<Bits> getVectorAsRaw(MergerValenceAnglePotentialsTestKernel kernel, float vec[][][]) {
+		List<Bits> result = new ArrayList<Bits>();
+		for (int i = 0; i < vec.length; i++) {
+			for (int j = 0; j < vec[i].length; j++) {
+				result.add(kernel.vectorType.encodeConstant(vec[i][j]));
+			}
+		}
+		return result;
+	}
+
+	private static List<Bits> getScalarAsRaw(MergerValenceAnglePotentialsTestKernel kernel, float scalar[][]) {
+		List<Bits> result = new ArrayList<Bits>();
+		for (int i = 0; i < scalar.length; i++) {
+			for (int j = 0; j < scalar[i].length; j++) {
+				result.add(kernel.type.encodeConstant(scalar[i][j]));
+			}
+		}
+		return result;
+	}
+
+	private static List<Bits> getKernelSelectAsRaw(MergerValenceAnglePotentialsTestKernel kernel, int kernelSelect[][]) {
+		List<Bits> result = new ArrayList<Bits>();
+		for (int i = 0; i < kernelSelect.length; i++) {
+			for (int j = 0; j < kernelSelect[i].length; j++) {
+				result.add(kernel.kernelSelectType.encodeConstant(kernelSelect[i][j]));
+			}
+		}
+		return result;
+	}
+
+	private static float[][][] getResultFromRaw(MergerValenceAnglePotentialsTestKernel kernel, List<Bits> result) {
+		float[][][] resultAsFloat = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+		for (int i = 0; i < KERNEL_COUNT; i++) {
+			for (int j = 0; j < RUNS_PER_KERNEL; j++) {
+				@SuppressWarnings("unchecked")
+				List<Double> resultLocal = kernel.vectorType.decodeConstant(result[i * RUNS_PER_KERNEL + j]);
+				for (int k = 0; k < DIMENSIONS; k++) {
+					resultAsFloat[i][j][k] = resultLocal[k].floatValue();
+				}
+			}
+		}
+		return resultAsFloat;
+	}
+
+	private static float[][][] getExpectedData(float[][][] rij, float[][][] rik, float[][][] k, float[][][] k1,
+			float[][][] k2, float[][][] rho, float[][][] rho1, float[][][] rho2, float[][][] A, float[][][] B,
+			float[][][] C, float[][][] ro, float[][] theta0, float[][] m, float[][] delta, float[][] fk, float[][] gr) {
+		float[][][] expected = new float[KERNEL_COUNT][RUNS_PER_KERNEL][DIMENSIONS];
+
+		int kernel = 0;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result = harmonicCPU(rij[kernel][i], rik[kernel][i], k[kernel][i], theta0[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 1;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result = quarticCPU(rij[kernel][i], rik[kernel][i], k[kernel][i], k1[kernel][i], k2[kernel][i],
+					theta0[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 2;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result =
+				truncatedHarmonicCPU(rij[kernel][i], rik[kernel][i], k[kernel][i], rho[kernel][i], theta0[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 3;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result =
+				screenedHarmonicCPU(rij[kernel][i], rik[kernel][i], k[kernel][i], rho1[kernel][i], rho2[kernel][i],
+						theta0[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 4;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result =
+				screenedVessalCPU(rij[kernel][i], rik[kernel][i], k[kernel][i], rho1[kernel][i], rho2[kernel][i],
+						theta0[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 5;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result =
+				truncatedVessalCPU(rij[kernel][i], rik[kernel][i], k[kernel][i], rho[kernel][i], theta0[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 6;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result = harmonicCosineCPU(rij[kernel][i], rik[kernel][i], k[kernel][i], theta0[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 7;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result = cosineCPU(rij[kernel][i], rik[kernel][i], A[kernel][i], m[kernel][i], delta[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 8;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result = MM3StretchBendCPU(rij[kernel][i], rik[kernel][i], A[kernel][i], theta0[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 9;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result = compassStretchStretchCPU(rij[kernel][i], rik[kernel][i], A[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 10;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result = compassStretchBendCPU(rij[kernel][i], rik[kernel][i], A[kernel][i], theta0[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 11;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result = compassAllTermsCPU(rij[kernel][i], rik[kernel][i], A[kernel][i], B[kernel][i],
+					C[kernel][i], theta0[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 12;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result = AMOEBAForceFieldAngle(rij[kernel][i], rik[kernel][i], k[kernel][i], theta0[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		kernel = 13;
+		for (int i = 0; i < RUNS_PER_KERNEL; i++) {
+			float[] result =
+				KKY(rij[kernel][i], rik[kernel][i], ro[kernel][i], theta0[kernel][i], fk[kernel][i], gr[kernel][i]);
+			for (int j = 0; j < DIMENSIONS; j++) {
+				expected[kernel][i][j] = result[j];
+			}
+		}
+
+		return expected;
+	}
+
+	private static void checkEquality(float[][][] result, float[][][] expected) {
+		for (int i = 0; i < KERNEL_COUNT; i++) {
+			boolean ok = true;
+			for (int j = 0; j < RUNS_PER_KERNEL; j++) {
+				for (int k = 0; k < DIMENSIONS; k++) {
+					if (Math.abs(result[i][j][k] - expected[i][j][k]) > 1e-3) {
+						ok = false;
+						System.err.println("In kernel " + (i + 1) + " element " + j + " in dimension " + k +
+								" is: " + result[i][j][k] + " expected: " + expected[i][j][k]);
+					}
+				}
+			}
+			Assert.assertTrue("Test for kernel " + (i + 1) + " failed!", ok);
+		}
+	}
+
+	private static float[] harmonicCPU(float[] rij, float[] rik, float[] k, float theta0) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = (k[i] / 2) * (float) Math.pow(thetajik - theta0, 2);
+		}
+
+		return result;
+	}
+
+	private static float[] quarticCPU(float[] rij, float[] rik, float[] k, float[] k1, float[] k2, float theta0) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < result.length; i++) {
+			result[i] = k[i] / 2 * (float) Math.pow(thetajik - theta0, 2) +
+				k1[i] / 3 * (float) Math.pow(thetajik - theta0, 3) +
+				k2[i] / 4 * (float) Math.pow(thetajik - theta0, 4);
+		}
+
+		return result;
+	}
+
+	private static float[] truncatedHarmonicCPU(float[] rij, float[] rik, float[] k, float[] rho, float theta0) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = (k[i] / 2) * (float) Math.pow(thetajik - theta0, 2) *
+				(float) Math.exp(-((float) Math.pow(rij[i], 8) + (float) Math.pow(rik[i], 8)) / (float) Math.pow(rho[i], 8));
+		}
+
+		return result;
+	}
+
+	private static float[] screenedHarmonicCPU(float[] rij, float[] rik, float[] k, float[] rho1, float[] rho2,
+			float theta0) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = (k[i] / 2) * (float) Math.pow(thetajik - theta0, 2) *
+				(float) Math.exp(-(rij[i] / rho1[i] + rik[i] / rho2[i]));
+		}
+
+		return result;
+	}
+
+	private static float[] screenedVessalCPU(float[] rij, float[] rik, float[] k, float[] rho1, float[] rho2,
+			float theta0) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = (k[i] / (8 * (float) Math.pow(thetajik - Math.PI, 2))) *
+				(float) Math.pow(Math.pow(theta0 - Math.PI, 2) - Math.pow(thetajik - Math.PI, 2), 2) *
+				(float) Math.exp(-(rij[i] / rho1[i] + rik[i] / rho2[i]));
+		}
+
+		return result;
+	}
+
+	private static float[] truncatedVessalCPU(float[] rij, float[] rik, float[] k, float[] rho, float theta0) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = k[i] * (float) Math.pow(thetajik - theta0, 2) *
+				((float) Math.pow(thetajik, a) * (float) Math.pow(thetajik + theta0 - 2 * Math.PI, 2) +
+				a / 2 * (float) Math.pow(Math.PI, a - 1) * (float) Math.pow(theta0 - Math.PI, 3)) *
+				(float) Math.exp(-((float) Math.pow(rij[i], 8) + (float) Math.pow(rik[i], 8)) / (float) Math.pow(rho[i], 8));
+		}
+
+		return result;
+	}
+
+	private static float[] harmonicCosineCPU(float[] rij, float[] rik, float[] k, float theta0) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = (k[i] / 2) * (float) Math.pow((float) Math.cos(thetajik) - (float) Math.cos(theta0), 2);
+		}
+
+		return result;
+	}
+
+	private static float[] cosineCPU(float[] rij, float[] rik, float[] A, float m, float delta) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = A[i] * (1 + (float) Math.cos(m * thetajik - delta));
+		}
+
+		return result;
+	}
+
+	private static float[] MM3StretchBendCPU(float[] rij, float[] rik, float[] A, float theta0) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = A[i] * (thetajik - theta0) * (rij[i] - (float) Math.pow(rij[i], o)) *
+				(rik[i] - (float) Math.pow(rik[i], o));
+		}
+
+		return result;
+	}
+
+	private static float[] compassStretchStretchCPU(float[] rij, float[] rik, float[] A) {
+		float[] result = new float[DIMENSIONS];
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = A[i] * (rij[i] - (float) Math.pow(rij[i], o)) *
+				(rik[i] - (float) Math.pow(rik[i], o));
+		}
+
+		return result;
+	}
+
+	private static float[] compassStretchBendCPU(float[] rij, float[] rik, float[] A, float theta0) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = A[i] * (thetajik - theta0) * (rij[i] - (float) Math.pow(rij[i], o));
+		}
+
+		return result;
+	}
+
+	private static float[] compassAllTermsCPU(float[] rij, float[] rik, float[] A, float[] B, float[] C, float theta0) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = A[i] * (rij[i] - (float) Math.pow(rij[i], o)) * (rik[i] - (float) Math.pow(rik[i], o)) +
+				(thetajik - theta0) * (B[i] * (rij[i] - (float) Math.pow(rij[i], o)) +
+				C[i] * (rik[i] - (float) Math.pow(rik[i], o)));
+		}
+
+		return result;
+	}
+
+	private static float[] AMOEBAForceFieldAngle(float[] rij, float[] rik, float[] k, float theta0) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = k[i] * (float) Math.pow(thetajik - theta0, 2) *
+				(1 - (float) (1.4e-2 * Math.pow(thetajik - theta0, 1)) + (float) (5.6e-5 * Math.pow(thetajik - theta0, 2))
+				   - (float) (7.0e-7 * Math.pow(thetajik - theta0, 3)) + (float) (2.2e-8 * Math.pow(thetajik - theta0, 4)));
+		}
+
+		return result;
+	}
+
+	private static float[] KKY(float[] rij, float[] rik, float[] ro, float theta0, float fk, float gr) {
+		float[] result = new float[DIMENSIONS];
+		float thetajik = calculateThetajik(rij, rik);
+
+		for (int i = 0; i < DIMENSIONS; i++) {
+			result[i] = fk * (float) Math.sin(2 * (thetajik - theta0)) *
+				(float) Math.sqrt((1 / (float) Math.exp(gr * (rij[i] - ro[i]))) *
+				(1 / (float) Math.exp(gr * (rik[i] - ro[i]))));
+		}
+
+		return result;
+	}
+
+	private static float calculateThetajik(float[] rij, float[] rik) {
+		return ((float) Math.cos(scalarProduct(rij, rik) /
+				((float) Math.sqrt(scalarProduct(rij, rij)) * (float) Math.sqrt(scalarProduct(rik, rik)))));
+	}
+
+	private static float scalarProduct(float[] a, float[] b) {
+		float result = 0;
+		for (int i = 0; i < a.length; i++) {
+			result += a[i] * b[i];
+		}
+		return result;
+	}
+}

@@ -23,8 +23,6 @@ public class Test3DTranspose {
 				final int depth) {
 			super(parameters);
 
-			stream.suppressOffsetVectorWarnings();
-
 			DFEVar input = io.input("input", dfeFloat(8, 24));
 
 			io.output("output", dfeFloat(8, 24)) <== FftBuffer.transpose(input, width, height, depth);

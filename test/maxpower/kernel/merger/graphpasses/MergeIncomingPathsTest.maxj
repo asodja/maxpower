@@ -1,0 +1,305 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.Random;
+
+import junit.framework.Assert;
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.KMKernel;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.TestHelper;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeDiv;
+import maxpower.kernel.merger.nodes.KMNodeFloatingPointMultiAdder;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class MergeIncomingPathsTest {
+	private enum TestCase {LEFT, RIGHT, COMMUTATIVE, TREE1, TREE2};
+	private final int RUNS = 1000;
+
+	private class MergeInputLeftTestKernel1 extends KMKernel {
+		public MergeInputLeftTestKernel1(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+
+			io.output("result", a / b + c);
+		}
+	}
+
+	private class MergeInputLeftTestKernel2 extends KMKernel {
+		public MergeInputLeftTestKernel2(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+
+			io.output("result", a / c + b);
+		}
+	}
+
+	private class MergeInputRightTestKernel1 extends KMKernel {
+		public MergeInputRightTestKernel1(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+
+			io.output("result", a / b + c);
+		}
+	}
+
+	private class MergeInputRightTestKernel2 extends KMKernel {
+		public MergeInputRightTestKernel2(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+
+			io.output("result", c / b + a);
+		}
+	}
+
+	private class MergeInputCommutativeTestKernel1 extends KMKernel {
+		public MergeInputCommutativeTestKernel1(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+
+			io.output("result", a * (b + c));
+		}
+	}
+
+	private class MergeInputCommutativeTestKernel2 extends KMKernel {
+		public MergeInputCommutativeTestKernel2(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+
+			io.output("result", c * (a + b));
+		}
+	}
+
+	private class MergeInputTree1TestKernel1 extends KMKernel {
+		public MergeInputTree1TestKernel1(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+
+			io.output("result", a + b + c);
+		}
+	}
+
+	private class MergeInputTree1TestKernel2 extends KMKernel {
+		public MergeInputTree1TestKernel2(KernelLib owner) {
+			KMVar c = io.input("c");
+			KMVar d = io.input("d");
+			KMVar e = io.input("e");
+
+			io.output("result", c + d + e);
+		}
+	}
+
+	private class MergeInputTree2TestKernel1 extends KMKernel {
+		public MergeInputTree2TestKernel1(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+			KMVar d = io.input("d");
+
+			io.output("result", a + b + c + d);
+		}
+	}
+
+	private class MergeInputTree2TestKernel2 extends KMKernel {
+		public MergeInputTree2TestKernel2(KernelLib owner) {
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+			KMVar d = io.input("d");
+			KMVar e = io.input("e");
+
+			io.output("result", b + c + d + e);
+		}
+	}
+
+	private class MergeIncomingPathsTestKernel extends Kernel {
+		private final KMGraph m_graph;
+
+		@SuppressWarnings("unchecked")
+		public MergeIncomingPathsTestKernel(KernelParameters parameters, TestCase testCase) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+			merger.addInput("a", io.input("a", dfeFloat(8, 24)));
+			merger.addInput("b", io.input("b", dfeFloat(8, 24)));
+			merger.addInput("c", io.input("c", dfeFloat(8, 24)));
+			merger.addInput("d", io.input("d", dfeFloat(8, 24)));
+			merger.addInput("e", io.input("e", dfeFloat(8, 24)));
+
+			switch(testCase) {
+				case LEFT:
+					merger.addKernel(new MergeInputLeftTestKernel1(this));
+					merger.addKernel(new MergeInputLeftTestKernel2(this));
+					break;
+				case RIGHT:
+					merger.addKernel(new MergeInputRightTestKernel1(this));
+					merger.addKernel(new MergeInputRightTestKernel2(this));
+					break;
+				case COMMUTATIVE:
+					merger.addKernel(new MergeInputCommutativeTestKernel1(this));
+					merger.addKernel(new MergeInputCommutativeTestKernel2(this));
+					break;
+				case TREE1:
+					merger.addKernel(new MergeInputTree1TestKernel1(this));
+					merger.addKernel(new MergeInputTree1TestKernel2(this));
+					break;
+				case TREE2:
+					merger.addKernel(new MergeInputTree2TestKernel1(this));
+					merger.addKernel(new MergeInputTree2TestKernel2(this));
+					break;
+			}
+			merger.setKernel(io.input("KernelSelect", dfeBool()));
+			merger.disableMergingOfRemainingNodes();
+			merger.build();
+			m_graph = TestHelper.getKMGraphOfMerger(merger);
+			io.output("result", merger.getOutput("result").getType()) <== merger.getOutput("result");
+		}
+	}
+
+	private void mergeIncomingPathsTest(TestCase testCase) {
+		SimulationManager manager = new SimulationManager("MergeIncomingPathsTest");
+		MergeIncomingPathsTestKernel kernel = new MergeIncomingPathsTestKernel(manager.makeKernelParameters(), testCase);
+		manager.setKernel(kernel);
+		manager.build();
+
+		final long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		manager.logInfo("Seed: %d", seed);
+
+		double[] a = new double[RUNS * 2];
+		double[] b = new double[RUNS * 2];
+		double[] c = new double[RUNS * 2];
+		double[] d = new double[RUNS * 2];
+		double[] e = new double[RUNS * 2];
+		long[] kernelSelect = new long[RUNS * 2];
+		for (int i = 0; i < RUNS * 2; i++) {
+			a[i] = rng.nextFloat();
+			b[i] = rng.nextFloat();
+			c[i] = rng.nextFloat();
+			d[i] = rng.nextFloat();
+			e[i] = rng.nextFloat();
+			if (i < RUNS) {
+				kernelSelect[i] = 0;
+			} else {
+				kernelSelect[i] = 1;
+			}
+		}
+
+		manager.setInputData("a", a);
+		manager.setInputData("b", b);
+		manager.setInputData("c", c);
+		manager.setInputData("d", d);
+		manager.setInputData("e", e);
+		manager.setInputDataLong("KernelSelect", kernelSelect);
+		manager.setKernelCycles(RUNS * 2);
+		manager.run();
+
+		double[] result = manager.getOutputDataArray("result");
+
+		for (int i = 0; i < RUNS * 2; i++) {
+			float expected = getExpected(testCase, (float) a[i], (float) b[i],
+					(float) c[i], (float) d[i], (float) e[i], i < RUNS);
+			Assert.assertEquals(expected, result[i], expected * 0.00001);
+		}
+
+		KMGraph graph = kernel.m_graph;
+		int countAdd = 0;
+		int countDiv = 0;
+		int countMul = 0;
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeFloatingPointMultiAdder) {
+				countAdd++;
+			} else if (node instanceof KMNodeDiv) {
+				countDiv++;
+			} else if (node instanceof KMNodeMul) {
+				countMul++;
+			}
+		}
+
+		switch(testCase) {
+		case LEFT:
+			Assert.assertEquals(1, countAdd);
+			Assert.assertEquals(1, countDiv);
+			break;
+		case RIGHT:
+			Assert.assertEquals(1, countAdd);
+			Assert.assertEquals(1, countDiv);
+			break;
+		case COMMUTATIVE:
+			Assert.assertEquals(1, countMul);
+			Assert.assertEquals(1, countAdd);
+			break;
+		case TREE1:
+			Assert.assertEquals(1, countAdd);
+			break;
+		case TREE2:
+			Assert.assertEquals(1, countAdd);
+			break;
+		}
+	}
+
+	private float getExpected(TestCase testCase, float a, float b, float c, float d, float e,
+			boolean first) {
+		float expected = 0;
+
+		switch(testCase) {
+			case LEFT:
+				if (first) {
+					expected = a / b + c;
+				} else {
+					expected = a / c + b;
+				}
+				break;
+			case RIGHT:
+				if (first) {
+					expected = a / b + c;
+				} else {
+					expected = c / b + a;
+				}
+				break;
+			case COMMUTATIVE:
+				if (first) {
+					expected = a * (b + c);
+				} else {
+					expected = c * (a + b);
+				}
+				break;
+			case TREE1:
+				if (first) {
+					expected = a + b + c;
+				} else {
+					expected = c + d + e;
+				}
+				break;
+			case TREE2:
+				if (first) {
+					expected = a + b + c + d;
+				} else {
+					expected = b + c + d + e;
+				}
+				break;
+		}
+
+		return expected;
+	}
+
+	@Test public void testMergeLeft() { mergeIncomingPathsTest(TestCase.LEFT); }
+	@Test public void testMergeRight() { mergeIncomingPathsTest(TestCase.RIGHT); }
+	@Test public void testMergeCommutative() { mergeIncomingPathsTest(TestCase.COMMUTATIVE); }
+	@Test public void testMergeTree1() { mergeIncomingPathsTest(TestCase.TREE1); }
+	@Test public void testMergeTree2() { mergeIncomingPathsTest(TestCase.TREE2); }
+}

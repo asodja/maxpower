@@ -1,0 +1,84 @@
+package maxpower.kernel.merger;
+
+import static org.junit.Assert.assertArrayEquals;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class MergerSimpleTest {
+	private class KMTestKernel1 extends KMKernel {
+		public KMTestKernel1(KernelLib owner) {
+			KMVar kmA = io.input("a");
+			KMVar kmB = io.input("b");
+			KMVar kmC = io.input("c");
+
+			io.output("result", kmB + kmA + kmC);
+		}
+	}
+
+	private class KMTestKernel2 extends KMKernel {
+		public KMTestKernel2(KernelLib owner) {
+			KMVar kmA = io.input("a");
+			KMVar kmB = io.input("b");
+			KMVar kmC = io.input("c");
+
+			io.output("result", kmA + kmB - kmC);
+		}
+	}
+
+	private class MergerTestKernel extends Kernel {
+		@SuppressWarnings("unchecked")
+		public MergerTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+
+			merger.dumpInputGraph("/tmp/");
+			merger.dumpResultGraph("/tmp/");
+
+			merger.addInput("a", io.input("a", dfeInt(32)));
+			merger.addInput("b", io.input("b", dfeInt(32)));
+			merger.addInput("c", io.input("c", dfeInt(32)));
+			merger.setKernel(io.input("KernelSelect", dfeUInt(32)));
+
+			KMKernel kmKernel1 = new KMTestKernel1(this);
+			KMKernel kmKernel2 = new KMTestKernel2(this);
+
+			merger.addKernel(kmKernel1);
+			merger.addKernel(kmKernel2);
+
+			merger.build();
+
+			io.output("result", merger.getOutput("result").getType()) <== merger.getOutput("result");
+		}
+	}
+
+	@Test
+	public void testSimpleKernelMerger() {
+		SimulationManager manager = new SimulationManager("KernelMergerTest");
+		MergerTestKernel kernel = new MergerTestKernel(manager.makeKernelParameters());
+		manager.setKernel(kernel);
+		manager.build();
+
+		double[] a = {0, 1};
+		double[] b = {2, 3};
+		double[] c = {4, 5};
+		double[] kernelSelect = {0, 1};
+
+		manager.setInputData("a", a);
+		manager.setInputData("b", b);
+		manager.setInputData("c", c);
+		manager.setInputData("KernelSelect", kernelSelect);
+		manager.setKernelCycles(2);
+		manager.run();
+
+		double[] result = manager.getOutputDataArray("result");
+		double[] expected = {6, -1};
+
+		assertArrayEquals(expected, result, 0);
+	}
+}

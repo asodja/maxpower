@@ -1,0 +1,170 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.Random;
+
+import junit.framework.Assert;
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.KMKernel;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.TestHelper;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class TreeCommonSubExpressionTest {
+	private final int RUNS = 1000;
+
+	private enum TestCase {EQUAL, LEFT, RIGHT}
+
+	private class TreeCommonSubExpressionEqualTestKernel extends KMKernel {
+		public TreeCommonSubExpressionEqualTestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+			KMVar d = io.input("d");
+
+			io.output("result1", a * b * c * d);
+			io.output("result2", a * b * c * d);
+		}
+	}
+
+	private class TreeCommonSubExpressionLeftTestKernel extends KMKernel {
+		public TreeCommonSubExpressionLeftTestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+			KMVar d = io.input("d");
+
+			io.output("result1", a * b * c);
+			io.output("result2", a * b * c * d);
+		}
+	}
+
+	private class TreeCommonSubExpressionRightTestKernel extends KMKernel {
+		public TreeCommonSubExpressionRightTestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+			KMVar d = io.input("d");
+
+			io.output("result1", a * b * c * d);
+			io.output("result2", a * b * c);
+		}
+	}
+
+	private class TreeCommonSubExpressionMergerTestKernel extends Kernel {
+		private final KMGraph m_graph;
+
+		@SuppressWarnings("unchecked")
+		public TreeCommonSubExpressionMergerTestKernel(KernelParameters parameters, TestCase testCase) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+			merger.addInput("a", io.input("a", dfeFloat(8, 24)));
+			merger.addInput("b", io.input("b", dfeFloat(8, 24)));
+			merger.addInput("c", io.input("c", dfeFloat(8, 24)));
+			merger.addInput("d", io.input("d", dfeFloat(8, 24)));
+			switch (testCase) {
+				case EQUAL:
+					merger.addKernel(new TreeCommonSubExpressionEqualTestKernel(this));
+					break;
+				case LEFT:
+					merger.addKernel(new TreeCommonSubExpressionLeftTestKernel(this));
+					break;
+				case RIGHT:
+					merger.addKernel(new TreeCommonSubExpressionRightTestKernel(this));
+					break;
+			}
+			merger.build();
+			m_graph = TestHelper.getKMGraphOfMerger(merger);
+			io.output("result1", merger.getOutput("result1").getType()) <== merger.getOutput("result1");
+			io.output("result2", merger.getOutput("result2").getType()) <== merger.getOutput("result2");
+		}
+	}
+
+	public void treeCommonSubExpressionTest(TestCase testCase) {
+		SimulationManager manager = new SimulationManager("TreeCommonSubExpressionTest");
+		TreeCommonSubExpressionMergerTestKernel kernel = new TreeCommonSubExpressionMergerTestKernel(manager.makeKernelParameters(), testCase);
+		manager.setKernel(kernel);
+		manager.build();
+
+		final long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		manager.logInfo("Seed: %d", seed);
+
+		double[] a = new double[RUNS];
+		double[] b = new double[RUNS];
+		double[] c = new double[RUNS];
+		double[] d = new double[RUNS];
+		for (int i = 0; i < RUNS; i++) {
+			a[i] = rng.nextFloat();
+			b[i] = rng.nextFloat();
+			c[i] = rng.nextFloat();
+			d[i] = rng.nextFloat();
+		}
+
+		manager.setInputData("a", a);
+		manager.setInputData("b", b);
+		manager.setInputData("c", c);
+		manager.setInputData("d", d);
+		manager.setKernelCycles(RUNS);
+		manager.run();
+
+		double[] result1 = manager.getOutputDataArray("result1");
+		double[] result2 = manager.getOutputDataArray("result2");
+
+		for (int i = 0; i < RUNS; i++) {
+			float expected1 = 0;
+			float expected2 = 0;
+			switch (testCase) {
+				case EQUAL:
+					expected1 = (float) (a[i] * b[i] * c[i] * d[i]);
+					expected2 = (float) (a[i] * b[i] * c[i] * d[i]);
+					break;
+				case LEFT:
+					expected1 = (float) (a[i] * b[i] * c[i]);
+					expected2 = (float) (a[i] * b[i] * c[i] * d[i]);
+					break;
+				case RIGHT:
+					expected1 = (float) (a[i] * b[i] * c[i] * d[i]);
+					expected2 = (float) (a[i] * b[i] * c[i]);
+					break;
+			}
+			Assert.assertEquals(expected1, result1[i], expected1 * 0.00001);
+			Assert.assertEquals(expected2, result2[i], expected2 * 0.00001);
+		}
+
+		KMGraph graph = kernel.m_graph;
+		int countMul = 0;
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeMul) {
+				countMul++;
+			}
+		}
+
+		int expectedMul = 0;
+		switch (testCase) {
+			case EQUAL:
+				expectedMul = 1;
+				break;
+			case LEFT:
+				expectedMul = 2;
+				break;
+			case RIGHT:
+				expectedMul = 2;
+				break;
+		}
+		Assert.assertEquals(expectedMul, countMul);
+	}
+
+	@Test public void testTreeCommonSubExpressionEqual() { treeCommonSubExpressionTest(TestCase.EQUAL); }
+	@Test public void testTreeCommonSubExpressionLeft()  { treeCommonSubExpressionTest(TestCase.LEFT ); }
+	@Test public void testTreeCommonSubExpressionRight() { treeCommonSubExpressionTest(TestCase.RIGHT); }
+}

@@ -1,0 +1,124 @@
+package maxpower.kernel.merger.graphpasses;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeConstant;
+import maxpower.kernel.merger.nodes.KMNodeConstantMul;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+
+/**
+ * Converts multiplications by constants into a different node in order to prevent merging with normal
+ * multiplications.
+ * Average Complexity: O(n)
+ * @author nvoss
+ *
+ */
+
+public class ExtractConstantMultiplicationsGraphPass {
+	public static boolean run(final KMGraph graph) {
+
+		return GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+
+			@Override
+			public boolean processNode(KMNode node) {
+				if (node instanceof KMNodeMul) {
+					KMNodeConstant constant = getConstant(node);
+					if (constant != null) {
+						if (isValid(node, constant)) {
+							if (node.getInputs().size() == 2) {
+								graph.replaceNode(node, new KMNodeConstantMul());
+							} else {
+								// Tree
+								node.removeOneInput(constant);
+								constant.removeOneOutput(node);
+								KMNode mul = new KMNodeConstantMul(node, constant);
+								mul.setOrigin(mul.getOrigin());
+								mul.addOutputs(node.getOutputs());
+								for (KMNode output : node.getOutputs()) {
+									output.replaceInputs(node, mul);
+								}
+								node.removeAllOutputs();
+								node.addOutput(mul);
+								constant.addOutput(mul);
+								mul.addUsedInKernels(node.getUsedInKernels());
+								graph.addNode(mul);
+							}
+
+							return true;
+						}
+					}
+				}
+				return false;
+			}
+
+			private KMNodeConstant getConstant(KMNode node) {
+				// We should only have one constant in the inputs since multiple constants should be constant folded
+				for (KMNode input : node.getInputs()) {
+					if (input instanceof KMNodeConstant) {
+						return (KMNodeConstant) input;
+					}
+				}
+				return null;
+			}
+
+			private boolean isValid(KMNode node, KMNodeConstant constant) {
+				double constValue = constant.getValue();
+				if (node.getResultType().isFixed()) {
+					return isValidFixed(node, constValue);
+				} else {
+					return isValidFloat(node, constValue);
+				}
+			}
+
+			private boolean isValidFixed(KMNode node, double constValue) {
+				DFEType type = node.getResultType().getPrimitiveType();
+				Bits constant = type.encodeConstant(constValue);
+				int setBitCount = 0;
+				for (int i = 0; i < constant.getWidth(); i++) {
+					if (constant.getBit(i)) {
+						setBitCount++;
+					}
+				}
+
+				return setBitCount <= 3;
+			}
+
+			private boolean isValidFloat(KMNode node, double constValue) {
+				return isPowerOf2(constValue);
+			}
+
+			private boolean isPowerOf2(double number) {
+				if (Double.isInfinite(number) || number == 0) {
+					return false;
+				}
+				final long bitsDouble = Double.doubleToRawLongBits(number);
+				final long mantissa_mask = 0x000fffffffffffffL;
+				long mantissa = (bitsDouble & mantissa_mask);
+
+				return mantissa == 0;
+			}
+
+		});
+
+	}
+
+	public static boolean revert(final KMGraph graph) {
+
+		return GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+
+			@Override
+			public boolean processNode(KMNode node) {
+				if (node instanceof KMNodeConstantMul) {
+					graph.replaceNode(node, new KMNodeMul());
+					return true;
+				}
+				return false;
+			}
+
+		});
+	}
+
+}

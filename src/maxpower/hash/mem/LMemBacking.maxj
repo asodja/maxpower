@@ -1,0 +1,93 @@
+package maxpower.hash.mem;
+
+import maxpower.hash.MaxHash;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.LMemCommandStream;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;
+import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
+import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemInterface;
+import com.maxeler.maxeleros.managercompiler.configuration.ManagerDRAMConfiguration.LMemConfig;
+
+public class LMemBacking extends BurstMemBacking {
+
+	private final LMemInterface iface;
+	private final int baseAddressBursts;
+
+	public LMemBacking(MaxHash<?> owner, String name, DFEStructType structType,
+			int numEntries, boolean isDoubleBuffered) {
+		super(owner, name, structType, numEntries, isDoubleBuffered);
+
+		CustomManager m = owner.getManager();
+		LMemConfig config = m.makeLMemConfig();
+		iface = m.addLMemInterface(getFullName() + "_LMemInterface", 1, config);
+		m.logLMemConfiguration();
+		baseAddressBursts = (int) iface.allocBursts(getMemName(), getNumOccupiedBursts());
+		iface.logAllocation(m);
+
+		addMaxFileConstant("BaseAddressBursts", getBaseAddressBursts());
+	}
+
+	@Override
+	protected int getBurstSizeBits() {
+		return (int) iface.getBurstSizeBits();
+	}
+
+	@Override
+	public boolean hasLMemStream() { return true; }
+
+	@Override
+	protected String getType() { return "LMem"; }
+
+	@Override
+	protected void doRead(DFEVar ctrl, DFEVar burstAddress, Buffer buffer) {
+		KernelLib owner = getOwner();
+
+		DFEVar realBurstAddress = getBaseAddressBursts(buffer) + burstAddress.cast(DFETypeFactory.dfeUInt(28));
+		getOwner().simPrintf(ctrl, "  realBurstAddress: %d\n", realBurstAddress);
+
+		LMemCommandStream.makeKernelOutput(getCmdStreamName(buffer),
+				ctrl,
+				realBurstAddress, // address
+				owner.constant.var(DFETypeFactory.dfeUInt(8), 1),      // size
+				owner.constant.var(DFETypeFactory.dfeUInt(1), 0),      // inc
+				owner.constant.var(DFETypeFactory.dfeUInt(1), 0),      // stream
+				owner.constant.var(false));
+	}
+
+	@Override
+	protected DFEVar getBurstData(DFEVar ctrl, Buffer buffer) {
+		return getOwner().io.input(getDataStreamName(buffer), DFETypeFactory.dfeUInt(getBurstSizeBits()), ctrl);
+	}
+
+	@Override
+	protected int getIOSeparation() {
+		return -20;
+	}
+
+	@Override
+	public void connectKernelMemoryStreams(CustomManager m, KernelBlock hashBlock) {
+		for (Buffer buffer : getBuffers()) {
+			DFELink memReadCmdStream = hashBlock.getOutput(getCmdStreamName(buffer));
+			DFELink memReadDataStream = iface.addStreamFromLMem(getDataStreamName(buffer), memReadCmdStream);
+			hashBlock.getInput(getDataStreamName(buffer)) <== memReadDataStream;
+		}
+	}
+
+	@Override
+	public void setupHostMemoryStreams(CustomManager m) {
+		DFELink writeCPUCtrl = m.addStreamFromCPU(getFullName() + "_LMemWriteCPUCtrl");
+		DFELink writeCPUData = m.addStreamFromCPU(getFullName() + "_LMemWriteCPUData");
+		DFELink writeCard = iface.addStreamToLMem(getFullName() + "_LMemWriteCard", writeCPUCtrl);
+		writeCard <== writeCPUData;
+	}
+
+	@Override
+	protected int getBaseAddressBursts() {
+		return baseAddressBursts;
+	}
+}

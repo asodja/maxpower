@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import maxpower.kernel.KernelBinaryOp.Add;
-import maxpower.kernel.LargeStreamOffset;
 import maxpower.kernel.arithmetic.FloatingPointMultiAdder;
 import maxpower.utils.TreeReduce;
 
@@ -12,8 +11,6 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
-import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
-import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
 
 /**
  * A tile accumulator for dense matrix multiplication.
@@ -21,9 +18,6 @@ import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
  * @author Chris Jones
  */
 public class TileAccumulator extends KernelLib {
-	private static final String LARGE_STREAM_OFFSET_NAME = "LargeStreamOffset";
-	private static final int LARGE_STREAM_OFFSET_THRESHOLD = 25000; // very rough guess... LSO uses ~100 FMems
-
 	private final int tileSize2D;
 	private final DFEVar sumTiles;
 	private final List<DFEVar> inputs;
@@ -49,7 +43,7 @@ public class TileAccumulator extends KernelLib {
 		sum = inputs[0].getType().newInstance(this);
 
 		List<DFEVar> summands = new ArrayList<DFEVar>();
-		summands.add((tile === 0) ? 0 : offset(sum, -tileSize2D));
+		summands.add((tile === 0) ? 0 : stream.offset(sum, -tileSize2D));
 		summands.addAll(inputs);
 
 		if (sum.getType() instanceof DFEFloat) {
@@ -61,22 +55,11 @@ public class TileAccumulator extends KernelLib {
 		sumValid = (tile === (sumTiles-1));
 	}
 
-	private DFEVar offset(DFEVar value, int offset) {
-		return (-offset >= LARGE_STREAM_OFFSET_THRESHOLD)
-			? LargeStreamOffset.offset(LARGE_STREAM_OFFSET_NAME, value, offset)
-			: stream.offset(value, offset);
-	}
-
 	public DFEVar getOutput() {
 		return sum;
 	}
 
 	public DFEVar getOutputEnable() {
 		return sumValid;
-	}
-
-	public static void connect(CustomManager manager, KernelBlock blk, int tileSize2D) {
-		if (tileSize2D >= LARGE_STREAM_OFFSET_THRESHOLD)
-			LargeStreamOffset.connect(manager, blk, LARGE_STREAM_OFFSET_NAME);
 	}
 }

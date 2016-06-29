@@ -1,11 +1,13 @@
 package maxpower.kernel.random;
 
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeFixOffset;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeUInt;
+
 import java.util.HashSet;
 import java.util.Set;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
-import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.WrapMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
@@ -58,7 +60,7 @@ public class MersenneTwister {
 	 * @param outputType DFEType of the numbers to generate
 	 * @return Uniformly distributed numbers of type outputType
 	 */
-	public static DFEVar getRand(KernelLib owner, String name, DFEType outputType) {
+	public static DFEVar getRand(KernelBase<?> owner, String name, DFEType outputType) {
 		return getRand(owner, name, new DFEVectorType<DFEVar>(outputType, 1)).get(0);
 	}
 
@@ -69,7 +71,7 @@ public class MersenneTwister {
 	 * @param outputType DFEVectorType of the numbers to generate
 	 * @return Vectors of uniformly distributed numbers of type outputType
 	 */
-	public static DFEVector<DFEVar> getRand(KernelLib owner, String name, DFEVectorType<DFEVar> outputType) {
+	public static DFEVector<DFEVar> getRand(KernelBase<?> owner, String name, DFEVectorType<DFEVar> outputType) {
 		// Create Maxfile constants
 		if (maxFileConstantsSet == false) {
 			owner.getManager().addMaxFileConstant("MersenneTwister_n", n);
@@ -80,20 +82,20 @@ public class MersenneTwister {
 		DFEVector<DFEVar> result;
 		if (outputType.getContainedType() instanceof DFEFloat) {
 			int bitWidth = ((DFEFloat) outputType.getContainedType()).getMantissaBits() * outputType.getSize();
-			DFEVectorType<DFEVar> mpType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(w), MathUtils.ceilDivide(bitWidth, w));
+			DFEVectorType<DFEVar> mpType = new DFEVectorType<DFEVar>(dfeUInt(w), MathUtils.ceilDivide(bitWidth, w));
 			DFEVectorType<DFEVar> fixedPointType =
-				new DFEVectorType<DFEVar>(Kernel.dfeFixOffset(bitWidth, -bitWidth, SignMode.UNSIGNED), outputType.getSize());
+				new DFEVectorType<DFEVar>(dfeFixOffset(bitWidth, -bitWidth, SignMode.UNSIGNED), outputType.getSize());
 			result = fixedPointType.unpack(build(owner, name, mpType).pack().slice(0, bitWidth)).cast(outputType);
 		} else {
 			int bitWidth = outputType.getTotalBits();
-			DFEVectorType<DFEVar> mpType = new DFEVectorType<DFEVar>(Kernel.dfeUInt(w), MathUtils.ceilDivide(bitWidth, w));
+			DFEVectorType<DFEVar> mpType = new DFEVectorType<DFEVar>(dfeUInt(w), MathUtils.ceilDivide(bitWidth, w));
 			result = outputType.unpack(build(owner, name, mpType).pack().slice(0, bitWidth));
 		}
 		return result;
 	}
 
-	private static DFEVector<DFEVar> build(KernelLib owner, String name, DFEVectorType<DFEVar> mpType) {
-		name = owner.getKernel().getName() + name;
+	private static DFEVector<DFEVar> build(KernelBase<?> owner, String name, DFEVectorType<DFEVar> mpType) {
+		name = owner.getName() + name;
 		if (namedInstances.contains(name)) {
 			throw new MaxCompilerAPIError(
 					"Cannot create two Mersenne Twisters with name " + name);
@@ -113,7 +115,7 @@ public class MersenneTwister {
 		return build(seedStream, count);
 	}
 
-	private static DFEVar createCounter(KernelLib owner) {
+	private static DFEVar createCounter(KernelBase<?> owner) {
 		Count.Params countParams = owner.control.count
 			.makeParams(MathUtils.bitsToRepresent(n))
 			.withWrapMode(WrapMode.STOP_AT_MAX).withMax(n + 1);
@@ -122,10 +124,10 @@ public class MersenneTwister {
 
 	private static DFEVar createRom(final String name, final DFEVar address, final DFEType type) {
 
-		final DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(n));
+		final DFEType addressType = dfeUInt(MathUtils.bitsToAddress(n));
 
 		final DFEVar romData =
-			address.getKernel().mem.romMapped(name, address.cast(addressType), type, n);
+			address.getOwner().mem.romMapped(name, address.cast(addressType), type, n);
 
 		return romData;
 	}
@@ -139,7 +141,7 @@ public class MersenneTwister {
 	 */
 	private static DFEVector<DFEVar> build(DFEVector<DFEVar> seeds, DFEVar count) {
 		DFEVectorType<DFEVar> mpType = seeds.getType();
-		KernelLib owner = seeds.getKernel();
+		KernelBase<?> owner = seeds.getOwner();
 
 		// The untempered numbers we will use come from the previous 'loop' via
 		// a wormhole

@@ -1,0 +1,98 @@
+package maxpower.kernel.merger.graphpasses;
+
+import static org.junit.Assert.assertArrayEquals;
+import junit.framework.Assert;
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.KMKernel;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.TestHelper;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeDiv;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class DivisionExtractionTest {
+	private class KMTestKernel1 extends KMKernel {
+		public KMTestKernel1(KernelLib owner) {
+			KMVar kmA = io.input("a");
+			KMVar kmB = io.input("b");
+			KMVar kmC = io.input("c");
+
+			io.output("result", kmA / kmC);
+			io.output("result2", kmB / kmC);
+		}
+	}
+
+	private class MergerTestKernel extends Kernel {
+		private final KMGraph m_graph;
+
+		@SuppressWarnings("unchecked")
+		public MergerTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+
+			merger.dumpInputGraph("/tmp/");
+			merger.dumpResultGraph("/tmp/");
+
+			merger.addInput("a", io.input("a", dfeFloat(8, 24)));
+			merger.addInput("b", io.input("b", dfeFloat(8, 24)));
+			merger.addInput("c", io.input("c", dfeFloat(8, 24)));
+
+			merger.addKernel(new KMTestKernel1(this));
+
+			merger.build();
+			m_graph = TestHelper.getKMGraphOfMerger(merger);
+
+			io.output("result", merger.getOutput("result").getType()) <== merger.getOutput("result");
+			io.output("result2", merger.getOutput("result2").getType()) <== merger.getOutput("result2");
+		}
+	}
+
+	@Test
+	public void testSimpleKernelMerger() {
+		SimulationManager manager = new SimulationManager("KernelMergerTest");
+		MergerTestKernel kernel = new MergerTestKernel(manager.makeKernelParameters());
+		manager.setKernel(kernel);
+		manager.build();
+
+		double[] a = {5, 6};
+		double[] b = {3, 4};
+		double[] c = {1, 2};
+
+		manager.setInputData("a", a);
+		manager.setInputData("b", b);
+		manager.setInputData("c", c);
+		manager.setKernelCycles(2);
+		manager.run();
+
+		double[] result = manager.getOutputDataArray("result");
+		double[] result2 = manager.getOutputDataArray("result2");
+		double[] expected = {5, 3};
+		double[] expected2 = {3, 2};
+
+		assertArrayEquals(expected, result, 0);
+		assertArrayEquals(expected2, result2, 0);
+
+		KMGraph graph = kernel.m_graph;
+		int countDiv = 0;
+		int countMul = 0;
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeDiv) {
+				countDiv++;
+			} else if (node instanceof KMNodeMul) {
+				countMul++;
+			}
+		}
+
+		Assert.assertEquals(1, countDiv);
+		Assert.assertEquals(2, countMul);
+	}
+}

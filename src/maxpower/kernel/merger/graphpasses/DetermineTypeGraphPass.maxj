@@ -1,0 +1,56 @@
+package maxpower.kernel.merger.graphpasses;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeMux;
+import maxpower.kernel.merger.types.KMType;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+/**
+ * This graph pass determines the data type of the outputs of each nodes based on the inputs or,
+ * if not available, the outputs.
+ * Complexity: O(n^2)
+ * @author nvoss
+ *
+ */
+public class DetermineTypeGraphPass extends ProcessTopologicallySortedGraphPass {
+	public static void run(KMGraph graph, final Merger merger) {
+		for (KMNode node : graph.getNodes()) {
+			node.resetResultType();
+		}
+
+		ProcessTopologicallySortedGraphPass.processAllNodesTopological(graph,
+				new ProcessTopologicallySortedGraphPass.NodewiseProcessor() {
+			@Override
+			public void processNode(KMNode node) {
+				node.calcResultType(merger);
+			}
+		});
+
+		GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+			@Override
+			public boolean processNode(KMNode node) {
+				if (node.getResultType() == null) {
+					for (KMNode output : node.getOutputs()) {
+						if (output.getResultType() != null) {
+							if (output instanceof KMNodeMux && output.getInputs()[0] == node) {
+								DFEVar selectDummy = merger.getOwner().constant.var(
+										Kernel.dfeUInt(MathUtils.bitsToAddress(output.getInputs().size() - 1)), 0);
+								node.setResultType(KMType.getTypeForKernelObject(selectDummy));
+								selectDummy.setReportOnUnused(false);
+							} else {
+								node.setResultType(output.getResultType());
+							}
+							return true;
+						}
+					}
+				}
+				return false;
+			}
+		});
+	}
+}

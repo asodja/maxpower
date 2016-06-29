@@ -1,0 +1,92 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerInternalError;
+
+/**
+ * A abstract class providing some utility functions for graph passes which need a topological sorted
+ * dataflow graph.
+ * Complexity: O(n^2)
+ * @author nvoss
+ *
+ */
+public abstract class ProcessTopologicallySortedGraphPass {
+
+	public interface NodewiseProcessor {
+		void processNode(KMNode node);
+	}
+
+	public static void processAllNodesTopological(KMGraph graph, NodewiseProcessor processor) {
+		Map<KMNode, Boolean> nodes = readNodes(graph.getNodes());
+
+		boolean changed;
+		do {
+			changed = false;
+			for (Map.Entry<KMNode, Boolean> node : nodes.entrySet()) {
+				if (!isVisited(node) && isReady(nodes, node)) {
+					processor.processNode(node.getKey());
+					node.setValue(true);
+					changed = true;
+				}
+			}
+		} while (changed);
+
+		if (allNodesVisited(nodes) == false) {
+			throw new MaxCompilerAPIError("Not all nodes in the graph reachable");
+		}
+	}
+
+	static Map<KMNode, Boolean> readNodes(List<KMNode> nodes) {
+		Map<KMNode, Boolean> unvisitedNodes = new HashMap<KMNode,Boolean>();
+
+		for (KMNode node : nodes) {
+			unvisitedNodes.put(node, false);
+		}
+		return unvisitedNodes;
+	}
+
+	static boolean allNodesVisited(Map<KMNode, Boolean> nodes) {
+		boolean result = true;
+
+		for (Map.Entry<KMNode, Boolean> node : nodes.entrySet()) {
+			result &= node.getValue();
+		}
+
+		return result;
+	}
+
+	static boolean isVisited(Map.Entry<KMNode, Boolean> node) {
+		return node.getValue();
+	}
+
+	static boolean isReady(Map<KMNode, Boolean> nodes, Map.Entry<KMNode, Boolean> node) {
+		if (node.getKey().getInputs().size() == 0) {
+			return true;
+		}
+
+		boolean result = true;
+
+		for (KMNode input : node.getKey().getInputs()) {
+			result &= getVisitedToNode(nodes, input);
+		}
+
+		return result;
+	}
+
+	private static Boolean getVisitedToNode(Map<KMNode, Boolean> nodes, KMNode node) {
+		Boolean result = nodes.get(node);
+
+		if (result == null) {
+			throw new MaxCompilerInternalError("Error in Graph!");
+		} else {
+			return result;
+		}
+	}
+}

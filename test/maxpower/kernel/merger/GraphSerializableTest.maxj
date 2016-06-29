@@ -1,0 +1,64 @@
+package maxpower.kernel.merger;
+
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+
+import org.junit.Assert;
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+
+public class GraphSerializableTest {
+
+	private class KMTestKernel1 extends KMKernel {
+		public KMTestKernel1(KernelLib owner) {
+			KMVar kmA = io.input("a");
+			KMVar kmB = io.input("b");
+			KMVar kmC = io.input("c");
+
+			io.output("result", kmB + kmA + kmC);
+		}
+	}
+
+	private class KMTestKernel2 extends KMKernel {
+		public KMTestKernel2(KernelLib owner) {
+			KMVar kmA = io.input("a");
+			KMVar kmB = io.input("b");
+			KMVar kmC = io.input("c");
+
+			io.output("result", kmA + kmB - kmC);
+		}
+	}
+
+	@Test
+	public void test() throws IOException, ClassNotFoundException {
+		KMGraph graph = new KMGraph();
+
+		graph.addKernelGraph((new KMTestKernel1(null)).getGraph(), 0);
+		graph.addKernelGraph((new KMTestKernel2(null)).getGraph(), 1);
+
+		FileOutputStream outFileStream = new FileOutputStream("/tmp/graph.dat");
+		ObjectOutputStream outObjStream = new ObjectOutputStream(outFileStream);
+		outObjStream.writeObject(graph);
+
+		FileInputStream inFileStream = new FileInputStream("/tmp/graph.dat");
+		ObjectInputStream inObjStream = new ObjectInputStream(inFileStream);
+		KMGraph graphRead = (KMGraph) inObjStream.readObject();
+
+		boolean success = true;
+		success &= graph.getNodes().equals(graphRead.getNodes());
+		System.out.println(graph.getNodes());
+		System.out.println(graphRead.getNodes());
+		for (int i = 0; i < graph.getNodes().size(); i++) {
+			success &= graph.getNodes()[i].getInputs().equals(graphRead.getNodes()[i].getInputs());
+			success &= graph.getNodes()[i].getOutputs().equals(graphRead.getNodes()[i].getOutputs());
+			success &= graph.getNodes()[i].getUsedInKernels().equals(graphRead.getNodes()[i].getUsedInKernels());
+		}
+
+		Assert.assertTrue("Graphs not equal", success);
+	}
+
+}

@@ -49,6 +49,13 @@ DFEVar value = hash.get();
 DFEVar contains = hash.containsKey();
 ```
 
+Manager Code:
+
+```
+MaxHash.connectKernelMemoryStreams(this, kernel, kernelBlock);
+MaxHash.setupHostMemoryStreams(this);
+```
+
 Runtime Code:
 
 Initialization:
@@ -72,3 +79,7 @@ maxhash_put(table, key, SIZE_OF_KEY, &value, sizeof(value));
 maxhash_commit(table)
 ```
 
+Finalization:
+```
+maxhash_free(table);
+```

@@ -1,0 +1,167 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.PrintWriter;
+import java.io.UnsupportedEncodingException;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeAbs;
+import maxpower.kernel.merger.nodes.KMNodeAdd;
+import maxpower.kernel.merger.nodes.KMNodeAnd;
+import maxpower.kernel.merger.nodes.KMNodeComplement;
+import maxpower.kernel.merger.nodes.KMNodeConstant;
+import maxpower.kernel.merger.nodes.KMNodeConstantMul;
+import maxpower.kernel.merger.nodes.KMNodeCos;
+import maxpower.kernel.merger.nodes.KMNodeDiv;
+import maxpower.kernel.merger.nodes.KMNodeEq;
+import maxpower.kernel.merger.nodes.KMNodeExp;
+import maxpower.kernel.merger.nodes.KMNodeFloatingPointMultiAdder;
+import maxpower.kernel.merger.nodes.KMNodeGt;
+import maxpower.kernel.merger.nodes.KMNodeGte;
+import maxpower.kernel.merger.nodes.KMNodeInput;
+import maxpower.kernel.merger.nodes.KMNodeLt;
+import maxpower.kernel.merger.nodes.KMNodeLte;
+import maxpower.kernel.merger.nodes.KMNodeMax;
+import maxpower.kernel.merger.nodes.KMNodeMin;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+import maxpower.kernel.merger.nodes.KMNodeMux;
+import maxpower.kernel.merger.nodes.KMNodeNeg;
+import maxpower.kernel.merger.nodes.KMNodeNeq;
+import maxpower.kernel.merger.nodes.KMNodeOr;
+import maxpower.kernel.merger.nodes.KMNodeOutput;
+import maxpower.kernel.merger.nodes.KMNodeSin;
+import maxpower.kernel.merger.nodes.KMNodeSqrt;
+import maxpower.kernel.merger.nodes.KMNodeSub;
+import maxpower.kernel.merger.nodes.KMNodeXor;
+
+/**
+ * This graph pass creates a .dot file containing informations about the dataflow graph.
+ * Mainly for debugging purposes but also for shiny images ;-)
+ * Complexity: O(n)
+ * @author nvoss
+ *
+ */
+public class DumpAsDotGraphPass {
+
+	private static int m_next_colornum = 0;
+
+	public static void run(KMGraph graph, Merger merger, String fileName) {
+		try {
+			String buildName =
+				merger.getOwner().getManager().getEngineParameters().getBuildName();
+			File file = new File(fileName + "_" +
+					buildName + "_" + merger.getID() + ".dot");
+
+			PrintWriter writer = new PrintWriter(file, "UTF-8");
+			writer.println("digraph KernelGraph {");
+
+			// Print nodes:
+			for (KMNode node : graph.getNodes()) {
+				printNode(writer, node);
+			}
+
+			// Print edges:
+			for (KMNode node : graph.getNodes()) {
+				printOutputEdges(writer, node);
+			}
+
+			writer.println("}");
+			writer.close();
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
+	}
+
+	private static void printNode(PrintWriter writer, KMNode node) {
+		String line = "\t" + getNodeName(node);
+		if (node instanceof KMNodeInput) {
+			line += " [shape=invhouse, label=\"Input " + ((KMNodeInput) node).getName();
+		} else if (node instanceof KMNodeOutput) {
+			line += " [shape=house, label=\"Output "  + ((KMNodeOutput) node).getName();
+		} else if (node instanceof KMNodeMux) {
+			line += " [shape=invtrapezium, label=\"MUX";
+		} else if (node instanceof KMNodeDiv) {
+			line += " [label=\"/";
+		} else if (node instanceof KMNodeMul) {
+			line += " [label=\"*";
+		} else if (node instanceof KMNodeConstantMul) {
+			line += " [label=\"Const *";
+		} else if (node instanceof KMNodeAdd) {
+			line += " [label=\"+";
+		} else if (node instanceof KMNodeSub) {
+			line += " [label=\"-";
+		} else if (node instanceof KMNodeComplement) {
+			line += " [label=\"~";
+		} else if (node instanceof KMNodeAnd) {
+			line += " [label=\"&";
+		} else if (node instanceof KMNodeOr) {
+			line += " [label=\"|";
+		} else if (node instanceof KMNodeXor) {
+			line += " [label=\"^";
+		} else if (node instanceof KMNodeLt) {
+			line += " [label=\"<";
+		} else if (node instanceof KMNodeLte) {
+			line += " [label=\"<=";
+		} else if (node instanceof KMNodeGt) {
+			line += " [label=\">";
+		} else if (node instanceof KMNodeGte) {
+			line += " [label=\">=";
+		} else if (node instanceof KMNodeEq) {
+			line += " [label=\"===";
+		} else if (node instanceof KMNodeNeq) {
+			line += " [label=\"!==";
+		} else if (node instanceof KMNodeNeg) {
+			line += " [label=\"Neg";
+		} else if (node instanceof KMNodeConstant) {
+			line += " [label=\"Const: " + ((KMNodeConstant)node).getValue();
+		} else if (node instanceof KMNodeCos) {
+			line += " [label=\"Cos";
+		} else if (node instanceof KMNodeExp) {
+			line += " [label=\"Exp";
+		} else if (node instanceof KMNodeSin) {
+			line += " [label=\"Sin";
+		} else if (node instanceof KMNodeSqrt) {
+			line += " [label=\"Sqrt";
+		} else if (node instanceof KMNodeMax) {
+			line += " [label=\"Max";
+		} else if (node instanceof KMNodeMin) {
+			line += " [label=\"Min";
+		} else if (node instanceof KMNodeAbs) {
+			line += " [label=\"Abs";
+		} else if (node instanceof KMNodeFloatingPointMultiAdder) {
+			line += " [label=\"FPMultiAdd";
+		} else { // Fallback
+			String className = node.getClass().getName();
+			line += " [label=\"" + className.substring(className.lastIndexOf(".") + 1);
+		}
+		line += "\\nID: " + node.getID() + "\\nKernel: ";
+		boolean first = true;
+		for (int kernelID : node.getUsedInKernels()) {
+			if (!first) {
+				line += ", ";
+			}
+			line += kernelID;
+			first = false;
+		}
+		line+= "\"]";
+		writer.println(line);
+	}
+
+	private static void printOutputEdges(PrintWriter writer, KMNode node) {
+		for (KMNode output : node.getOutputs()) {
+			writer.println("\t" +  getNodeName(node) + " -> " + getNodeName(output) +
+					" [color=\"/dark28/" + (m_next_colornum++ % 8 + 1) + "\"]");
+		}
+	}
+
+	private static String getNodeName(KMNode node) {
+		String className = node.getClass().getName();
+		return className.substring(className.lastIndexOf(".")  + 1) + node.getID();
+	}
+
+}

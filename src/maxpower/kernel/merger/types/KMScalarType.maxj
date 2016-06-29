@@ -1,0 +1,33 @@
+package maxpower.kernel.merger.types;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+
+public class KMScalarType extends KMType {
+	private final DFEType m_type;
+
+	KMScalarType(DFEType type) {
+		m_type = type;
+	}
+
+	@Override
+	public DFEType getPrimitiveType() {
+		return m_type;
+	}
+
+	@Override
+	public int getPrimitiveCount() {
+		return m_type.getTotalPrimitives();
+	}
+
+	@Override
+	public String toString() {
+		return m_type.toString();
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) return true;
+		if (!(obj instanceof KMScalarType)) return false;
+		return m_type.equals(((KMScalarType) obj).m_type);
+	}
+}

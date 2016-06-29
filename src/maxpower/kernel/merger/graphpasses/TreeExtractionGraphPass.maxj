@@ -1,0 +1,44 @@
+package maxpower.kernel.merger.graphpasses;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.ops.AssociativeOp;
+
+/**
+ * This graph pass tries to build trees for all AssociativeOps
+ * Average Complexity: O(n)
+ * Worst Case Complexity: O(n^2)
+ * @author nvoss
+ *
+ */
+public class TreeExtractionGraphPass {
+
+	public static boolean run(final KMGraph graph) {
+
+		return GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+			@Override
+			public boolean processNode(KMNode node) {
+				boolean changed = false;
+				if (node instanceof AssociativeOp && node.getOutputs().size() == 1) {
+					if (node.getOutputs()[0].getClass().equals(node.getClass())) {
+						KMNode mergeIntoNode = node.getOutputs()[0];
+						mergeIntoNode.replaceOneInput(node, node.getInputs()[0]);
+
+						for (int i = 1; i < node.getInputs().size(); i++) {
+							mergeIntoNode.addInput(node.getInputs()[i]);
+						}
+
+						for (KMNode input : node.getInputs()) {
+							input.replaceOutputs(node, mergeIntoNode);
+						}
+
+						graph.removeNode(node);
+						changed = true;
+					}
+				}
+				return changed;
+			}
+		});
+	}
+
+}

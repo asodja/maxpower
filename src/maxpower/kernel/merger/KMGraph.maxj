@@ -1,0 +1,133 @@
+package maxpower.kernel.merger;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import maxpower.kernel.merger.nodes.KMNode;
+
+/**
+ * A dataflow graph to be optimized.
+ *
+ * @author nvoss
+ */
+public class KMGraph implements java.io.Serializable {
+	private static final long serialVersionUID = -4384705883252824853L;
+
+	private final List<KMNode> m_nodes = new ArrayList<KMNode>();
+	private int m_kernelCount = 0;
+
+	/**
+	 * Returns the list of all {@link KMNode}s in the graph.
+	 */
+	public List<KMNode> getNodes() {
+		return m_nodes;
+	}
+
+	/**
+	 * Adds a new {@link KMNode} to the graph.
+	 * @param node the {@link KMNode} to add
+	 */
+	public void addNode(KMNode node) {
+		m_nodes.add(node);
+	}
+
+	/**
+	 * Adds multiple nodes to the graph.
+	 * @param the {@link KMNode}s to add
+	 */
+	public void addNodes(List<KMNode> nodes) {
+		for (KMNode node : nodes) {
+			addNode(node);
+		}
+	}
+
+	/**
+	 * Adds a complete kernel graph.
+	 * @param graph the {@link KMKernel.KMKernelGraph} to add
+	 * @param number the index of the kernel used for the kernel select
+	 */
+	void addKernelGraph(KMKernel.KMKernelGraph graph, int number) {
+		for (KMNode node : graph.getNodes()) {
+			Set<Integer> usedInKernel = new HashSet<Integer>();
+			usedInKernel.add(number);
+			node.addUsedInKernels(usedInKernel);
+
+			addNode(node);
+		}
+
+		m_kernelCount = Math.max(m_kernelCount, number + 1);
+	}
+
+	/**
+	 * Removes a {@link KMNode} from the graph.
+	 * @param node the {@link KMNode} to remove
+	 */
+	public void removeNode(KMNode node) {
+		m_nodes.remove(node);
+		for (KMNode otherNode : m_nodes) {
+			// Remove only deletes one element per call. But it returns true if a element was removed.
+			while(otherNode.getOutputs().remove(node));
+		}
+	}
+
+	/**
+	 * Removes multiple {@link KMNode}s from the graph.
+	 * @param nodes the {@link KMNode}s to remove
+	 */
+	public void removeNodes(List<KMNode> nodes) {
+		for (KMNode node : nodes) {
+			removeNode(node);
+		}
+	}
+
+	/**
+	 * Returns the number of distinct kernels in the graph.
+	 */
+	public int getKernelCount() {
+		return m_kernelCount;
+	}
+
+	/**
+	 * Replaces one old {@link KMNode} with a new one and connects everything up accordingly.
+	 * @param oldNode the old {@link KMNode}
+	 * @param newNode the new {@link KMNode}
+	 */
+	public void replaceNode(KMNode oldNode, KMNode newNode) {
+		newNode.setOrigin(oldNode.getOrigin());
+		for (KMNode input : oldNode.getInputs()) {
+			newNode.addInput(input);
+			input.replaceOutputs(oldNode, newNode);
+		}
+
+		for (KMNode output : oldNode.getOutputs()) {
+			newNode.addOutput(output);
+			output.replaceInputs(oldNode, newNode);
+		}
+
+		newNode.addUsedInKernels(oldNode.getUsedInKernels());
+
+		addNode(newNode);
+		removeNode(oldNode);
+	}
+
+	@Override
+	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		for (KMNode node : m_nodes) {
+			sb.append("Node: " + node + "\n");
+			sb.append("Type: " + node.getResultType() + "\n");
+			sb.append("In: \n");
+			for (KMNode in : node.getInputs()) {
+				sb.append("\t" + in + "\n");
+			}
+			sb.append("Out: \n");
+			for (KMNode out : node.getOutputs()) {
+				sb.append("\t" + out + "\n");
+			}
+			sb.append("KernelsUsed: " + node.getUsedInKernels() + "\n\n");
+		}
+		return sb.toString();
+	}
+}

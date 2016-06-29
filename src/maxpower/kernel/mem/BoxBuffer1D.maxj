@@ -1,6 +1,7 @@
 package maxpower.kernel.mem;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelComponent;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
@@ -10,14 +11,14 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
  * This is a simple wrapper around {@link BoxBuffer} to give a slightly more convenient interface for
  * the common 1D case.
  */
-public class BoxBuffer1D<T extends KernelObjectVectorizable<T, ?>> extends KernelLib {
+public class BoxBuffer1D<T extends KernelObjectVectorizable<T, ?>> extends KernelComponent {
 
 	private final BoxBuffer<T> m_buffer;
 
 	/**
 	 * Create a single buffered 1D box buffer (see {@link BoxBuffer}).
 	 */
-	public BoxBuffer1D(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType) {
+	public BoxBuffer1D(KernelBase<?> root, int maxItems, int numOutputItems, DFEVectorType<T> inputType) {
 		super(root);
 		m_buffer = new BoxBuffer<T>(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType);
 	}
@@ -25,7 +26,7 @@ public class BoxBuffer1D<T extends KernelObjectVectorizable<T, ?>> extends Kerne
 	/**
 	 * Create a 1D box buffer (see {@link BoxBuffer}).
 	 */
-	public BoxBuffer1D(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
+	public BoxBuffer1D(KernelBase<?> root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
 		super(root);
 		m_buffer = new BoxBuffer<T>(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, doubleBuffered);
 	}
@@ -34,7 +35,7 @@ public class BoxBuffer1D<T extends KernelObjectVectorizable<T, ?>> extends Kerne
 	 * Create a single buffered 1D box buffer (see {@link BoxBuffer}).
 	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
 	 */
-	public BoxBuffer1D(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
+	public BoxBuffer1D(KernelBase<?> root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
 		super(root);
 		m_buffer = new BoxBuffer<T>(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, costOfBramInLuts);
 	}
@@ -43,7 +44,7 @@ public class BoxBuffer1D<T extends KernelObjectVectorizable<T, ?>> extends Kerne
 	 * Create a 1D box buffer (see {@link BoxBuffer1D}).
 	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
 	 */
-	public BoxBuffer1D(KernelLib root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
+	public BoxBuffer1D(KernelBase<?> root, int maxItems, int numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
 		super(root);
 		m_buffer = new BoxBuffer<T>(root, new int[] {maxItems}, new int[] {numOutputItems}, inputType, doubleBuffered, costOfBramInLuts);
 	}

@@ -3,8 +3,7 @@ package maxpower.hash;
 import java.util.ArrayList;
 import java.util.List;
 
-import maxpower.hash.mem.MemInterface;
-import maxpower.hash.mem.MemInterface.MemType;
+import maxpower.hash.mem.MemBacking;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
@@ -24,8 +23,6 @@ public abstract class MaxHash<T extends KernelObject<T>> extends
 	private final KernelType<T> m_valueType;
 	private final boolean m_validateResults;
 	private final CustomManager m_manager;
-
-	private static final int MAPPED_MEM_ENTRY_WIDTH = 64;
 
 	private final boolean DEBUG = false;
 
@@ -48,7 +45,7 @@ public abstract class MaxHash<T extends KernelObject<T>> extends
 	public static void connectKernelMemoryStreams(CustomManager m, Kernel k, KernelBlock kb) {
 		for (MaxHash<?> ht : MaxHashFactory.getHashTables(k)) {
 			/* Connect hashing block to memory for table lookups. */
-			for (MemInterface mi : ht.getMemInterfaces()) {
+			for (MemBacking mi : ht.getMemInterfaces()) {
 				mi.connectKernelMemoryStreams(m, kb);
 			}
 		}
@@ -57,7 +54,7 @@ public abstract class MaxHash<T extends KernelObject<T>> extends
 	public static void setupHostMemoryStreams(CustomManager m) {
 		for (MaxHash<?> ht : MaxHashFactory.getHashTables(m)) {
 			/* Connect hashing block to LMem for table lookups. */
-			for (MemInterface mi : ht.getMemInterfaces()) {
+			for (MemBacking mi : ht.getMemInterfaces()) {
 				mi.setupHostMemoryStreams(m);
 			}
 		}
@@ -87,18 +84,12 @@ public abstract class MaxHash<T extends KernelObject<T>> extends
 		m_name = params.getName();
 		m_manager = params.getManager();
 
-		if (params.getValuesMemType() == MemType.FMEM && getOutputStructType().getTotalBits() > MAPPED_MEM_ENTRY_WIDTH) {
-			throw new MaxHashException("The specified MaxHash parameters "
-					+ "lead to a memory entry width that is greater than "
-					+ "the currently supported maximum of 64 bits for "
-					+ "FMem-backed MaxHash instances.");
-		}
-
 		addMaxFileConstant("IsPresent", 1);
 		addMaxFileConstant("KeyWidth", params.getKeyType().getTotalBits());
 		addMaxFileConstant("ValidateResults", params.isValidateResults() ? 1 : 0);
 	}
 
+	@Override
 	public String getName() {
 		return m_name;
 	}
@@ -128,5 +119,5 @@ public abstract class MaxHash<T extends KernelObject<T>> extends
 
 	protected abstract int getMaxBucketEntries();
 
-	public abstract List<MemInterface> getMemInterfaces();
+	public abstract List<MemBacking> getMemInterfaces();
 }

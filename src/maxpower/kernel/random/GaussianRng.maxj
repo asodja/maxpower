@@ -1,11 +1,15 @@
 package maxpower.kernel.random;
 
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeFix;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeFixOffset;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeFloat;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeUInt;
+
 import java.util.ArrayList;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.WarningOptions.Warning;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.WarningOptions.WarningBehaviour;
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
@@ -40,7 +44,7 @@ public class GaussianRng {
 			throw new IllegalArgumentException("Result type can only be DFEFloat or DFEFix!");
 		}
 
-		DFEVar parity = mu.getKernel().control.count.simpleCounter(1);
+		DFEVar parity = mu.getOwner().control.count.simpleCounter(1);
 		return build((DFEType) outputType.getContainedType(), mu, sigma, parity, uniformRnd);
 	}
 
@@ -67,8 +71,8 @@ public class GaussianRng {
 	 */
 	public static DFEVector<DFEVar> getRand(String name, DFEVar mu, DFEVar sigma, DFEVectorType<DFEVar> outputType) {
 		return transform(mu, sigma,
-				MersenneTwister.getRand(mu.getKernel(), name + "_mt",
-						new DFEVectorType<DFEVar>(Kernel.dfeUInt(32), outputType.getSize())), outputType);
+				MersenneTwister.getRand(mu.getOwner(), name + "_mt",
+						new DFEVectorType<DFEVar>(dfeUInt(32), outputType.getSize())), outputType);
 	}
 
 	/**
@@ -81,8 +85,8 @@ public class GaussianRng {
 	 */
 	public static DFEVector<DFEVar> getRand(String name, DFEVar mu, DFEVar sigma, DFEType outputType, int count) {
 		return transform(mu, sigma,
-				MersenneTwister.getRand(mu.getKernel(), name + "_mt",
-						new DFEVectorType<DFEVar>(Kernel.dfeUInt(32), count)),
+				MersenneTwister.getRand(mu.getOwner(), name + "_mt",
+						new DFEVectorType<DFEVar>(dfeUInt(32), count)),
 						new DFEVectorType<DFEVar>(outputType, count));
 	}
 
@@ -108,12 +112,12 @@ public class GaussianRng {
 	 */
 	public static DFEVar getRand(String name, DFEVar mu, DFEVar sigma, DFEType outputType) {
 		return transform(mu, sigma,
-				MersenneTwister.getRand(mu.getKernel(), name + "_mt", Kernel.dfeUInt(32)), outputType);
+				MersenneTwister.getRand(mu.getOwner(), name + "_mt", dfeUInt(32)), outputType);
 	}
 
 	private static DFEVector<DFEVar> build(DFEType outputType, DFEVar mu, DFEVar sigma, DFEVar parity,
 			DFEVector<DFEVar> uniformRnd) {
-		KernelLib owner = mu.getKernel();
+		KernelBase<?> owner = mu.getOwner();
 
 		DFEVectorType<DFEVar> mpTypes = new DFEVectorType<DFEVar>(outputType, uniformRnd.getSize());
 		DFEVector<DFEVar> resultVector = mpTypes.newInstance(owner);
@@ -121,7 +125,7 @@ public class GaussianRng {
 		owner.debug.pushWarningBehaviour(Warning.CONSTANT_ENCODING, WarningBehaviour.IGNORE);
 
 		int uniformRndBitWidth = uniformRnd.getType().getContainedType().getTotalBits();
-		DFEFix type = Kernel.dfeFixOffset(uniformRndBitWidth, -uniformRndBitWidth, SignMode.UNSIGNED);
+		DFEFix type = dfeFixOffset(uniformRndBitWidth, -uniformRndBitWidth, SignMode.UNSIGNED);
 		DFEType computeType = getComputeType(outputType);
 
 		DFEVar a[] = new DFEVar[uniformRnd.getSize()];
@@ -146,7 +150,7 @@ public class GaussianRng {
 	}
 
 	private static DFEVar[] calculateLogAndSquareRoot(int count, DFEVar a[], DFEVar parity, DFEType computeType) {
-		KernelLib owner = a[0].getKernel();
+		KernelBase<?> owner = a[0].getOwner();
 
 		DFEVar r[] = new DFEVar[count];
 
@@ -181,10 +185,10 @@ public class GaussianRng {
 	private static DFEType getComputeType(DFEType outputType) {
 		if (outputType instanceof DFEFloat) {
 			DFEFloat floatType = (DFEFloat) outputType;
-			return Kernel.dfeFloat(floatType.getExponentBits(), Math.min(floatType.getMantissaBits(), 36));
+			return dfeFloat(floatType.getExponentBits(), Math.min(floatType.getMantissaBits(), 36));
 		} else {
 			DFEFix fixType = (DFEFix) outputType;
-			return Kernel.dfeFix(fixType.getIntegerBits() + 4, fixType.getFractionBits() - 4, fixType.getSignMode());
+			return dfeFix(fixType.getIntegerBits() + 4, fixType.getFractionBits() - 4, fixType.getSignMode());
 		}
 	}
 }

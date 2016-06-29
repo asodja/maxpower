@@ -1,0 +1,109 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Map.Entry;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeAnd;
+import maxpower.kernel.merger.nodes.KMNodeMax;
+import maxpower.kernel.merger.nodes.KMNodeMin;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+import maxpower.kernel.merger.nodes.KMNodeOr;
+import maxpower.kernel.merger.ops.AssociativeOp;
+
+/**
+ * This graph pass optimises trees. E.g a * a * a * a can be implemented with 2 multiplies instead of 3
+ * It also removes duplicates inputs from max, min, and and or.
+ * Average Complexity: O(n)
+ * Worst Case Complexity: O(n^2)
+ * @author nvoss
+ *
+ */
+
+public class TreeOptimisationGraphPass {
+
+	public static boolean run(final KMGraph graph) {
+
+		return GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+			@Override
+			public boolean processNode(KMNode node) {
+				if (node instanceof AssociativeOp) {
+					if (node instanceof KMNodeMul) {
+						return tryFoldPow(node);
+					} else if (node instanceof KMNodeAnd || node instanceof KMNodeOr ||
+							node instanceof KMNodeMin || node instanceof KMNodeMax) {
+						return tryRemoveDuplicateInputs(node);
+					}
+				}
+				return false;
+			}
+
+			private boolean tryFoldPow(KMNode node) {
+				boolean changed = false;
+				Map<KMNode, Integer> countOfInputs = getInputCount(node);
+
+				for (Entry<KMNode, Integer> input : countOfInputs.entrySet()) {
+					if (input.getValue() > 3) {
+						changed = true;
+
+						// Move two inputs out in a separate multiplication
+						// The rest will be done by the tree common sub expression graph pass
+						KMNode mul = new KMNodeMul(input.getKey(), input.getKey());
+						mul.setOrigin(input.getKey().getOrigin());
+						mul.addOutput(node);
+						node.removeOneInput(input.getKey());
+						node.removeOneInput(input.getKey());
+						input.getKey().replaceOneOutput(node, mul);
+						input.getKey().replaceOneOutput(node, mul);
+						node.addInput(mul);
+						mul.addUsedInKernels(node.getUsedInKernels());
+						graph.addNode(mul);
+					}
+				}
+				return changed;
+			}
+
+			private boolean tryRemoveDuplicateInputs(KMNode node) {
+				boolean changed = false;
+				Map<KMNode, Integer> countOfInputs = getInputCount(node);
+
+				for (Entry<KMNode, Integer> input : countOfInputs.entrySet()) {
+					if (input.getValue() > 1) {
+						changed = true;
+						input.getKey().removeOneOutput(node);
+						node.removeOneInput(input.getKey());
+					}
+				}
+
+				// Check if all inputs were equal
+				if (node.getInputs().size() == 1) {
+					KMNode input = node.getInputs()[0];
+					input.removeOutput(node);
+					for (KMNode output : node.getOutputs()) {
+						output.replaceInputs(node, input);
+						input.addOutput(output);
+					}
+					graph.removeNode(node);
+				}
+
+				return changed;
+			}
+
+			private Map<KMNode, Integer> getInputCount(KMNode node) {
+				Map<KMNode, Integer> countOfInputs = new HashMap<KMNode, Integer>();
+				for (KMNode input : node.getInputs()) {
+					Integer count = countOfInputs.get(input);
+					if (count == null) {
+						count = new Integer(0);
+					}
+					countOfInputs.put(input, count + 1);
+				}
+				return countOfInputs;
+			}
+
+		});
+	}
+
+}

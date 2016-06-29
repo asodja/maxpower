@@ -10,6 +10,9 @@
 
 typedef struct lmem_cpu_access_s lmem_cpu_access_t;
 
+extern lmem_cpu_access_t *lmem_init_cpu_access_named(max_file_t *maxfile, max_engine_t *engine,
+		const char *cmd_stream_name, const char *write_cpu_stream_name, const char *read_cpu_stream_name,
+		const char *write_stream_name, const char *read_stream_name, const char *interface_name);
 extern lmem_cpu_access_t *lmem_init_cpu_access(max_file_t *maxfile, max_engine_t *engine);
 extern size_t lmem_get_burst_size_bytes(lmem_cpu_access_t *handle);
 extern void lmem_write(lmem_cpu_access_t *handle, uint32_t address_bursts, const void *data, size_t data_size_bursts);

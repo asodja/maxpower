@@ -1,0 +1,39 @@
+package maxpower.kernel.merger.nodes;
+
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.utils.ResourceUsage;
+
+public class KMNodeSimWatch extends KMNode implements java.io.Serializable {
+
+	private static final long serialVersionUID = 7674485896568105727L;
+
+	private final String m_name;
+
+	public KMNodeSimWatch(KMVar input, String name) {
+		super();
+		m_inputs.add(input.getSource());
+		m_name = name;
+	}
+
+	@Override
+	public void execute(Merger merger) {
+		m_inputs[0].getResult().simWatch(m_name);
+	}
+
+	@Override
+	public ResourceUsage getResourceUsageEstimate(Merger merger) {
+		return new ResourceUsage(0, 0, 0, 0);
+	}
+
+	@Override
+	int getLatencyEstimate(Merger merger) {
+		return 0;
+	}
+
+	@Override
+	public String toString() {
+		return "NodeSimwatch: " + m_id;
+	}
+
+}

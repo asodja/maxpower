@@ -1,7 +1,8 @@
 package maxpower.kernel.control;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeBool;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
@@ -23,7 +24,7 @@ public class VarPulse {
 	 * @return A stream of type dfeBool().
 	 */
 	public static DFEVar pulse(DFEVar numTicks) {
-		Kernel owner = numTicks.getKernel();
+		KernelBase<?> owner = numTicks.getOwner();
 		return pulse(numTicks, true, owner.constant.var(true));
 	}
 
@@ -46,7 +47,7 @@ public class VarPulse {
 	 * @return A stream of type dfeBool().
 	 */
 	public static DFEVar pulse(DFEVar numTicks, boolean initialValue) {
-		Kernel owner = numTicks.getKernel();
+		KernelBase<?> owner = numTicks.getOwner();
 		return pulse(numTicks, initialValue, owner.constant.var(true));
 	}
 
@@ -59,8 +60,7 @@ public class VarPulse {
 	 * @return A stream of type dfeBool().
 	 */
 	public static DFEVar pulse(DFEVar numTicks, boolean initialValue, DFEVar enable) {
-
-		Kernel owner = numTicks.getKernel();
+		KernelBase<?> owner = numTicks.getOwner();
 
 		if (!numTicks.getType().isUInt()){
 			throw new RuntimeException("numTicks must be of type dfeUInt.");
@@ -76,7 +76,7 @@ public class VarPulse {
 		count.setReportOnUnused(false);
 
 		DFEVar flipped = owner.constant.var(!initialValue);
-		DFEVar held = Reductions.streamHold(flipped, wrap, KernelLib.dfeBool().encodeConstant(initialValue));
+		DFEVar held = Reductions.streamHold(flipped, wrap, dfeBool().encodeConstant(initialValue));
 		return (numTicks === 0) ? flipped : owner.stream.offset(held, -1);
 	}
 }

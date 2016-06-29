@@ -15,16 +15,61 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;
 import com.maxeler.maxcompiler.v2.managers.DFEModel;
+import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.Flushing;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
 import com.maxeler.maxcompiler.v2.managers.custom.stdlib.DebugLevel;
-import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MemoryControllerConfig;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemChannelGranularity;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemInterface;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
 import com.maxeler.maxeleros.ip.SlicePad.Padder;
 import com.maxeler.maxeleros.managerblocks.StructUtils;
-import com.maxeler.networking.statemachines.Flushing;
-import com.maxeler.networking.v1.managers.NetworkManager;
-import com.maxeler.utils.MemoryManager;
+import com.maxeler.maxeleros.managercompiler.configuration.ManagerDRAMConfiguration.LMemConfig;
 
-class SuperFifoTest extends NetworkManager {
+class SuperFifoTest extends CustomManager {
+
+	public static class SuperFifoParameters extends EngineParameters {
+
+		protected SuperFifoParameters(String[] args) {
+			super(args);
+		}
+
+		@Override
+		protected void declarations() {
+			declareParam(s_parameterMaxFileName, DataType.STRING, "SuperFifoTest");
+			declareParam(s_parameterDFE, DataType.DFEMODEL, DFEModel.ISCA);
+			declareParam(s_parameterTarget, Target.class, Target.DFE_SIM);
+			declareParam("hasStreamStatus", DataType.BOOL, true);
+			declareParam("tag", DataType.STRING, "");
+			declareParam("ddrFrequency", DataType.INT, 400);
+		}
+
+		public boolean isSimulation() {
+			return getTarget() == com.maxeler.maxcompiler.v2.build.EngineParameters.Target.DFE_SIM;
+		}
+
+		public boolean hasStreamStatus() {
+			return getParam("hasStreamStatus");
+		}
+
+		public String getTag() {
+			return getParam("tag");
+		}
+
+		public int getDdrFrequency() {
+			return getParam("ddrFrequency");
+		}
+
+		@Override
+		public String getBuildName() {
+			return getMaxFileName()
+					+ (hasStreamStatus() ? "_SS" : "")
+					+ (getTag().length() > 0 ? "_" + getTag() : "")
+					+ "_" + getDFEModel().toString()
+					+ "_" + getTarget().toString();
+		}
+	}
+
 
 	private static class DataGen extends Kernel {
 		public static ConfigWordType configWordType = new ConfigWordType();
@@ -76,42 +121,37 @@ class SuperFifoTest extends NetworkManager {
 
 	}
 
-	private SuperFifoTest(boolean sim) {
-		super(new EngineParameters("SuperFifoTest_" + (sim ? "SIM" : "HW"), DFEModel.ISCA,
-				sim ? com.maxeler.maxcompiler.v2.build.EngineParameters.Target.DFE_SIM :
-					com.maxeler.maxcompiler.v2.build.EngineParameters.Target.DFE));
+	private SuperFifoTest(final SuperFifoParameters params) {
+		super(params);
 
-		MemoryControllerConfig mcc = new MemoryControllerConfig();
-		config.setOnCardMemoryFrequency(800);
-		mcc.setMAX4qMode(true);
-		mcc.setBurstSize(8);
+		LMemConfig mcc = makeLMemConfig()
+			.setEnableParityMode(true)
+			.setEnableECCMode(true)
+			.setChannelGranularity(LMemChannelGranularity.getGranularity(8));
 
-		mcc.setEnableParityMode(true, true, 72, false);
-		mcc.setEnableFlagCommands(true);
-		config.setMemoryControllerConfig(mcc);
+		LMemInterface iface = addLMemInterface(mcc);
 
 		config.setDefaultStreamClockFrequency(157);
-		debug.setDebugLevel(new DebugLevel().setHasStreamStatus(true));
+		debug.setDebugLevel(new DebugLevel().setHasStreamStatus(params.hasStreamStatus()));
 
-		int fifoWidth = 192;
+		final int fifoWidth = 192;
 
-		MemoryManager lmemOrganizer = new MemoryManager(this);
-
-		FifoIO io = SuperFifo.create(this, "superFifo", DFETypeFactory.dfeUInt(192), 32*1024L, lmemOrganizer);
+		FifoIO io = SuperFifo.create(this, iface, "superFifo", DFETypeFactory.dfeUInt(fifoWidth), 1024*1024*1024L);
 
 		KernelBlock dataGen = addKernel(new DataGen(makeKernelParameters("dataGenKernel"), fifoWidth));
 
 		dataGen.getInput("configWord") <== addStreamFromCPU("configWord");
 
 		io.write <== dataGen.getOutput("dataOut");
-		addStreamToCPU("read_fifo") <== Padder.padSource(this, io.read, 256);
+		final int padWidth = MathUtils.nextMultiple(fifoWidth, 128);
+		addStreamToCPU("read_fifo") <== Padder.padSource(this, io.read, padWidth);
 
-		lmemOrganizer.log();
+		iface.logAllocation(this);
 	}
 
-	public static void main(String [] args) {
-		boolean isSim = true;
-		SuperFifoTest m = new SuperFifoTest(isSim);
+	public static void main(final String[] args) {
+		final SuperFifoParameters params = new SuperFifoParameters(args);
+		final SuperFifoTest m = new SuperFifoTest(params);
 		m.build();
 	}
 }

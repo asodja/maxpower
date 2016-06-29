@@ -1,0 +1,229 @@
+package maxpower.kernel.io;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+/**
+ * Creates an input similar to {@link com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.IO IO}
+ * where you can select the type of the input or output dynamically. Currently this is effectively
+ * a thin wrapper around VariableWidthIO.
+ *
+ * @author Stephen Girdlestone
+ */
+public class VariableTypeIO {
+
+	//TODO: add version optimised for when select comes from a scalar input
+
+	/**
+	 * Create an input that can change the type of data it gives depending on what is requested.
+	 * @param name The name of the input as referenced in the manager
+	 * @param types A list of all the possible types you might want to get from this input
+	 * @param select The list index of the type you wish to get
+	 * @return List of DFEVars that contains data of the types specified. Only one of these will contain valid data.
+	 */
+	public static <T extends KernelObject<T>>
+	List<T> input(String name, List<? extends KernelType<T>> types, DFEVar select) {
+		return makeInput(name, types, select, select.getKernel().constant.var(true), false, 0, select.getKernel().constant.var(false));
+	}
+
+	/**
+	 * Create an input that can change the type of data it gives depending on what is requested.
+	 * @param name The name of the input as referenced in the manager
+	 * @param types A list of all the possible types you might want to get from this input
+	 * @param select The list index of the type you wish to get
+	 * @param enable Read a new value into the kernel.
+	 * @return List of DFEVars that contains data of the types specified. Only one of these will contain valid data.
+	 */
+	public static <T extends KernelObject<T>>
+	List<T> input(String name, List<? extends KernelType<T>> types, DFEVar select, DFEVar enable) {
+		return makeInput(name, types, select, enable, false, 0, select.getKernel().constant.var(false));
+	}
+
+	/**
+	 * Create an input that can change the type of data it gives depending on what is requested.
+	 * @param name The name of the input as referenced in the manager
+	 * @param types A list of all the possible types you might want to get from this input
+	 * @param select The list index of the type you wish to get
+	 * @param enable Read a new value into the kernel.
+	 * @param portWidth The width of the port in hardware in bits (128,1536,3072).
+	 * @return List of DFEVars that contains data of the types specified. Only one of these will contain valid data.
+	 */
+	public static <T extends KernelObject<T>>
+	List<T> input(String name, List<? extends KernelType<T>> types, DFEVar select, DFEVar enable, int portWidth) {
+		return makeInput(name, types, select, enable, true, portWidth, select.getKernel().constant.var(false));
+	}
+
+	/**
+	 * Create an input that can change the type of data it gives depending on what is requested.
+	 * @param name The name of the input as referenced in the manager
+	 * @param types A list of all the possible types you might want to get from this input
+	 * @param select The list index of the type you wish to get
+	 * @param enable Read a new value into the kernel.
+	 * @param portWidth The width of the port in hardware in bits (128,1536,3072).
+	 * @param restart Throw away padding and bring in new data on this cycle.
+	 * @return List of DFEVars that contains data of the types specified. Only one of these will contain valid data.
+	 */
+	public static <T extends KernelObject<T>>
+	List<T> input(String name, List<? extends KernelType<T>> types, DFEVar select, DFEVar enable, int portWidth, DFEVar restart) {
+		return makeInput(name, types, select, enable, true, portWidth, restart);
+	}
+
+	private static <T extends KernelObject<T>>
+	List<T> makeInput(String name, List<? extends KernelType<T>> types, DFEVar select, DFEVar enable, boolean useAcio, int portWidth, DFEVar restart) {
+		if (types.size() < 2) {
+			throw new MaxCompilerAPIError("There must be more than one type for a variable type input.");
+		}
+		DFEVar numToRead = getNumToReadOrWrite(select, enable, types);
+
+		DFEVector<DFEVar> rawInput;
+		if (useAcio) {
+			rawInput = VariableWidthIO.input(name, getChunkedType(types), numToRead, portWidth, restart);
+		} else {
+			rawInput = VariableWidthIO.input(name, getChunkedType(types), numToRead);
+		}
+
+		List<T> output = new ArrayList<T>();
+		for (KernelType<T> t : types) {
+			output.add(t.unpack(rawInput.pack().slice(0, t.getTotalBits())));
+		}
+
+		return output;
+	}
+
+	/**
+	 * Create an output that can change the type of data it gives depending on what is requested.
+	 * @param name The name of the output as referenced in the manager
+	 * @param outputData A list of all the possible things you might want to output
+	 * @param select The list index of the type you wish to get
+	 */
+	public static <T extends KernelObject<T>>
+	void output(String name, List<T> outputData, DFEVar select) {
+		makeOutput(name, outputData, select, select.getKernel().constant.var(true), false, 0, select.getKernel().constant.var(false));
+	}
+
+	/**
+	 * Create an output that can change the type of data it gives depending on what is requested.
+	 * @param name The name of the output as referenced in the manager
+	 * @param outputData A list of all the possible things you might want to output
+	 * @param select The list index of the thing you wish to output
+	 * @param enable Boolean to say if data is valid on this cycle.
+	 */
+	public static <T extends KernelObject<T>>
+	void output(String name, List<T> outputData, DFEVar select, DFEVar enable) {
+		makeOutput(name, outputData, select, enable, false, 0, select.getKernel().constant.var(false));
+	}
+
+	/**
+	 * Create an output that can change the type of data it gives depending on what is requested.
+	 * @param name The name of the output as referenced in the manager
+	 * @param outputData A list of all the possible things you might want to output
+	 * @param select The list index of the thing you wish to output
+	 * @param enable Boolean to say if data is valid on this cycle.
+	 * @param portWidth The width of the port in hardware in bits (128,1536,3072).
+	 */
+	public static <T extends KernelObject<T>>
+	void output(String name, List<T> outputData, DFEVar select, DFEVar enable, int portWidth) {
+		makeOutput(name, outputData, select, enable, true, portWidth, select.getKernel().constant.var(false));
+	}
+
+	/**
+	 * Create an output that can change the type of data it gives depending on what is requested.
+	 * @param name The name of the output as referenced in the manager
+	 * @param outputData A list of all the possible things you might want to output
+	 * @param select The list index of the thing you wish to output
+	 * @param enable Boolean to say if data is valid on this cycle.
+	 * @param portWidth The width of the port in hardware in bits (128,1536,3072).
+	 * @param doFlush Add padding and send out data on this cycle.
+	 */
+	public static <T extends KernelObject<T>>
+	void output(String name, List<T> outputData, DFEVar select, DFEVar enable, int portWidth, DFEVar doFlush) {
+		makeOutput(name, outputData, select, enable, true, portWidth, doFlush);
+	}
+
+	private static <T extends KernelObject<T>>
+	void makeOutput(String name, List<T> outputData, DFEVar select, DFEVar enable, boolean useAcio, int portWidth, DFEVar doFlush) {
+		if (outputData.size() < 2) {
+			throw new MaxCompilerAPIError("There must be more than one type for a variable type input.");
+		}
+
+		DFEVar numToWrite = getNumToReadOrWrite(select, enable, getTypes(outputData));
+		DFEVector<DFEVar> output = selectRawOutput(select, outputData);
+
+		if (useAcio) {
+			VariableWidthIO.output(name, output, numToWrite, portWidth, doFlush);
+		} else {
+			VariableWidthIO.output(name, output, numToWrite);
+		}
+	}
+
+	private static <T extends KernelObject<T>>
+	DFEVector<DFEVar> selectRawOutput(DFEVar select, List<T> outputData) {
+		DFEVectorType<DFEVar> rawType = getChunkedType(getTypes(outputData));
+		Kernel owner = select.getKernel();
+		List<DFEVector<DFEVar>> paddedVars = new ArrayList<DFEVector<DFEVar>>();
+		for (T d : outputData) {
+			int padding = rawType.getTotalBits() - d.getType().getTotalBits();
+			DFEVar padded = padding > 0 ? owner.constant.zero(Kernel.dfeUInt(padding)) # d.pack() : d.pack();
+			paddedVars.add(rawType.unpack(padded.pack()));
+		}
+		return owner.control.mux(select, paddedVars);//TODO: can we make this more efficient?
+	}
+
+	private static <T extends KernelObject<T>>
+	DFEVectorType<DFEVar> getChunkedType(List<? extends KernelType<T>> types) {
+		int elementSize = getHcf(types);
+		int maxWidth    = getMaxBits(types);
+		int numElements = maxWidth / elementSize;
+		return new DFEVectorType<DFEVar>(Kernel.dfeRawBits(elementSize), numElements);
+	}
+
+	private static <T extends KernelObject<T>>
+	DFEVar getNumToReadOrWrite(DFEVar select, DFEVar enable, List<? extends KernelType<T>> types) {
+		DFEVectorType<DFEVar> rawType = getChunkedType(types);
+		DFEType numElementsType = Kernel.dfeUInt(MathUtils.bitsToRepresent(rawType.getSize()));
+
+		Kernel owner = select.getKernel();
+		List<DFEVar> sizes = new ArrayList<DFEVar>();
+		for (KernelType<T> t : types) {
+			sizes.add(owner.constant.var(numElementsType, t.getTotalBits() / rawType.getContainedType().getTotalBits()));
+		}
+		return enable ? owner.control.mux(select, sizes) : 0;
+	}
+
+	private static <T extends KernelObject<T>>
+	int getMaxBits(List<? extends KernelType<T>> types) {
+		int maxWidth = types[0].getTotalBits();
+		for (int i = 1; i < types.size(); i++) {
+			maxWidth = Math.max(maxWidth, types[i].getTotalBits());
+		}
+		return maxWidth;
+	}
+
+	private static <T extends KernelObject<T>>
+	int getHcf(List<? extends KernelType<T>> types) {
+		int hcf = types[0].getTotalBits();
+		for (int i = 1; i < types.size(); i++) {
+			hcf = MathUtils.greatestCommonDivisor(hcf, types[i].getTotalBits());
+		}
+		return hcf;
+	}
+
+	private static <T extends KernelObject<T>>
+	List<KernelType<T>> getTypes(List<T> objects) {
+		List<KernelType<T>> types = new ArrayList<KernelType<T>>();
+		for (T o : objects) {
+			types.add(o.getType());
+		}
+		return types;
+	}
+}

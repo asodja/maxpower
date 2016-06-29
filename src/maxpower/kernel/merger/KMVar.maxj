@@ -1,0 +1,302 @@
+package maxpower.kernel.merger;
+
+import java.util.Arrays;
+import java.util.List;
+
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeAdd;
+import maxpower.kernel.merger.nodes.KMNodeAnd;
+import maxpower.kernel.merger.nodes.KMNodeComplement;
+import maxpower.kernel.merger.nodes.KMNodeConstant;
+import maxpower.kernel.merger.nodes.KMNodeDiv;
+import maxpower.kernel.merger.nodes.KMNodeEq;
+import maxpower.kernel.merger.nodes.KMNodeGt;
+import maxpower.kernel.merger.nodes.KMNodeGte;
+import maxpower.kernel.merger.nodes.KMNodeLt;
+import maxpower.kernel.merger.nodes.KMNodeLte;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+import maxpower.kernel.merger.nodes.KMNodeMux;
+import maxpower.kernel.merger.nodes.KMNodeNeg;
+import maxpower.kernel.merger.nodes.KMNodeNeq;
+import maxpower.kernel.merger.nodes.KMNodeOr;
+import maxpower.kernel.merger.nodes.KMNodeSimWatch;
+import maxpower.kernel.merger.nodes.KMNodeSub;
+import maxpower.kernel.merger.nodes.KMNodeXor;
+import maxpower.ops.BinaryOp;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+
+/**
+ * A {@link KMVar} is the basic unit for operations in this library and forms the edges in the dataflow graph.
+ *
+ * It can contain a {@link DFEVar}, a {@link DFEComplex} or even a {@link DFEVector}.
+ * Operator overloading is similar to {@link DFEVar}.
+ *
+ * @author nvoss
+ */
+public class KMVar {
+	/** {@link KMKernel} in which this KMVar is used. */
+	private final KMKernel m_owner;
+	/** {@link KMNode} to wich this {@link KMVar} is connected. */
+	private KMNode m_source;
+
+	/**
+	 * Creates a source less {@link KMVar}.
+	 * @param owner Kernel in which this {@link KMVar} is used.
+	 */
+	KMVar(KMKernel owner) {
+		m_owner = owner;
+		m_source = null;
+	}
+
+	public KMVar(KMKernel owner, double value) {
+		m_owner = owner;
+		KMNode node = new KMNodeConstant(value);
+		m_owner.addNodeToKernelGraph(node);
+
+		m_source = node;
+	}
+
+	void setSource(KMNode src) {
+		m_source = src;
+	}
+
+	/**
+	 * Returns the source node for this var.
+	 */
+	public KMNode getSource() {
+		return m_source;
+	}
+
+	/**
+	 * Returns the {@link KMKernel} in which this {@link KMVar} is used.
+	 * @return The {@link KMKernel} this {@link KMVar} belongs to.
+	 */
+	public KMKernel getOwner() {
+		return m_owner;
+	}
+
+	/**
+	 * Disables the warning if the result of the last calculation performed on this {@link KMVar} is not used.
+	 */
+	public void disableReportOnUnused() {
+		m_source.disableReportOnUnused();
+	}
+
+	/**
+	 * Adds a simWatch to this {@link KMVar} for debugging purposes.
+	 * @param name Name of the column in the simWatch overview.
+	 */
+	public void simWatch(String name) {
+		m_owner.addNodeToKernelGraph(new KMNodeSimWatch(this, name));
+	}
+
+	public KMVar add(KMVar rhs) {
+		return connectNode(new KMNodeAdd(this, rhs));
+	}
+
+	public KMVar add(double rhs) {
+		return connectNode(new KMNodeAdd(this, createNodeConst(rhs)));
+	}
+
+	public KMVar addAsRHS(double lhs) {
+		return connectNode(new KMNodeAdd(createNodeConst(lhs), this));
+	}
+
+	public KMVar sub(KMVar rhs) {
+		return connectNode(new KMNodeSub(this, rhs));
+	}
+
+	public KMVar sub(double rhs) {
+		return connectNode(new KMNodeSub(this, createNodeConst(rhs)));
+	}
+
+	public KMVar subAsRHS(double lhs) {
+		return connectNode(new KMNodeSub(createNodeConst(lhs), this));
+	}
+
+	public KMVar mul(KMVar rhs) {
+		return connectNode(new KMNodeMul(this, rhs));
+	}
+
+	public KMVar mul(double rhs) {
+		return connectNode(new KMNodeMul(this, createNodeConst(rhs)));
+	}
+
+	public KMVar mulAsRHS(double lhs) {
+		return connectNode(new KMNodeMul(createNodeConst(lhs), this));
+	}
+
+	public KMVar div(KMVar rhs) {
+		return connectNode(new KMNodeDiv(this, rhs));
+	}
+
+	public KMVar div(double rhs) {
+		return connectNode(new KMNodeDiv(this, createNodeConst(rhs)));
+	}
+
+	public KMVar divAsRHS(double lhs) {
+		return connectNode(new KMNodeDiv(createNodeConst(lhs), this));
+	}
+
+	public KMVar and(KMVar rhs) {
+		return connectNode(new KMNodeAnd(this, rhs));
+	}
+
+	public KMVar and(double rhs) {
+		return connectNode(new KMNodeAnd(this, createNodeConst(rhs)));
+	}
+
+	public KMVar andAsRHS(double lhs) {
+		return connectNode(new KMNodeAnd(createNodeConst(lhs), this));
+	}
+
+	public KMVar or(KMVar rhs) {
+		return connectNode(new KMNodeOr(this, rhs));
+	}
+
+	public KMVar or(double rhs) {
+		return connectNode(new KMNodeOr(this, createNodeConst(rhs)));
+	}
+
+	public KMVar orAsRHS(double lhs) {
+		return connectNode(new KMNodeOr(createNodeConst(lhs), this));
+	}
+
+	public KMVar xor(KMVar rhs) {
+		return connectNode(new KMNodeXor(this, rhs));
+	}
+
+	public KMVar xor(double rhs) {
+		return connectNode(new KMNodeXor(this, createNodeConst(rhs)));
+	}
+
+	public KMVar xorAsRHS(double lhs) {
+		return connectNode(new KMNodeXor(createNodeConst(lhs), this));
+	}
+
+	public KMVar lt(KMVar rhs) {
+		return connectNode(new KMNodeLt(this, rhs));
+	}
+
+	public KMVar lt(double rhs) {
+		return connectNode(new KMNodeLt(this, createNodeConst(rhs)));
+	}
+
+	public KMVar ltAsRHS(double lhs) {
+		return connectNode(new KMNodeLt(createNodeConst(lhs), this));
+	}
+
+	public KMVar lte(KMVar rhs) {
+		return connectNode(new KMNodeLte(this, rhs));
+	}
+
+	public KMVar lte(double rhs) {
+		return connectNode(new KMNodeLte(this, createNodeConst(rhs)));
+	}
+
+	public KMVar lteAsRHS(double lhs) {
+		return connectNode(new KMNodeLte(createNodeConst(lhs), this));
+	}
+
+	public KMVar gt(KMVar rhs) {
+		return connectNode(new KMNodeGt(this, rhs));
+	}
+
+	public KMVar gt(double rhs) {
+		return connectNode(new KMNodeGt(this, createNodeConst(rhs)));
+	}
+
+	public KMVar gtAsRHS(double lhs) {
+		return connectNode(new KMNodeGt(createNodeConst(lhs), this));
+	}
+
+	public KMVar gte(KMVar rhs) {
+		return connectNode(new KMNodeGte(this, rhs));
+	}
+
+	public KMVar gte(double rhs) {
+		return connectNode(new KMNodeGte(this, createNodeConst(rhs)));
+	}
+
+	public KMVar gteAsRHS(double lhs) {
+		return connectNode(new KMNodeGte(createNodeConst(lhs), this));
+	}
+
+	public KMVar eq(KMVar rhs) {
+		return connectNode(new KMNodeEq(this, rhs));
+	}
+
+	public KMVar eq(double rhs) {
+		return connectNode(new KMNodeEq(this, createNodeConst(rhs)));
+	}
+
+	public KMVar eqAsRHS(double lhs) {
+		return connectNode(new KMNodeEq(createNodeConst(lhs), this));
+	}
+
+	public KMVar neq(KMVar rhs) {
+		return connectNode(new KMNodeNeq(this, rhs));
+	}
+
+	public KMVar neq(double rhs) {
+		return connectNode(new KMNodeNeq(this, createNodeConst(rhs)));
+	}
+
+	public KMVar neqAsRHS(double lhs) {
+		return connectNode(new KMNodeNeq(createNodeConst(lhs), this));
+	}
+
+	public KMVar neg() {
+		return connectNode(new KMNodeNeg(this));
+	}
+
+	public KMVar complement() {
+		return connectNode(new KMNodeComplement(this));
+	}
+
+	public KMVar ternaryIf(KMVar trueCond, KMVar falseCond) {
+		List<KMVar> inputs = Arrays.asList(falseCond, trueCond);
+		return connectNode(new KMNodeMux(this, inputs));
+	}
+
+	public KMVar ternaryIf(double trueCond, KMVar falseCond) {
+		return ternaryIf(createNodeConst(trueCond), falseCond);
+	}
+
+	public KMVar ternaryIf(KMVar trueCond, double falseCond) {
+		return ternaryIf(trueCond, createNodeConst(falseCond));
+	}
+
+	public KMVector ternaryIf(KMVector trueCond, KMVector falseCond) {
+		if (trueCond.getSize() != falseCond.getSize()) {
+			throw new MaxCompilerAPIError("Both Vectors have to have the same size in order to be operated on.");
+		}
+		return KMVector.map2(trueCond, falseCond, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return KMVar.this ? a : b; }
+		});
+	}
+
+	public KMNDArray ternaryIf(KMNDArray trueCond, KMNDArray falseCond) {
+		if (!trueCond.getDimensions().equals(falseCond.getDimensions())) {
+			throw new MaxCompilerAPIError("Dimensions of both KMnDArrays have to match up!");
+		}
+		return new KMNDArray(this ? trueCond.getElementsAsVector() : falseCond.getElementsAsVector(),
+				trueCond.getDimensions());
+	}
+
+	private KMVar createNodeConst(double value) {
+		return new KMVar(m_owner, value);
+	}
+
+	private KMVar connectNode(KMNode node) {
+		m_owner.addNodeToKernelGraph(node);
+
+		KMVar result = new KMVar(m_owner);
+		result.m_source = node;
+		return result;
+	}
+}

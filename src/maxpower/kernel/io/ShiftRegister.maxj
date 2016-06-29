@@ -6,7 +6,7 @@ import java.util.List;
 
 import maxpower.kernel.pipeline.FanoutLimiter;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
@@ -36,7 +36,7 @@ public class ShiftRegister {
 	 * @return a vector of the data in the shift register; earliest data at index 0
 	 */
 	public static <T extends KernelObjectVectorizable<T, ?>> DFEVector<T> serialToParallel(int n, T input) {
-		Kernel owner = input.getKernel();
+		KernelBase<?> owner = input.getOwner();
 		return owner.stream.offset(serialToParallel(n, input, null), +n-1);
 	}
 
@@ -64,7 +64,7 @@ public class ShiftRegister {
 	 */
 	public static <T extends KernelObjectVectorizable<T, ?>>
 	DFEVector<T> serialToParallel(int n, T input, DFEVar inputValid, int maxFanout) {
-		Kernel owner = input.getKernel();
+		KernelBase<?> owner = input.getOwner();
 
 		// FIXME Workaround for compiler's inability to constant-fold NodeRegister. There is a ticket open.
 		FanoutLimiter<DFEVar> inputValidPl = (inputValid == null)
@@ -161,7 +161,7 @@ public class ShiftRegister {
 	 */
 	public static <T extends KernelObject<T>>
 	T parallelToSerial(List<T> input, DFEVar inputValid, DFEVar shift, int maxFanout) {
-		Kernel owner = inputValid.getKernel();
+		KernelBase<?> owner = inputValid.getOwner();
 		int n = input.size();
 
 		FanoutLimiter<DFEVar> inputValidPl = new FanoutLimiter<DFEVar>(inputValid, maxFanout);

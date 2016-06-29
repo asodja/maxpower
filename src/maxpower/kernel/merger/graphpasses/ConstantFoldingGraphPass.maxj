@@ -1,0 +1,321 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeAnd;
+import maxpower.kernel.merger.nodes.KMNodeComplement;
+import maxpower.kernel.merger.nodes.KMNodeConstant;
+import maxpower.kernel.merger.nodes.KMNodeDiv;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+import maxpower.kernel.merger.nodes.KMNodeMux;
+import maxpower.kernel.merger.nodes.KMNodeNeg;
+import maxpower.kernel.merger.nodes.KMNodeOr;
+import maxpower.kernel.merger.nodes.KMNodeSub;
+import maxpower.kernel.merger.ops.AssociativeOp;
+import maxpower.kernel.merger.ops.BinaryOp;
+import maxpower.kernel.merger.ops.UnaryOp;
+
+/**
+ * This graph pass tries to removes nodes with constant inputs.
+ * Average Complexity: O(n)
+ * Worst Case Complexity: O(n^2)
+ * @author nvoss
+ *
+ */
+public class ConstantFoldingGraphPass {
+
+	public static boolean run(final KMGraph graph, final Merger merger) {
+		return GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+			@Override
+			public boolean processNode(KMNode node) {
+				boolean changed = false;
+				if (node instanceof AssociativeOp) {
+					if (node instanceof KMNodeMul || node instanceof KMNodeAnd) {
+						changed = tryAnnihilateAssociativeOp(node, 0);
+					} else if (node instanceof KMNodeOr) {
+						changed = tryAnnihilateAssociativeOp(node, 1);
+					}
+					if (!changed) {
+						changed = tryFoldAssociativeOp(node);
+					}
+				} else if (node instanceof BinaryOp) {
+					changed = tryFoldBinaryOp(node);
+					if (!changed && node instanceof KMNodeSub) {
+						changed = tryFoldSub(node);
+					} else if (!changed && node instanceof KMNodeDiv) {
+						changed = tryFoldDiv(node);
+					}
+				} else if (node instanceof UnaryOp) {
+					changed = tryFoldUnaryOp(node);
+				} else if (node instanceof KMNodeMux) {
+					changed = tryFoldMux((KMNodeMux) node);
+				}
+				return changed;
+			}
+
+			private boolean tryFoldSub(KMNode node) {
+				if (node.getInputs()[1] instanceof KMNodeConstant &&
+						getConstantValue(node.getInputs()[1]) == 0) {
+					List<KMNode> constants = new ArrayList<KMNode>();
+					constants.add(node.getInputs()[1]);
+					constantFoldNode(node, constants, 0, 0);
+					return true;
+				} else if (node.getInputs()[0] instanceof KMNodeConstant &&
+						getConstantValue(node.getInputs()[0]) == 0) {
+					KMNode nodeNeg = new KMNodeNeg(node.getInputs()[1]);
+					nodeNeg.setOrigin(node.getOrigin());
+					node.getInputs()[1].replaceOutputs(node, nodeNeg);
+					removeFromConstant(node, node.getInputs()[0]);
+					nodeNeg.addOutputs(node.getOutputs());
+					for (KMNode output : node.getOutputs()) {
+						output.replaceInputs(node, nodeNeg);
+					}
+					nodeNeg.addUsedInKernels(node.getUsedInKernels());
+
+					graph.removeNode(node);
+					graph.addNode(nodeNeg);
+					return true;
+				}
+
+				return false;
+			}
+
+			private boolean tryFoldDiv(KMNode node) {
+				if (node.getInputs()[1] instanceof KMNodeConstant &&
+						getConstantValue(node.getInputs()[1]) == 1) {
+					List<KMNode> constants = new ArrayList<KMNode>();
+					constants.add(node.getInputs()[1]);
+					constantFoldNode(node, constants, 1, 1);
+					return true;
+				} else if (node.getInputs()[1] instanceof KMNodeConstant) {
+					convertDivIntoMultiply(node);
+					return true;
+				}
+
+				return false;
+			}
+
+			private void convertDivIntoMultiply(KMNode node) {
+				KMNodeConstant newConstantNode =
+					new KMNodeConstant(1 / getConstantValue(node.getInputs()[1]));
+				removeFromConstant(node, node.getInputs()[1]);
+				newConstantNode.addUsedInKernels(node.getUsedInKernels());
+				graph.addNode(newConstantNode);
+
+				KMNodeMul mul = new KMNodeMul(node.getInputs()[0], newConstantNode);
+				mul.setOrigin(node.getOrigin());
+				newConstantNode.addOutput(mul);
+				node.getInputs()[0].replaceOutputs(node, mul);
+				mul.addUsedInKernels(node.getUsedInKernels());
+				mul.addOutputs(node.getOutputs());
+				for (KMNode output : node.getOutputs()) {
+					output.replaceInputs(node, mul);
+				}
+
+				graph.addNode(mul);
+				graph.removeNode(node);
+			}
+
+			private boolean tryFoldAssociativeOp(KMNode node) {
+				double identity = ((AssociativeOp) node).getIdentity();
+				double result = identity;
+				List<KMNode> constants = new ArrayList<KMNode>();
+				for (KMNode input : node.getInputs()) {
+					if (input instanceof KMNodeConstant) {
+						result = ((AssociativeOp) node).evaluate(result, getConstantValue(input));
+						constants.add(input);
+					}
+				}
+
+				if ((result == identity && constants.size() == 1) || constants.size() > 1) {
+					constantFoldNode(node, constants, result, identity);
+					return true;
+				}
+
+				return false;
+			}
+
+
+			private boolean tryFoldBinaryOp(KMNode node) {
+				if (node.getInputs()[0] instanceof KMNodeConstant &&
+						node.getInputs()[1] instanceof KMNodeConstant) {
+					replaceWithConstant(node,
+							((BinaryOp) node).evaluate(getConstantValue(node.getInputs()[0]),
+									getConstantValue(node.getInputs()[1])));
+					removeFromConstant(node, node.getInputs()[1]);
+					removeFromConstant(node, node.getInputs()[0]);
+					return true;
+				}
+
+				return false;
+			}
+
+			private boolean tryFoldUnaryOp(KMNode node) {
+				if (node.getInputs()[0] instanceof KMNodeConstant) {
+					replaceWithConstant(node, ((UnaryOp) node).evaluate(
+							getConstantValue(node.getInputs()[0])));
+					removeFromConstant(node, node.getInputs()[0]);
+					return true;
+				}
+				return false;
+			}
+
+			private boolean tryAnnihilateAssociativeOp(KMNode node, double annihilatingElement) {
+				boolean erase = false;
+				for (KMNode in : node.getInputs()) {
+					if (in instanceof KMNodeConstant &&
+							getConstantValue(in) == annihilatingElement) {
+						erase = true;
+					}
+				}
+				if (erase) {
+					removeNoLongerNeededNodes(node);
+
+					replaceWithConstant(node, annihilatingElement);
+					return true;
+				} else {
+					return false;
+				}
+			}
+
+			private boolean tryFoldMux(KMNodeMux mux) {
+				// Constant kernel select
+				if (mux.getInputs()[0] instanceof KMNodeConstant) {
+					int index = (int) getConstantValue(mux.getInputs()[0]);
+
+					KMNode replacement = mux.getInputs()[index + 1];
+					rewireMux(mux, replacement);
+
+					return true;
+				}
+				if (mux.getInputs()[0] != merger.getKernelSelectNode() && tryFoldMuxToBooleanLogic(mux)) {
+					return true;
+				}
+
+				// Check if all inputs are the same
+				KMNode firstInput = mux.getInputs()[1];
+				for (int i = 2; i < mux.getInputs().size(); i++) {
+					if (mux.getInputs()[i] != firstInput) {
+						return false;
+					}
+				}
+
+				firstInput.removeOutput(mux);
+				rewireMux(mux, firstInput);
+
+				return true;
+			}
+
+			// Optimizes cond ? true : false;
+			private boolean tryFoldMuxToBooleanLogic(KMNodeMux mux) {
+				if (mux.getInputs().size() == 3 &&
+						mux.getInputs()[1] instanceof KMNodeConstant &&
+						mux.getInputs()[2] instanceof KMNodeConstant) {
+					double input1Value = getConstantValue(mux.getInputs()[1]);
+					double input2Value = getConstantValue(mux.getInputs()[2]);
+					if (input1Value == 1 && input2Value == 0) {
+						KMNode not = new KMNodeComplement(mux.getInputs()[0]);
+						not.setOrigin(mux.getOrigin());
+						mux.getInputs()[0].removeOutput(mux);
+						mux.getInputs()[0].addOutput(not);
+						not.addUsedInKernels(mux.getUsedInKernels());
+						graph.addNode(not);
+						rewireMux(mux, not);
+						return true;
+					} else if (input1Value == 0 && input2Value == 1) {
+						rewireMux(mux, mux.getInputs()[0]);
+						return true;
+					}
+				}
+				return false;
+			}
+
+			private void rewireMux(KMNode mux, KMNode replacement) {
+				for (KMNode output : mux.getOutputs()) {
+					output.replaceInputs(mux, replacement);
+					replacement.addOutput(output);
+				}
+
+				removeNoLongerNeededNodes(mux);
+				graph.removeNode(mux);
+			}
+
+			private void constantFoldNode(KMNode node, List<KMNode> constants,
+					double result, double identity) {
+				for (KMNode constant : constants) {
+					removeFromConstant(node, constant);
+				}
+
+				if (result == identity) {
+					if (node.getInputs().size() == 0) {
+						for (KMNode output : node.getOutputs()) {
+							output.removeOneInput(node);
+						}
+						graph.removeNode(node);
+					} else if (node.getInputs().size() == 1) {
+						node.getInputs()[0].removeOneOutput(node);
+						node.getInputs()[0].addOutputs(node.getOutputs());
+						for (KMNode output : node.getOutputs()) {
+							output.replaceInputs(node, node.getInputs()[0]);
+						}
+						graph.removeNode(node);
+					}
+				} else {
+					if (node.getInputs().size() == 0) {
+						replaceWithConstant(node, result);
+					} else {
+						KMNode constant = new KMNodeConstant(result);
+						constant.setOrigin(node.getOrigin());
+
+						constant.addUsedInKernels(node.getUsedInKernels());
+						node.addInput(constant);
+						constant.addOutput(node);
+						graph.addNode(constant);
+					}
+				}
+			}
+
+			private void removeFromConstant(KMNode node, KMNode constant) {
+				constant.removeOutput(node);
+				if (constant.getOutputs().size() == 0) {
+					graph.removeNode(constant);
+				}
+				node.removeOneInput(constant);
+			}
+
+			private void replaceWithConstant(KMNode node, double constant) {
+				KMNode constantNode = new KMNodeConstant(constant);
+				constantNode.setOrigin(node.getOrigin());
+
+				constantNode.addUsedInKernels(node.getUsedInKernels());
+				constantNode.addOutputs(node.getOutputs());
+				for (KMNode output : node.getOutputs()) {
+					output.replaceInputs(node, constantNode);
+				}
+
+				graph.addNode(constantNode);
+				graph.removeNode(node);
+			}
+
+			private void removeNoLongerNeededNodes(KMNode node) {
+				for (KMNode in : node.getInputs()) {
+					in.removeOutput(node);
+					if (in.getOutputs().size() == 0) {
+						removeNoLongerNeededNodes(in);
+						graph.removeNode(in);
+					}
+				}
+			}
+
+			private double getConstantValue(KMNode node) {
+				return ((KMNodeConstant) node).getValue();
+			}
+
+		});
+	}
+
+}

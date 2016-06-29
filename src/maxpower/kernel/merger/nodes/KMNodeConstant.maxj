@@ -1,0 +1,55 @@
+package maxpower.kernel.merger.nodes;
+
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.utils.ResourceUsage;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+
+public class KMNodeConstant extends KMNode implements java.io.Serializable {
+
+	private static final long serialVersionUID = -4284925205708724134L;
+
+	private final double m_value;
+	private Merger m_merger;
+
+	public KMNodeConstant(double value){
+		super();
+		m_value = value;
+	}
+
+	public double getValue() {
+		return m_value;
+	}
+
+	@Override
+	public void execute(Merger merger) {
+		m_merger = merger;
+	}
+
+	@SuppressWarnings("rawtypes")
+	@Override
+	public KernelObjectVectorizable getResult() {
+		return m_merger.getOwner().constant.var(m_value);
+	}
+
+	@Override
+	public String toString() {
+		return "NodeConst: " + m_id;
+	}
+
+	@Override
+	public void calcResultType(Merger merger) {
+		m_resultType = null;
+	}
+
+	@Override
+	public ResourceUsage getResourceUsageEstimate(Merger merger) {
+		return new ResourceUsage(0, 0, 0, 0);
+	}
+
+	@Override
+	int getLatencyEstimate(Merger merger) {
+		return 0;
+	}
+
+}

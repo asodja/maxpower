@@ -1,0 +1,124 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.Random;
+
+import junit.framework.Assert;
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.KMKernel;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.TestHelper;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeDiv;
+import maxpower.kernel.merger.nodes.KMNodeFloatingPointMultiAdder;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class MergeMostExpensiveNodeTest {
+	private final int RUNS = 1000;
+
+	private class MergeMostExpensiveNodeTestKernel1 extends KMKernel {
+		public MergeMostExpensiveNodeTestKernel1(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+
+			io.output("result", (a + b) / c);
+		}
+	}
+
+	private class MergeMostExpensiveNodeTestKernel2 extends KMKernel {
+		public MergeMostExpensiveNodeTestKernel2(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+
+			io.output("result", a / b + c);
+		}
+	}
+
+	private class MergeMostExpensiveNodeMergerTestKernel extends Kernel {
+		private final KMGraph m_graph;
+
+		@SuppressWarnings("unchecked")
+		public MergeMostExpensiveNodeMergerTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+			merger.addInput("a", io.input("a", dfeFloat(8, 24)));
+			merger.addInput("b", io.input("b", dfeFloat(8, 24)));
+			merger.addInput("c", io.input("c", dfeFloat(8, 24)));
+			merger.addKernel(new MergeMostExpensiveNodeTestKernel1(this));
+			merger.addKernel(new MergeMostExpensiveNodeTestKernel2(this));
+			merger.setKernel(io.input("KernelSelect", dfeBool()));
+			merger.build();
+			m_graph = TestHelper.getKMGraphOfMerger(merger);
+			io.output("result", merger.getOutput("result").getType()) <== merger.getOutput("result");
+		}
+	}
+
+	@Test
+	public void mergeMostExpensiveNodeTest() {
+		SimulationManager manager = new SimulationManager("MergeMostExpensiveNodeTest");
+		MergeMostExpensiveNodeMergerTestKernel kernel = new MergeMostExpensiveNodeMergerTestKernel(manager.makeKernelParameters());
+		manager.setKernel(kernel);
+		manager.build();
+
+		final long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		manager.logInfo("Seed: %d", seed);
+
+		double[] a = new double[RUNS * 2];
+		double[] b = new double[RUNS * 2];
+		double[] c = new double[RUNS * 2];
+		long[] kernelSelect = new long[RUNS * 2];
+		for (int i = 0; i < RUNS * 2; i++) {
+			a[i] = rng.nextFloat();
+			b[i] = rng.nextFloat();
+			c[i] = rng.nextFloat();
+			if (i < RUNS) {
+				kernelSelect[i] = 0;
+			} else {
+				kernelSelect[i] = 1;
+			}
+		}
+
+		manager.setInputData("a", a);
+		manager.setInputData("b", b);
+		manager.setInputData("c", c);
+		manager.setInputDataLong("KernelSelect", kernelSelect);
+		manager.setKernelCycles(RUNS * 2);
+		manager.run();
+
+		double[] result = manager.getOutputDataArray("result");
+
+		for (int i = 0; i < RUNS; i++) {
+			float expected = (float) ((a[i] + b[i]) / c[i]);
+			Assert.assertEquals(expected, result[i], expected * 0.00001);
+		}
+		for (int i = RUNS; i < RUNS * 2; i++) {
+			float expected = (float) (a[i] / b[i] + c[i]);
+			Assert.assertEquals(expected, result[i], expected * 0.00001);
+		}
+
+		KMGraph graph = kernel.m_graph;
+		int countAdd = 0;
+		int countDiv = 0;
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeFloatingPointMultiAdder) {
+				countAdd++;
+			}
+			if (node instanceof KMNodeDiv) {
+				countDiv++;
+			}
+		}
+
+		Assert.assertEquals(2, countAdd);
+		Assert.assertEquals(1, countDiv);
+	}
+}

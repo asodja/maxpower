@@ -1,0 +1,65 @@
+package maxpower.kernel.merger.nodes;
+
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.ops.CommutativeOp;
+import maxpower.kernel.merger.types.KMType;
+import maxpower.kernel.merger.utils.LatencyEstimation;
+import maxpower.kernel.merger.utils.ResourceUsage;
+import maxpower.kernel.pipeline.FanoutLimiter;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+
+public class KMNodeNeq extends KMNode implements java.io.Serializable, CommutativeOp {
+
+	private static final long serialVersionUID = -4761073716375090555L;
+
+	public KMNodeNeq(KMVar lhs, KMVar rhs) {
+		super();
+		m_inputs.add(lhs.getSource());
+		m_inputs.add(rhs.getSource());
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	@Override
+	public void execute(Merger merger) {
+		m_result = new FanoutLimiter(
+				(KernelObjectVectorizable) (m_inputs[0].getResult() !== m_inputs[1].getResult()),
+				merger.getMaxFanout());
+	}
+
+	@Override
+	public double evaluate(double val1, double val2) {
+		if (val1 != val2) {
+			return 1;
+		} else {
+			return 0;
+		}
+	}
+
+	@Override
+	public String toString() {
+		return "NodeNeq: " + m_id;
+	}
+
+	@Override
+	public void calcResultType(Merger merger) {
+		DFEVar dummy = merger.getOwner().constant.var(Kernel.dfeBool(), 0);
+		m_resultType = KMType.getTypeForKernelObject(dummy);
+		dummy.setReportOnUnused(false);
+	}
+
+	@Override
+	public ResourceUsage getResourceUsageEstimate(Merger merger) {
+		return ResourceUsage.getEquals(m_resultType.getPrimitiveType().getTotalBits()) *
+			m_resultType.getPrimitiveCount();
+	}
+
+	@Override
+	int getLatencyEstimate(Merger merger) {
+		return LatencyEstimation.getCompareOperation(merger, m_resultType);
+	}
+
+}

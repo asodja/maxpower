@@ -1,0 +1,166 @@
+package maxpower.kernel.io;
+
+import static org.junit.Assert.assertEquals;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+import maxpower.kernel.utils.JavaSimUtils;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+public class VariableTypeIOTest {
+
+	private static int iterations = 10;
+
+	private class TestData {
+		private final List<Double> inputs;
+		private final List<Double> typeIndex;
+		private final List<DFEType> types;
+		private final List<DFEType> typesList;
+		private final int maxWidth;
+
+		protected TestData(List<DFEType> types) {
+			this.types = types;
+			int numInputs = types.size() * iterations;
+			inputs = new ArrayList<Double>(numInputs);
+			typeIndex = new ArrayList<Double>(numInputs);
+			typesList = new ArrayList<DFEType>(numInputs);
+			for (int i = 0; i < numInputs; i++) {
+				inputs.add((double)i);//TODO: make random
+				typeIndex.add((double)(i % types.size()));
+				typesList.add(types[typeIndex[i].intValue()]);
+			}
+			int max = 0;
+			for (DFEType t : types) {
+				max = Math.max(max, t.getTotalBits());
+			}
+			maxWidth = max;
+		}
+
+		public int getCycles() {
+			return inputs.size();
+		}
+
+		public List<Bits> getInput() {
+			return JavaSimUtils.encodeInput(inputs, typesList, maxWidth);
+		}
+
+		public List<Bits> getInput(int ti) {
+			List<Double> input = new ArrayList<Double>();
+			for (int i = 0; i < inputs.size(); i++) {
+				if (typeIndex[i] == ti) {
+					input.add(inputs[i]);
+				}
+			}
+			return JavaSimUtils.encodeInput(input, types[ti]);
+		}
+
+		public List<Double> getTypeIndex() {
+			return typeIndex;
+		}
+
+		public List<Double> decodeOutput(List<Bits> raw, int ti) {
+			return JavaSimUtils.decodeOutput(raw, types[ti]);
+		}
+
+		public List<Double> decodeOutput(List<Bits> raw) {
+			return JavaSimUtils.decodeOutput(raw, typesList);
+		}
+
+		public List<Double> getExpectedOutput(int ti) {
+			int numOutputs = 0;
+			for (double i : typeIndex) {
+				if ((int)i == ti) numOutputs++;
+			}
+			List<Double> output = new ArrayList<Double>(numOutputs);
+			for (int i = 0; i < inputs.size(); i++) {
+				if (typeIndex[i].intValue() == ti) {
+					output.add(inputs[i]);
+				}
+			}
+			return output;
+		}
+
+		public List<Double> getExpectedOutput() {
+			return inputs;
+		}
+	}
+
+	private class TestInputKernel extends Kernel {
+		protected TestInputKernel (KernelParameters parameters, List<DFEType> types) {
+			super(parameters);
+
+			DFEVar typeNeeded = io.input("typeIndex", dfeUInt(MathUtils.bitsToAddress(types.size())));
+			List<DFEVar> input = VariableTypeIO.input("input", types, typeNeeded);
+
+			for (int i = 0; i < types.size(); i++) {
+				io.output("output"+i, input[i], types[i], typeNeeded === i);
+			}
+		}
+	}
+
+	private class TestOutputKernel extends Kernel {
+		protected TestOutputKernel (KernelParameters parameters, List<DFEType> types) {
+			super(parameters);
+
+			DFEVar typeNeeded = io.input("typeIndex", dfeUInt(MathUtils.bitsToAddress(types.size())));
+			List<DFEVar> inputs = new ArrayList<DFEVar>();
+			for (int i = 0; i < types.size(); i++) {
+				inputs.add(io.input("input"+i, types[i], typeNeeded === i));
+			}
+			VariableTypeIO.output("output", inputs, typeNeeded);
+
+		}
+	}
+
+	private void testVariableTypeInput(DFEType... types) {
+		TestData data = new TestData(Arrays.asList(types));
+
+		SimulationManager m = new SimulationManager("VariableTypeInputTest");
+		TestInputKernel k = new TestInputKernel(m.makeKernelParameters(), Arrays.asList(types));
+		m.setKernel(k);
+		m.setKernelCycles(data.getCycles());
+		m.setInputDataRaw("input", data.getInput());
+		m.setInputData("typeIndex", data.getTypeIndex());
+		m.build();
+		m.run();
+
+		for (int i = 0; i < types.length; i++) {
+			List<Double> output = data.decodeOutput(m.getOutputDataRaw("output"+i), i);
+			List<Double> expectedOutput = data.getExpectedOutput(i);
+			assertEquals(expectedOutput, output);
+		}
+	}
+
+	private void testVariableTypeOutput(DFEType... types) {
+		TestData data = new TestData(Arrays.asList(types));
+
+		SimulationManager m = new SimulationManager("VariableTypeOutputTest");
+		m.setKernel(new TestOutputKernel(m.makeKernelParameters(), Arrays.asList(types)));
+		m.setKernelCycles(data.getCycles());
+		for (int i = 0; i < types.length; i++) {
+			m.setInputDataRaw("input"+i, data.getInput(i));
+		}
+		m.setInputData("typeIndex", data.getTypeIndex());
+		m.build();
+		m.run();
+
+		List<Double> output = data.decodeOutput(m.getOutputDataRaw("output"));
+		List<Double> expectedOutput = data.getExpectedOutput();
+		assertEquals(expectedOutput, output);
+	}
+
+	@Test public void testInput()  { testVariableTypeInput( Kernel.dfeFloat(8, 24), Kernel.dfeFloat(11, 53), Kernel.dfeUInt(24), Kernel.dfeUInt(48)); }
+	@Test public void testOutput() { testVariableTypeOutput(Kernel.dfeFloat(8, 24), Kernel.dfeFloat(11, 53), Kernel.dfeUInt(24), Kernel.dfeUInt(48)); }
+}
+

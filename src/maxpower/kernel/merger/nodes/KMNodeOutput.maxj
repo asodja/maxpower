@@ -1,0 +1,83 @@
+package maxpower.kernel.merger.nodes;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import maxpower.kernel.merger.KMKernel;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.utils.ResourceUsage;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerInternalError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.utils.Pair;
+
+public class KMNodeOutput extends KMNode implements java.io.Serializable {
+
+	private static final long serialVersionUID = 5028061091429731672L;
+
+	private final String m_name;
+
+	private final static List<Pair<KMKernel, String>> m_names = new ArrayList<Pair<KMKernel, String>>();
+
+	public KMNodeOutput(KMKernel owner, String outputName, KMVar out) {
+		super();
+		if (m_names.contains(new Pair<KMKernel, String>(owner, outputName))) {
+			throw new MaxCompilerAPIError("Output with name %s already exists in this kernel", outputName);
+		}
+		m_names.add(new Pair<KMKernel, String>(owner, outputName));
+
+		m_inputs.add(out.getSource());
+		m_name = outputName;
+	}
+
+	public String getName() {
+		return m_name;
+	}
+
+	public KMNode getInput() {
+		checkOutputNodeInputs(this);
+		return m_inputs[0];
+	}
+
+	public void setInput(KMNode node) {
+		checkOutputNodeInputs(this);
+		m_inputs.clear();
+		m_inputs.add(node);
+	}
+
+	public static void checkOutputNodeInputs(KMNode node) {
+		if (node.getInputs().size() > 1) {
+			throw new MaxCompilerInternalError("Output Node: " + node + " has multiple inputs!");
+		}
+		if (node.getInputs().size() == 0) {
+			throw new MaxCompilerInternalError("Output Node: " + node + " has no input!");
+		}
+	}
+
+	@Override
+	public void execute(Merger merger) {}
+
+	@SuppressWarnings("rawtypes")
+	@Override
+	public KernelObjectVectorizable getResult() {
+		return m_inputs[0].getResult();
+	}
+
+	@Override
+	public String toString() {
+		return "NodeOutput: " + m_id;
+	}
+
+	@Override
+	public ResourceUsage getResourceUsageEstimate(Merger merger) {
+		return new ResourceUsage(0, 0, 0, 0);
+	}
+
+	@Override
+	int getLatencyEstimate(Merger merger) {
+		return 0;
+	}
+
+}

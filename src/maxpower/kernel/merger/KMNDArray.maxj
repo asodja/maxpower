@@ -1,0 +1,500 @@
+package maxpower.kernel.merger;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+
+public class KMNDArray {
+
+	/**
+	 * The data is stored inside a one dimensional {@link KMVector}.
+	 */
+	private final KMVector m_data;
+	/**
+	 * List which stores the dimensions. Slowest first, fastest last.
+	 */
+	private final List<Integer> m_dimensions = new ArrayList<Integer>();
+
+	/**
+	 * Creates a n dimensional Array where all values are initialised to null.
+	 * @param dimensions Dimensions of the array. Slowest first, fastest last.
+	 */
+	public KMNDArray(Integer... dimensions) {
+		m_dimensions.addAll(Arrays.asList(dimensions));
+		m_data = new KMVector(calcDimProd(m_dimensions));
+	}
+
+	/**
+	 * Creates a n dimensional array. The data should be provided in linear order.
+	 * E.g. for a 2x2 array the order should be: [0][0], [0][1], [1][0], [1][1].
+	 * @param data The data to store.
+	 * @param dimensions Dimensions of the array. Slowest first, fastest last.
+	 */
+	public KMNDArray(List<KMVar> data, List<Integer> dimensions) {
+		m_data = new KMVector(data);
+		m_dimensions.addAll(dimensions);
+	}
+
+	/**
+	 * Creates a n dimensional array. The data should be provided in linear order.
+	 * E.g. for a 2x2 array the order should be: [0][0], [0][1], [1][0], [1][1].
+	 * @param data The data to store.
+	 * @param dimensions Dimensions of the array. Slowest first, fastest last.
+	 */
+	public KMNDArray(List<KMVar> data, Integer... dimensions) {
+		this(data, Arrays.asList(dimensions));
+	}
+
+	/**
+	 * Creates a n dimensional array. The data should be provided in linear order.
+	 * E.g. for a 2x2 array the order should be: [0][0], [0][1], [1][0], [1][1].
+	 * @param data The data to store.
+	 * @param dimensions Dimensions of the array. Slowest first, fastest last.
+	 */
+	public KMNDArray(KMVector data, List<Integer> dimensions) {
+		this(data.getElementsAsList(), dimensions);
+	}
+
+	/**
+	 * Creates a n dimensional array. The data should be provided in linear order.
+	 * E.g. for a 2x2 array the order should be: [0][0], [0][1], [1][0], [1][1].
+	 * @param data The data to store.
+	 * @param dimensions Dimensions of the array. Slowest first, fastest last.
+	 */
+	public KMNDArray(KMVector data, Integer... dimensions) {
+		this(data.getElementsAsList(), Arrays.asList(dimensions));
+	}
+
+	/**
+	 * Creates a n dimensional array from a {@link List} of {@link Lists} of {@link KMVar}s, {@link KMVector}s or {@link KMNDArray}s.
+	 * The created array will have the same structure as the provided data.
+	 */
+	public KMNDArray(List<?> data) {
+		m_data = new KMVector(initializeData(data));
+	}
+
+	/**
+	 * Returns the {@link KMVar} at a certain index.
+	 * @param indices Index of the wanted {@link KMVar}. Slowest first, fastest last.
+	 */
+	public KMVar get(List<Integer> indices) {
+		int index = getFinalIndex(indices);
+		return m_data[index];
+	}
+
+	/**
+	 * Returns the {@link KMVar} at a certain index.
+	 * @param indices Index of the wanted {@link KMVar}. Slowest first, fastest last.
+	 */
+	public KMVar get(Integer... indices) {
+		return get(Arrays.asList(indices));
+	}
+
+	/**
+	 * Sets a {@link KMVar} at a certain index.
+	 * @param element {@link KMVar} to set.
+	 * @param indices Index of the wanted {@link KMVar}. Slowest first, fastest last.
+	 */
+	public void set(KMVar element, List<Integer> indices) {
+		int index = getFinalIndex(indices);
+		m_data.set(index, element);
+	}
+
+	/**
+	 * Sets a {@link KMVar} at a certain index.
+	 * @param element {@link KMVar} to set.
+	 * @param indices Index of the wanted {@link KMVar}. Slowest first, fastest last.
+	 */
+	public void set(KMVar element, Integer... indices) {
+		set(element, Arrays.asList(indices));
+	}
+
+	/**
+	 * Returns all elements in the array as a {@link List}. The data will be provided in linear order.
+	 * E.g. for a 2x2 array the order will be: [0][0], [0][1], [1][0], [1][1].
+	 */
+	public List<KMVar> getElementsAsList() {
+		return m_data.getElementsAsList();
+	}
+
+	/**
+	 * Returns all elements in the array as a {@link KMVector}. The data will be provided in linear order.
+	 * E.g. for a 2x2 array the order will be: [0][0], [0][1], [1][0], [1][1].
+	 */
+	public KMVector getElementsAsVector() {
+		return m_data;
+	}
+
+	/**
+	 * Returns the dimensions of the array. Slowest first, fastest last.
+	 */
+	public List<Integer> getDimensions() {
+		return m_dimensions;
+	}
+
+	public KMNDArray add(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() + rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray add(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray add(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray addAsRHS(KMVar lhs) {
+		return asNDArray(lhs) + this;
+	}
+
+	public KMNDArray addAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray sub(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() - rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray sub(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray sub(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray subAsRHS(KMVar lhs) {
+		return asNDArray(lhs) - this;
+	}
+
+	public KMNDArray subAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray mul(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() * rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray mul(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray mul(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray mulAsRHS(KMVar lhs) {
+		return asNDArray(lhs) * this;
+	}
+
+	public KMNDArray mulAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray div(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() / rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray div(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray div(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray divAsRHS(KMVar lhs) {
+		return asNDArray(lhs) / this;
+	}
+
+	public KMNDArray divAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray and(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() & rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray and(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray and(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray andAsRHS(KMVar lhs) {
+		return asNDArray(lhs) & this;
+	}
+
+	public KMNDArray andAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray or(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() | rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray or(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray or(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray orAsRHS(KMVar lhs) {
+		return asNDArray(lhs) | this;
+	}
+
+	public KMNDArray orAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray xor(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() ^ rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray xor(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray xor(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray xorAsRHS(KMVar lhs) {
+		return asNDArray(lhs) ^ this;
+	}
+
+	public KMNDArray xorAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray lt(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() < rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray lt(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray lt(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray ltAsRHS(KMVar lhs) {
+		return asNDArray(lhs) < this;
+	}
+
+	public KMNDArray ltAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray lte(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() <= rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray lte(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray lte(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray lteAsRHS(KMVar lhs) {
+		return asNDArray(lhs) <= this;
+	}
+
+	public KMNDArray lteAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray gt(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() > rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray gt(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray gt(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray gtAsRHS(KMVar lhs) {
+		return asNDArray(lhs) > this;
+	}
+
+	public KMNDArray gtAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray gte(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() >= rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray gte(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray gte(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray gteAsRHS(KMVar lhs) {
+		return asNDArray(lhs) >= this;
+	}
+
+	public KMNDArray gteAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray eq(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() === rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray eq(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray eq(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray eqAsRHS(KMVar lhs) {
+		return asNDArray(lhs) === this;
+	}
+
+	public KMNDArray eqAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray neq(KMNDArray rhs) {
+		checkDimensions(this, rhs);
+		return new KMNDArray(getElementsAsVector() !== rhs.getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray neq(KMVar rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray neq(double rhs) {
+		return add(asNDArray(rhs));
+	}
+
+	public KMNDArray neqAsRHS(KMVar lhs) {
+		return asNDArray(lhs) !== this;
+	}
+
+	public KMNDArray neqAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_data[0].getOwner(), lhs));
+	}
+
+	public KMNDArray neg() {
+		return new KMNDArray(-getElementsAsVector(), m_dimensions);
+	}
+
+	public KMNDArray complement() {
+		return new KMNDArray(~getElementsAsVector(), m_dimensions);
+	}
+
+	private List<KMVar> initializeData(List<?> data) {
+		m_dimensions.add(data.size());
+		if (data[0] instanceof List) {
+			int size = ((List<?>) data[0]).size();
+			for (int i = 1; i < data.size(); i++) {
+				if (size != ((List<?>) data[i]).size()) {
+					throw new MaxCompilerAPIError("The dimensions of the Lists have to match up on the same level!");
+				}
+			}
+			return initializeData((List<?>) data[0]);
+		} else if (data[0] instanceof KMNDArray) {
+			for (int i = 1; i < data.size(); i++) {
+				checkDimensions((KMNDArray)data[0], (KMNDArray)data[1]);
+			}
+			m_dimensions.addAll(((KMNDArray) data[0]).getDimensions());
+			List<KMVar> listOfElements = new ArrayList<KMVar>();
+			for (int i = 0; i < data.size(); i++) {
+				listOfElements.addAll(((KMNDArray) data[i]).getElementsAsList());
+			}
+			return listOfElements;
+		} else if (data[0] instanceof KMVector) {
+			int size = ((KMVector) data[0]).getSize();
+			for (int i = 1; i < data.size(); i++) {
+				if (size != ((KMVector) data[i]).getSize()) {
+					throw new MaxCompilerAPIError("The dimensions of the KMVectors have to match up!");
+				}
+			}
+			m_dimensions.add(size);
+			List<KMVar> listOfElements = new ArrayList<KMVar>();
+			for (int i = 0; i < data.size(); i++) {
+				listOfElements.addAll(((KMVector) data[i]).getElementsAsList());
+			}
+			return listOfElements;
+		} else if (data[0] instanceof KMVar) {
+			List<KMVar> listOfElements = new ArrayList<KMVar>();
+			for (int i = 0; i < data.size(); i++) {
+				listOfElements.add((KMVar) data[i]);
+			}
+			return listOfElements;
+		} else {
+			throw new MaxCompilerAPIError("It is only allowed to pass in Lists of Lists of KMVectors or KMVars!");
+		}
+	}
+
+	private int calcDimProd(List<Integer> dimensions) {
+		int partDimProd = 1;
+		for (int i = 0; i < dimensions.size(); i++) {
+			partDimProd *= dimensions[i];
+		}
+		return partDimProd;
+	}
+
+	private int getFinalIndex(List<Integer> indices) {
+		int result = 0;
+		int cumulativeProduct = 1;
+		for (int i = m_dimensions.size() - 1; i >= 0; i--) {
+			result += indices[i] * cumulativeProduct;
+			cumulativeProduct *= m_dimensions[i];
+		}
+		return result;
+	}
+
+	private void checkDimensions(KMNDArray array1, KMNDArray array2) {
+		if (!array1.m_dimensions.equals(array2.m_dimensions)) {
+			throw new MaxCompilerAPIError("Dimensions of both KMnDArrays have to match up!");
+		}
+	}
+
+	/**
+	 * Creates a new {@link KMNDArray} of the same dimensions which only contains copies of the parameter.
+	 */
+	KMNDArray asNDArray(KMVar var) {
+		return new KMNDArray(Collections.nCopies(calcDimProd(m_dimensions), var), m_dimensions);
+	}
+
+	/**
+	 * Creates a new {@link KMNDArray} of the same dimensions which only contains copies of the parameter.
+	 */
+	KMNDArray asNDArray(double val) {
+		return asNDArray(new KMVar(m_data[0].getOwner(), val));
+	}
+}

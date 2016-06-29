@@ -11,7 +11,6 @@
 #define _CONCAT(x, y) x ## y
 #define CONCAT(x, y) _CONCAT(x, y)
 #define INIT_NAME CONCAT(DESIGN_NAME, _init)
-#define FREE_NAME CONCAT(DESIGN_NAME, _free)
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -40,8 +39,9 @@ typedef struct PACKED {
 } single_entry_t;
 
 #define PAGE_ALIGNMENT 4096
-#define MAX_DEPTH (1024*1024)
-#define READ_LEN (1024)
+#define READ_LEN_HW (1024 * 1024)
+#define READ_LEN_SIM 1024
+#define NUM_READS 128
 
 uint8_t compare(single_entry_t* outputData, uint64_t configBase, size_t len)
 {
@@ -72,8 +72,6 @@ int main(int argc, char *argv[])
 	(void) argc;
 	(void) argv;
 
-	assert((MAX_DEPTH % READ_LEN) == 0);
-
 	// init
 	max_file_t *maxfile = INIT_NAME();
 	if(!maxfile) {
@@ -82,6 +80,9 @@ int main(int argc, char *argv[])
 	}
 
 	max_config_set_bool(MAX_CONFIG_PRINTF_TO_STDOUT, true);
+
+	const int isSimulation = max_get_constant_uint64t(maxfile, "IS_SIMULATION") == 1ul;
+	const size_t readLen = isSimulation ? READ_LEN_SIM : READ_LEN_HW;
 
 	const char *device_name = "*";
 	printf("Opening device: %s\n", device_name);
@@ -92,63 +93,44 @@ int main(int argc, char *argv[])
 		exit(-1);
 	}
 
-	max_reset_engine(engine);
+	uint64_t configBase = 0;
 
-	/*
-	 * If we don't run an empty action, no debug outputs will be generated.
-	 */
 	max_actions_t *action = max_actions_init(maxfile, NULL);
+	configWord_t configWord;
+	configWord.wordCount = NUM_READS * readLen;
+	configWord.base = configBase;
+	max_queue_input(action, "configWord", &configWord, sizeof(configWord));
 	max_run(engine, action);
 	max_actions_free(action);
 	action = NULL;
 
-	// configure
-	void *configWordBuffer = NULL;
-	posix_memalign(&configWordBuffer, PAGE_ALIGNMENT, sizeof(configWord_t));
-	assert(configWordBuffer != NULL);
-
-	max_llstream_t *configWordStream = max_llstream_setup(engine, "configWord", 1, sizeof(configWord_t), configWordBuffer);
-
-	uint64_t configBase = 0;
-	printf("Sending config word...\n");
-	void *configWordSlot;
-	while (max_llstream_write_acquire(configWordStream, 1, &configWordSlot) != 1);
-	configWord_t *configWord = configWordSlot;
-	configWord->wordCount = MAX_DEPTH;
-	configWord->base = configBase;
-	max_llstream_write(configWordStream, 1);
-
 	// prompt user
+	sleep(1);
 	printf("Press ENTER to begin test...\n");
 	getchar();
 
 	// test
 	printf("Streaming 'read_fifo'...\n");
 
-	single_entry_t *outputData = calloc(READ_LEN, sizeof(single_entry_t));
+	single_entry_t *outputData = calloc(readLen, sizeof(single_entry_t));
 	assert(outputData != NULL);
 
 	action = max_actions_init(maxfile, NULL);
-	max_queue_output(action, "read_fifo", outputData, sizeof(single_entry_t) * READ_LEN);
+	max_queue_output(action, "read_fifo", outputData, sizeof(single_entry_t) * readLen);
 	max_disable_reset(action);
-	max_disable_validation(action);
-	max_enable_partial_memory(action);
+	max_disable_validation(action); //FIXME Work around for validation issue when reset disabled - ticket #7528
 
 	uint8_t fail = 0;
-	for(size_t i = 0; i < (MAX_DEPTH / READ_LEN); i++ ){
+	printf("Checkout output ");
+	for(size_t i = 0; i < NUM_READS; i++ ){
+		printf("."); fflush(stdout);
 		max_run(engine, action);
 
-		size_t start = i * READ_LEN;
+		size_t start = i * readLen;
 		size_t base = configBase + start;
-		fail |= compare(outputData, base, READ_LEN);
+		fail |= compare(outputData, base, readLen);
 	}
-
-	// clean up
-	max_llstream_release(configWordStream);
-	configWordStream = NULL;
-
-	free(configWordBuffer);
-	configWordBuffer = NULL;
+	printf("\n");
 
 	max_actions_free(action);
 	action = NULL;
@@ -159,7 +141,7 @@ int main(int argc, char *argv[])
 	max_unload(engine);
 	engine = NULL;
 
-	FREE_NAME();
+	max_file_free(maxfile);
 	maxfile = NULL;
 
 	// report result

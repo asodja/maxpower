@@ -1,0 +1,67 @@
+package maxpower.kernel.merger.nodes;
+
+import maxpower.kernel.KernelBinaryOp;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.ops.AssociativeOp;
+import maxpower.kernel.merger.ops.CommutativeOp;
+import maxpower.kernel.merger.utils.LatencyEstimation;
+import maxpower.kernel.merger.utils.ResourceUsage;
+import maxpower.kernel.pipeline.FanoutLimiter;
+
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+public class KMNodeXor extends KMNode implements java.io.Serializable, AssociativeOp, CommutativeOp {
+
+	private static final long serialVersionUID = -8920381401292864266L;
+
+	public KMNodeXor(KMVar lhs, KMVar rhs) {
+		super();
+		m_inputs.add(lhs.getSource());
+		m_inputs.add(rhs.getSource());
+	}
+
+	public KMNodeXor() {
+		super();
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	@Override
+	public void execute(Merger merger) {
+		m_result = new FanoutLimiter(reduceInputs(new KernelBinaryOp.Xor()), merger.getMaxFanout());
+	}
+
+	@Override
+	public double evaluate(double val1, double val2) {
+		if (val1 != val2) {
+			return 1;
+		} else {
+			return 0;
+		}
+	}
+
+	@Override
+	public double getIdentity() {
+		return 0;
+	}
+
+	@Override
+	public String toString() {
+		return "NodeXor: " + m_id;
+	}
+
+	@Override
+	public ResourceUsage getResourceUsageEstimate(Merger merger) {
+		ResourceUsage result = ResourceUsage.getLogicOperation(
+				m_resultType.getPrimitiveType().getTotalBits());
+		result *= m_resultType.getPrimitiveCount();
+		return result * (m_inputs.size() - 1);
+	}
+
+	@Override
+	int getLatencyEstimate(Merger merger) {
+		int latency = LatencyEstimation.getLogicOperation(merger);
+		return latency * MathUtils.ceilLog2(m_inputs.size());
+	}
+
+}

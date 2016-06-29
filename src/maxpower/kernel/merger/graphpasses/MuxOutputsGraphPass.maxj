@@ -1,0 +1,106 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeInput;
+import maxpower.kernel.merger.nodes.KMNodeMux;
+import maxpower.kernel.merger.nodes.KMNodeOutput;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerInternalError;
+
+/**
+ * This graph pass adds muxes infront of the output to make sure that the result is correct based on
+ * the current kernel select.
+ * Average Complexity: O(n^2)
+ * Worst Case Complexity: O(n^3)
+ * @author nvoss
+ *
+ */
+public class MuxOutputsGraphPass {
+
+	public static void run(final KMGraph graph, final KMNodeInput kernelSelectInputNode) {
+
+		GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+
+			@Override
+			public boolean processNode(KMNode node) {
+				boolean changed = false;
+				if (node instanceof KMNodeOutput) {
+					KMNodeOutput nodeOut = (KMNodeOutput) node;
+
+					// we need to find all nodes representing the same output
+					List<KMNode> equivalentNodes = new ArrayList<KMNode>();
+					for (KMNode possibleMatch : graph.getNodes()) {
+						if (possibleMatch instanceof KMNodeOutput) {
+							if (nodeOut.getName().equals(((KMNodeOutput) possibleMatch).getName()) &&
+									node != possibleMatch) {
+								equivalentNodes.add(possibleMatch);
+								changed = true;
+							}
+						}
+					}
+
+					// Remove duplicates
+					if (changed) {
+						/*
+						 * MERGE
+						 *
+						 * We need a mux between the different inputs depending on the kernel executed currently
+						 * First we need to make sure that the order is correct
+						 */
+						List<KMNode> muxInputs = new ArrayList<KMNode>();
+						Set<Integer> usedInKernel = new HashSet<Integer>();
+						for (int kernelID = 0; kernelID < graph.getKernelCount(); kernelID++) {
+							int connected = 0;
+							if (node.getUsedInKernels().contains(kernelID)) {
+								KMNodeOutput.checkOutputNodeInputs(node);
+								muxInputs.addAll(node.getInputs());
+								connected++;
+							}
+							for (KMNode match : equivalentNodes) {
+								if (match.getUsedInKernels().contains(kernelID)) {
+									KMNodeOutput.checkOutputNodeInputs(match);
+									muxInputs.addAll(match.getInputs());
+									connected++;
+								}
+							}
+							if (connected > 1) {
+								throw new MaxCompilerInternalError("Output Node: " + nodeOut.getName() +
+										" in Kernel " + kernelID + " has multiple inputs!");
+							} else if (connected == 1) {
+								usedInKernel.add(kernelID);
+							} else {
+								muxInputs.add(null);
+							}
+						}
+
+						KMNodeMux mux = new KMNodeMux(kernelSelectInputNode, muxInputs);
+						mux.addOutput(node);
+						graph.addNode(mux);
+
+						// Change graph edges
+						nodeOut.getInput().replaceOutputs(node, mux);
+						nodeOut.setInput(mux);
+						for (KMNode match : equivalentNodes) {
+							((KMNodeOutput) match).getInput().replaceOutputs(match, mux);
+						}
+
+						kernelSelectInputNode.addOutput(mux);
+
+						// Add used in kernel:
+						mux.addUsedInKernels(usedInKernel);
+						node.addUsedInKernels(usedInKernel);
+
+						graph.removeNodes(equivalentNodes);
+					}
+				}
+				return changed;
+			}
+		});
+	}
+}

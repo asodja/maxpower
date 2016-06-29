@@ -3,10 +3,9 @@ package maxpower.kernel.debug;
 import java.util.EnumSet;
 import java.util.Set;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
-import com.maxeler.maxcompiler.v2.kernelcompiler._Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.base._KernelBaseTypes;
 import com.maxeler.maxdc.Entity;
 import com.maxeler.photon.core.PhotonDesignData;
 import com.maxeler.photon.core.PhotonException;
@@ -30,16 +29,16 @@ public class DFEAssert {
 	 * the printf will not appear before the exception is thrown.
 	 */
 	public static void simAssert(DFEVar condition, String format, Object... args) {
-		Kernel kernel = condition.getKernel();
+		KernelBase<?> kernel = condition.getOwner();
 		if (kernel.getManager().isTargetSimulation()) {
 			kernel.debug.simPrintf(condition, format, args);
-			PhotonDesignData container = _Kernel.getPhotonDesignData(kernel);
+			PhotonDesignData container = kernel.getPhotonDesignData();
 			container.pushNodeVisible(false);
 //			kernel.pushScheduleAtEnd(true);
 			//TODO: when pushScheduleAtEnd is fixed in the compiler (ticket #7492), use it instead of the following line
 			DFEVar pipelinedCondition = kernel.optimization.pipeline(condition);
 			NodeAssert n = new NodeAssert(container);
-			n.connectInput("condition", _KernelBaseTypes.toImp(pipelinedCondition));
+			n.connectInput("condition", pipelinedCondition.toImp());
 //			kernel.popScheduleAtEnd();
 			container.popNodeVisible();
 		}
@@ -93,5 +92,10 @@ public class DFEAssert {
 
 		@Override
 		protected void assignOutputTypes() {}
+
+		@Override
+		public PipelinedOps getNodeType() {
+			return PipelinedOps.MISC;
+		}
 	}
 }

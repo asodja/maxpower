@@ -1,0 +1,55 @@
+package maxpower.kernel.merger.nodes;
+
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.ops.UnaryOp;
+import maxpower.kernel.merger.utils.ResourceUsage;
+import maxpower.kernel.pipeline.FanoutLimiter;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+
+public class KMNodeComplement extends KMNode implements java.io.Serializable, UnaryOp {
+
+	private static final long serialVersionUID = -5693589147162198531L;
+
+	public KMNodeComplement(KMVar in) {
+		super();
+		m_inputs.add(in.getSource());
+	}
+
+	public KMNodeComplement(KMNode in) {
+		super();
+		m_inputs.add(in);
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	@Override
+	public void execute(Merger merger) {
+		m_result = new FanoutLimiter(
+				(KernelObjectVectorizable) (~m_inputs[0].getResult()), merger.getMaxFanout());
+	}
+
+	@Override
+	public double evaluate(double val) {
+		Bits value = m_resultType.getPrimitiveType().encodeConstant(val);
+		value = ~value;
+		return m_resultType.getPrimitiveType().decodeConstant(value);
+	}
+
+	@Override
+	public ResourceUsage getResourceUsageEstimate(Merger merger) {
+		return ResourceUsage.getLogicOperation(m_resultType.getPrimitiveType().getTotalBits()) * m_resultType.getPrimitiveCount();
+	}
+
+	@Override
+	int getLatencyEstimate(Merger merger) {
+		return 0;
+	}
+
+	@Override
+	public String toString() {
+		return "NodeComplement: " + m_id;
+	}
+
+}

@@ -1,0 +1,101 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeConstant;
+import maxpower.kernel.merger.nodes.KMNodeFloatingPointMultiAdder;
+import maxpower.kernel.merger.nodes.KMNodeInput;
+import maxpower.kernel.merger.nodes.KMNodeMux;
+import maxpower.kernel.merger.nodes.KMNodeOutput;
+import maxpower.kernel.merger.ops.CommutativeOp;
+
+/**
+ * This graph pass eliminates common sub expressions (deduplicate nodes that do the same compute)
+ * Average Complexity: O(n^2)
+ * Worst Case Complexity: O(n^3)
+ * @author nvoss
+ *
+ */
+public class CommonSubExpressionGraphPass {
+
+	public static boolean run(final KMGraph graph) {
+
+		return GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+			@Override
+			public boolean processNode(KMNode node) {
+				boolean changed = false;
+				List<KMNode> removeList = new ArrayList<KMNode>();
+				for (KMNode possibleMatch : graph.getNodes()) {
+					if (node != possibleMatch && checkNodeEquality(node, possibleMatch)) {
+						/*
+						 * Merge Nodes
+						 *
+						 * If this condition is true the input to both nodes must be equal
+						 * So we only have to redirect the inputs of all outputs of the node that should get removed
+						 * Also the set which kernels use this node has to be updated
+						 */
+
+						node.addOutputs(possibleMatch.getOutputs());
+
+						for (KMNode matchOutput : possibleMatch.getOutputs()) {
+							matchOutput.replaceInputs(possibleMatch, node);
+						}
+
+						node.addUsedInKernels(possibleMatch.getUsedInKernels());
+
+						removeList.add(possibleMatch);
+
+						changed = true;
+					}
+				}
+				if (changed) {
+					graph.removeNodes(removeList);
+				}
+				return changed;
+			}
+		});
+	}
+
+	private static boolean checkNodeEquality(KMNode firstNode, KMNode secondNode) {
+		if (firstNode.getClass().equals(secondNode.getClass())) {
+			if (firstNode instanceof KMNodeInput) {
+				return ((KMNodeInput) firstNode).getName().equals(((KMNodeInput) secondNode).getName());
+			} else if (firstNode instanceof KMNodeOutput) {
+				return ((KMNodeOutput) firstNode).getName().equals(((KMNodeOutput) secondNode).getName()) &&
+					firstNode.getInputs().equals(secondNode.getInputs());
+			} else if (firstNode instanceof KMNodeConstant) {
+				return ((KMNodeConstant) firstNode).getValue() == ((KMNodeConstant) secondNode).getValue() &&
+					firstNode.getResultType().equals(secondNode.getResultType());
+			} else if (firstNode instanceof KMNodeFloatingPointMultiAdder) {
+				return false;
+			} else {
+				if (firstNode instanceof KMNodeMux) {
+					if (!firstNode.getUsedInKernels().equals(secondNode.getUsedInKernels())) {
+						return false;
+					}
+				}
+				if (firstNode instanceof CommutativeOp) {
+					if (firstNode.getInputs().size() == secondNode.getInputs().size()) {
+						for (KMNode node : firstNode.getInputs()) {
+							if (!secondNode.getInputs().contains(node)) {
+								return false;
+							}
+						}
+						for (KMNode node : secondNode.getInputs()) {
+							if (!firstNode.getInputs().contains(node)) {
+								return false;
+							}
+						}
+						return true;
+					}
+				} else {
+					return firstNode.getInputs().equals(secondNode.getInputs());
+				}
+			}
+		}
+		return false;
+	}
+}

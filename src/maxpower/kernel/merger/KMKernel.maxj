@@ -1,0 +1,654 @@
+package maxpower.kernel.merger;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeAbs;
+import maxpower.kernel.merger.nodes.KMNodeConstant;
+import maxpower.kernel.merger.nodes.KMNodeCos;
+import maxpower.kernel.merger.nodes.KMNodeDFEPrintf;
+import maxpower.kernel.merger.nodes.KMNodeExp;
+import maxpower.kernel.merger.nodes.KMNodeInput;
+import maxpower.kernel.merger.nodes.KMNodeMax;
+import maxpower.kernel.merger.nodes.KMNodeMin;
+import maxpower.kernel.merger.nodes.KMNodeMux;
+import maxpower.kernel.merger.nodes.KMNodeOutput;
+import maxpower.kernel.merger.nodes.KMNodeSimPrintf;
+import maxpower.kernel.merger.nodes.KMNodeSin;
+import maxpower.kernel.merger.nodes.KMNodeSqrt;
+import maxpower.ops.BinaryOp;
+import maxpower.ops.UnaryOp;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.utils.Pair;
+
+/**
+ * A {@link KMKernel} is used to encapsulate a set of computations.
+ *
+ * It is the equivalent to the normal {@link Kernel}.
+ * Many commonly used computations like power and max are available in this scope.
+ *
+ * @author nvoss
+ */
+public abstract class KMKernel {
+	private final Map<String, Pair<Boolean, List<String>>> m_inputNames;
+	private final Map<String, Pair<Boolean, List<String>>> m_outputNames;
+
+	private final KMKernelGraph m_graph;
+	/**
+	 * Provides methods to send data into the {@link KMKernel} and get it back again.
+	 */
+	public final KMIO io;
+	/**
+	 * Provides access to control functions like MUXs.
+	 */
+	public final KMControl control;
+	/**
+	 * Provides methods for creating constants.
+	 */
+	public final KMConstant constant;
+	/**
+	 * Provides access to debugging functions.
+	 */
+	public final KMDebug debug;
+
+	/**
+	 * Create new {@link KMKernel}.
+	 */
+	public KMKernel() {
+		m_inputNames = new HashMap<String, Pair<Boolean, List<String>>>();
+		m_outputNames = new HashMap<String, Pair<Boolean, List<String>>>();
+		m_graph = new KMKernelGraph();
+		io = new KMIO();
+		control = new KMControl();
+		constant = new KMConstant();
+		debug = new KMDebug();
+	}
+
+	/**
+	 * Use this constructor to replicate the functionality of {@link KernelLib}.
+	 * It has the same state as the {@link KMKernel} passed in and shares the dataflow graph.
+	 * @param owner {@link KMKernel} this {@link KMKernel} belongs to.
+	 */
+	protected KMKernel(KMKernel owner) {
+		m_inputNames = owner.m_inputNames;
+		m_outputNames = owner.m_outputNames;
+		m_graph = owner.m_graph;
+		io = owner.io;
+		control = owner.control;
+		constant = owner.constant;
+		debug = owner.debug;
+	}
+
+	void addNodeToKernelGraph(KMNode node) {
+		m_graph.addNode(node);
+	}
+
+	/**
+	 * Builds the kernel graph.
+	 * <p>
+	 * Since in the creation of the graph each node only knows about its inputs we now have to connect
+	 * the outputs in order to be able to treverse through the graph in two directions.
+	 */
+	void build() {
+		m_graph.buildGraph();
+	}
+
+	/**
+	 * Returns a Map with information about all inputs created in the Kernels.
+	 * <p>
+	 * The key refers to the name the user provided to identify the input. If the boolean in the pair
+	 * is set the input is a vector input. The list contains all the names of the created input nodes.
+	 */
+	Map<String, Pair<Boolean, List<String>>> getInputNames() {
+		return m_inputNames;
+	}
+
+	/**
+	 * Returns a Map with information about all outputs created in the Kernels.
+	 * <p>
+	 * The key refers to the name the user provided to identify the output. If the boolean in the pair
+	 * is set the output is a vector output. The list contains all the names of the created output nodes.
+	 */
+	Map<String, Pair<Boolean, List<String>>> getOutputNames() {
+		return m_outputNames;
+	}
+
+	KMKernelGraph getGraph() {
+		return m_graph;
+	}
+
+	// -------- Maths functions --------
+
+	/**
+	 * Returns the sine of a constant angle and returns the result as {@link KMVar}.
+	 * @param input an angle, in radians
+	 */
+	public KMVar sin(double input) {
+		return createNodeConst(Math.sin(input));
+	}
+
+	/**
+	 * Returns the sine of a {@link KMVar} angle.
+	 * @param input an angle, in radians
+	 */
+	public KMVar sin(KMVar input) {
+		return connectNode(new KMNodeSin(input));
+	}
+
+	/**
+	 * Returns the sine each element of a {@link KMVector}.
+	 * @param input vector of angles, in radians
+	 */
+	public KMVector sin(KMVector input) {
+		return input.map(new UnaryOp<KMVar, KMVar>() { @Override public KMVar op(KMVar a) { return sin(a); } });
+	}
+
+	/**
+	 * Returns the cosine of a constant angle and returns the result as {@link KMVar}.
+	 * @param input an angle, in radians
+	 */
+	public KMVar cos(double input) {
+		return createNodeConst(Math.cos(input));
+	}
+
+	/**
+	 * Returns the cosine of a {@link KMVar} angle.
+	 * @param input an angle, in radians
+	 */
+	public KMVar cos(KMVar input) {
+		return connectNode(new KMNodeCos(input));
+	}
+
+	/**
+	 * Returns the cosine of each element of a {@link KMVector}.
+	 * @param input vectors of angles, in radians
+	 */
+	public KMVector cos(KMVector input) {
+		return input.map(new UnaryOp<KMVar, KMVar>() { @Override public KMVar op(KMVar a) { return cos(a); } });
+	}
+
+	/**
+	 * Returns the exponential function of a constant value and returns the result as {@link KMVar}.
+	 */
+	public KMVar exp(double input) {
+		return createNodeConst(Math.exp(input));
+	}
+
+	/**
+	 * Calculates the exponential function of a {@link KMVar}.
+	 */
+	public KMVar exp(KMVar input) {
+		return connectNode(new KMNodeExp(input));
+	}
+
+	/**
+	 * Returns the exponential function of each element of a {@link KMVector}.
+	 */
+	public KMVector exp(KMVector input) {
+		return input.map(new UnaryOp<KMVar, KMVar>() { @Override public KMVar op(KMVar a) { return exp(a); } });
+	}
+
+	/**
+	 * Returns the square root of a constant value and returns the result as {@link KMVar}.
+	 */
+	public KMVar sqrt(double input) {
+		return createNodeConst(Math.sqrt(input));
+	}
+
+	/**
+	 * Returns the square root of a {@link KMVar}.
+	 */
+	public KMVar sqrt(KMVar input) {
+		return connectNode(new KMNodeSqrt(input));
+	}
+
+	/**
+	 * Returns the square root of each element of a {@link KMVector}.
+	 */
+	public KMVector sqrt(KMVector input) {
+		return input.map(new UnaryOp<KMVar, KMVar>() { @Override public KMVar op(KMVar a) { return sqrt(a); } });
+	}
+
+	/**
+	 * Returns the first argument (a {@link KMVar}) raised to the power of second argument.
+	 */
+	public KMVar pow(KMVar base, int exponent) {
+		if (exponent == 0) {
+			return createNodeConst(1);
+		}
+		KMVar result = base;
+		for (int i = 1; i < Math.abs(exponent); i++) {
+			result *= base;
+		}
+		if (exponent < 0) {
+			result = 1 / result;
+		}
+		return result;
+	}
+
+	/**
+	 * Returns each element of the first argument (a {@link KMVector}) raised to the power of second argument.
+	 */
+	public KMVector pow(KMVector base, final int exponent) {
+		return base.map(new UnaryOp<KMVar, KMVar>() { @Override public KMVar op(KMVar a) { return pow(a, exponent); } });
+	}
+
+	/**
+	 * Returns the maximum of the two arguments.
+	 */
+	public KMVar max(KMVar in1, KMVar in2) {
+		return connectNode(new KMNodeMax(in1, in2));
+	}
+
+	/**
+	 * Returns the maximum of the two arguments.
+	 */
+	public KMVar max(double in1, KMVar in2) {
+		return connectNode(new KMNodeMax(createNodeConst(in1), in2));
+	}
+
+	/**
+	 * Returns the maximum of the two arguments.
+	 */
+	public KMVar max(KMVar in1, double in2) {
+		return connectNode(new KMNodeMax(in1, createNodeConst(in2)));
+	}
+
+	/**
+	 * Returns the element-wise maximum of the two arguments.
+	 */
+	public KMVector max(KMVector in1, KMVector in2) {
+		return KMVector.map2(in1, in2, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return max(a, b); }
+		});
+	}
+
+	/**
+	 * Returns the maximum of the first argument and each element of the second argument.
+	 */
+	public KMVector max(KMVar in1, KMVector in2) {
+		return max(in2.asVector(in1), in2);
+	}
+
+	/**
+	 * Returns the maximum of the second argument and each element of the first argument.
+	 */
+	public KMVector max(KMVector in1, KMVar in2) {
+		return max(in1, in1.asVector(in2));
+	}
+
+	/**
+	 * Returns the maximum of the second argument and each element of the first argument.
+	 */
+	public KMVector max(double in1, KMVector in2) {
+		return max(in2.asVector(in1), in2);
+	}
+
+	/**
+	 * Returns the maximum of the first argument and each element of the second argument.
+	 */
+	public KMVector max(KMVector in1, double in2) {
+		return max(in1, in1.asVector(in2));
+	}
+
+	/**
+	 * Returns the minimum of the two arguments.
+	 */
+	public KMVar min(KMVar in1, KMVar in2) {
+		return connectNode(new KMNodeMin(in1, in2));
+	}
+
+	/**
+	 * Returns the minimum of the two arguments.
+	 */
+	public KMVar min(double in1, KMVar in2) {
+		return connectNode(new KMNodeMin(createNodeConst(in1), in2));
+	}
+
+	/**
+	 * Returns the minimum of the two arguments.
+	 */
+	public KMVar min(KMVar in1, double in2) {
+		return connectNode(new KMNodeMin(in1, createNodeConst(in2)));
+	}
+
+	/**
+	 * Returns the element-wise minimum of the two arguments.
+	 */
+	public KMVector min(KMVector in1, KMVector in2) {
+		return KMVector.map2(in1, in2, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return min(a, b); }
+		});
+	}
+
+	/**
+	 * Returns the minimum of the first argument and each element of the second argument.
+	 */
+	public KMVector min(KMVar in1, KMVector in2) {
+		return min(in2.asVector(in1), in2);
+	}
+
+	/**
+	 * Returns the minimum of the second argument and each element of the first argument.
+	 */
+	public KMVector min(KMVector in1, KMVar in2) {
+		return min(in1, in1.asVector(in2));
+	}
+
+	/**
+	 * Returns the minimum of the first argument and each element of the second argument.
+	 */
+	public KMVector min(double in1, KMVector in2) {
+		return min(in2.asVector(in1), in2);
+	}
+
+	/**
+	 * Returns the minimum of the second argument and each element of the first argument.
+	 */
+	public KMVector min(KMVector in1, double in2) {
+		return min(in1, in1.asVector(in2));
+	}
+
+	/**
+	 * Returns the absolute value of the input.
+	 */
+	public KMVar abs(KMVar in) {
+		return connectNode(new KMNodeAbs(in));
+	}
+
+	/**
+	 * Returns the absolute value of each element of the input.
+	 */
+	public KMVector abs(KMVector in) {
+		return in.map(new UnaryOp<KMVar, KMVar>() { @Override public KMVar op(KMVar a) { return abs(a); } });
+	}
+
+	/**
+	 * Returns the scalar (dot / inner) product of two vectors.
+	 */
+	public KMVar scalarProduct(KMVector a, KMVector b) {
+		if (a.getSize() != b.getSize()) {
+			throw new MaxCompilerAPIError("Both vectors have to have the same size.");
+		}
+		if (a.getSize() < 1) {
+			throw new MaxCompilerAPIError("The vector has to have at least one element.");
+		}
+
+		KMVar scalarProduct = a[0] * b[0];
+		for (int i = 1; i < a.getSize(); i++) {
+			scalarProduct += a[i] * b[i];
+		}
+
+		return scalarProduct;
+	}
+
+	private KMVar createNodeConst(double value) {
+		return connectNode(new KMNodeConstant(value));
+	}
+
+	private KMVar connectNode(KMNode node) {
+		addNodeToKernelGraph(node);
+
+		KMVar result = new KMVar(this);
+		result.setSource(node);
+		return result;
+	}
+
+	/**
+	 * Dataflow graph used to represent the computations in a single kernel.
+	 *
+	 * @author nvoss
+	 */
+	public static class KMKernelGraph {
+		private final List<KMNode> m_nodes = new ArrayList<KMNode>();
+
+		private void addNode(KMNode node) {
+			m_nodes.add(node);
+		}
+
+		/**
+		 * Finish the kernel graph.
+		 * <p>
+		 * Connects all the outputs in order to enable traversing through the graph in two directions.
+		 */
+		private void buildGraph() {
+			for (KMNode node : m_nodes) {
+				for (KMNode in : node.getInputs()) {
+					in.addOutput(node);
+				}
+			}
+		}
+
+		/**
+		 * Returns the list of all {@link KMNode}s in the graph.
+		 */
+		public List<KMNode> getNodes() {
+			return m_nodes;
+		}
+
+		@Override
+		public String toString() {
+			return m_nodes.toString();
+		}
+	}
+
+	public class KMIO {
+		/**
+		 * Creates an input to the {@link KMKernel}.
+		 * <p>
+		 * To connect this input to a {@link KernelObjectVectorizable} the addInput() method
+		 * of the {@link Merger} has to be used.
+		 *
+		 * @param inputName a name identifying the input
+		 * @return the input value
+		 */
+		public KMVar input(String inputName) {
+			KMVar input = createInputNode(inputName);
+			m_inputNames.put(inputName, new Pair<Boolean, List<String>>(false, Arrays.asList(inputName)));
+			return input;
+		}
+
+		private KMVar createInputNode(String inputName) {
+			if (m_inputNames.keySet().contains(inputName)) {
+				throw new MaxCompilerAPIError("The input with the name " + inputName + " was already added to this Kernel");
+			}
+
+			KMNodeInput inNode = new KMNodeInput(KMKernel.this, inputName);
+			KMKernel.this.addNodeToKernelGraph(inNode);
+			KMVar inVar = new KMVar(KMKernel.this);
+			inVar.setSource(inNode);
+
+			return inVar;
+		}
+
+		/**
+		 * Creates a vector input to the {@link KMKernel}.
+		 * <p>
+		 * To connect this input to a {@link DFEVector} the addInput() method of the {@link Merger}
+		 * has to be called with a {@link DFEVector} as parameter.
+		 *
+		 * @param inputName a name identifying the input
+		 * @param numElements the number of elements in the vector
+		 * @return the input vector
+		 */
+		public KMVector input(String inputName, int numElements) {
+			if (m_inputNames.keySet().contains(inputName)) {
+				throw new MaxCompilerAPIError("The input with the name" + inputName + " was already added to this Kernel");
+			}
+
+			List<KMVar> inputs = new ArrayList<KMVar>();
+			List<String> names = new ArrayList<String>();
+			for (int i = 0; i < numElements; i++) {
+				names.add(inputName + "_ELEMENT__" + i);
+				inputs.add(createInputNode(names[i]));
+			}
+
+			m_inputNames.put(inputName, new Pair<Boolean, List<String>>(true, names));
+			return new KMVector(inputs);
+		}
+
+		/**
+		 * Creates an output of the {@link KMKernel}.
+		 * <p>
+		 * In order to connect this output to a {@link KernelObjectVectorizable} the getOutput() method
+		 * of the {@link Merger} has to be used.
+		 *
+		 * @param outputName a name identifying this output
+		 * @param out the output value
+		 */
+		public void output(String outputName, KMVar out) {
+			createOutputNode(outputName, out);
+			m_outputNames.put(outputName, new Pair<Boolean, List<String>>(false, Arrays.asList(outputName)));
+		}
+
+		private void createOutputNode(String outputName, KMVar out) {
+			if (m_outputNames.keySet().contains(outputName)) {
+				throw new MaxCompilerAPIError("The output with the name" + outputName + " was already added to this Kernel");
+			}
+			KMKernel.this.addNodeToKernelGraph(new KMNodeOutput(KMKernel.this, outputName, out));
+		}
+
+		/**
+		 * Creates a vector output of the {@link KMKernel}
+		 * <p>
+		 * The result can be casted to a DFEVector after calling the getOutput() method of the {@link Merger}.
+		 *
+		 * @param outputName a name identifying this output
+		 * @param out the output vector
+		 */
+		public void output(String outputName, KMVector out) {
+			if (m_outputNames.keySet().contains(outputName)) {
+				throw new MaxCompilerAPIError("The output with the name" + outputName + " was already added to this Kernel");
+			}
+
+			List<String> names = new ArrayList<String>();
+			for (int i = 0; i < out.getSize(); i++) {
+				names.add(outputName + "_ELEMENT__" + i);
+				createOutputNode(names[i], out[i]);
+			}
+
+			m_outputNames.put(outputName, new Pair<Boolean, List<String>>(true, names));
+		}
+	}
+
+	public class KMControl {
+		/**
+		 * Returns the selected value from an array of options using a multiplexer.
+		 * @param select the index of the value to return
+		 * @param options the values to select between
+		 */
+		public KMVar mux(KMVar select, KMVar... options) {
+			return mux(select, Arrays.asList(options));
+		}
+
+		/**
+		 * Returns the selected value from a list of options using a multiplexer.
+		 * @param select the index of the value to return
+		 * @param options the values to select between
+		 */
+		public KMVar mux(KMVar select, List<KMVar> options) {
+			KMNodeMux muxNode = new KMNodeMux(select, options);
+			KMKernel.this.addNodeToKernelGraph(muxNode);
+			KMVar muxVar = new KMVar(KMKernel.this);
+			muxVar.setSource(muxNode);
+			return muxVar;
+		}
+
+		/**
+		 * Returns the selected value from the elements of a vector using a multiplexer.
+		 * @param select the index of the value to return
+		 * @param options the vector containing the values to select between
+		 */
+		public KMVar mux(KMVar select, KMVector options) {
+			return mux(select, options.getElementsAsList());
+		}
+	}
+
+	public class KMConstant {
+		/**
+		 * Returns a constant value as a {@link KMVar}.
+		 */
+		public KMVar var(double val) {
+			return createNodeConst(val);
+		}
+
+		/**
+		 * Returns a {@link KMVector} of identical constant values.
+		 */
+		public KMVector vec(int n_elements, double val) {
+			return new KMVector(Collections.nCopies(n_elements, createNodeConst(val)));
+		}
+
+		/**
+		 * Returns a {@link KMVector} of constant values.
+		 */
+		public KMVector vec(List<Double> elements) {
+			List<KMVar> varElements = new ArrayList<KMVar>();
+			for (Double elem : elements) {
+				varElements.add(createNodeConst(elem));
+			}
+			return new KMVector(varElements);
+		}
+
+		/**
+		 * Returns a {@link KMVector} of constant values.
+		 */
+		public KMVector vec(double... elements) {
+			List<Double> values = new ArrayList<Double>();
+			for (double elem : elements) {
+				values.add(new Double(elem));
+			}
+			return vec(values);
+		}
+	}
+
+	public class KMDebug {
+		/**
+		 * Adds printf-like output for a DFE build.
+		 * @param format a format string in printf syntax
+		 * @param objects the values to be formatted
+		 */
+		public void dfePrintf(String format, KMVar... objects) {
+			addNodeToKernelGraph(new KMNodeDFEPrintf(format, objects));
+		}
+
+		/**
+		 * Adds printf-like output for a simulation build.
+		 * @param format a format string in printf syntax
+		 * @param objects the values to be formatted
+		 */
+		public void simPrintf(String format, KMVar... objects) {
+			addNodeToKernelGraph(new KMNodeSimPrintf(format, objects));
+		}
+
+		/**
+		 * Adds printf-like output for a DFE build.
+		 * @param enable Enable signal for the Printf
+		 * @param format a format string in printf syntax
+		 * @param objects the values to be formatted
+		 */
+		public void dfePrintf(KMVar enable, String format, KMVar... objects) {
+			addNodeToKernelGraph(new KMNodeDFEPrintf(enable, format, objects));
+		}
+
+		/**
+		 * Adds printf-like output for a simulation build.
+		 * * @param enable Enable signal for the Printf
+		 * @param format a format string in printf syntax
+		 * @param objects the values to be formatted
+		 */
+		public void simPrintf(KMVar enable, String format, KMVar... objects) {
+			addNodeToKernelGraph(new KMNodeSimPrintf(enable, format, objects));
+		}
+	}
+}

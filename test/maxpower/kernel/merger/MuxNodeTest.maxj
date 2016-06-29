@@ -1,0 +1,130 @@
+package maxpower.kernel.merger;
+
+import java.util.List;
+
+import junit.framework.Assert;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.photon.core.GraphPassTester;
+import com.maxeler.photon.core.Node;
+import com.maxeler.photon.nodes.NodeMux;
+
+public class MuxNodeTest {
+	private class KMTestKernel1 extends KMKernel {
+		public KMTestKernel1(KernelLib owner) {
+			KMVar kmA = io.input("a");
+			KMVar kmB = io.input("b");
+
+			io.output("result", kmA + kmB);
+		}
+	}
+
+	private class KMTestKernel2 extends KMKernel {
+		public KMTestKernel2(KernelLib owner) {
+			KMVar kmA = io.input("a");
+			KMVar kmB = io.input("b");
+
+			io.output("result", kmA - kmB);
+		}
+	}
+
+	private class KMTestKernel3 extends KMKernel {
+		public KMTestKernel3(KernelLib owner) {
+			KMVar kmA = io.input("a");
+			KMVar kmB = io.input("b");
+
+			io.output("result2", kmA - kmB);
+		}
+	}
+
+	private class KMTestKernel4 extends KMKernel {
+		public KMTestKernel4(KernelLib owner) {
+			KMVar kmA = io.input("a");
+			KMVar kmB = io.input("b");
+
+			io.output("result3", kmA - kmB);
+		}
+	}
+
+	private class KMTestKernel5 extends KMKernel {
+		public KMTestKernel5(KernelLib owner) {
+			KMVar kmA = io.input("a");
+			KMVar kmB = io.input("b");
+
+			io.output("result3", kmA + kmB);
+		}
+	}
+
+	private class MergerTestKernel extends Kernel {
+		@SuppressWarnings("unchecked")
+		public MergerTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+
+			merger.dumpInputGraph("/tmp/");
+			merger.dumpResultGraph("/tmp/");
+
+			merger.addInput("a", io.input("a", dfeInt(32)));
+			merger.addInput("b", io.input("b", dfeInt(32)));
+			merger.setKernel(io.input("KernelSelect", dfeUInt(32)));
+
+			merger.addKernel(new KMTestKernel1(this));
+			merger.addKernel(new KMTestKernel2(this));
+			merger.addKernel(new KMTestKernel3(this));
+			merger.addKernel(new KMTestKernel4(this));
+			merger.addKernel(new KMTestKernel5(this));
+
+			merger.build();
+
+			io.output("result", merger.getOutput("result").getType()) <== merger.getOutput("result");
+			io.output("result2", merger.getOutput("result2").getType()) <== merger.getOutput("result2");
+			io.output("result3", merger.getOutput("result3").getType()) <== merger.getOutput("result3");
+		}
+	}
+
+	@Test
+	public void testSimpleKernelMerger() {
+		SimulationManager manager = new SimulationManager("KernelMergerTest");
+		MergerTestKernel kernel = new MergerTestKernel(manager.makeKernelParameters());
+		manager.setKernel(kernel);
+		manager.build();
+
+		double[] a = {0, 1, 2, 3, 4};
+		double[] b = {4, 3, 2, 1, 0};
+		double[] kernelSelect = {0, 1, 2, 3, 4};
+
+		manager.setInputData("a", a);
+		manager.setInputData("b", b);
+		manager.setInputData("KernelSelect", kernelSelect);
+		manager.setKernelCycles(5);
+		manager.run();
+
+		double[] result = manager.getOutputDataArray("result");
+		double[] result2 = manager.getOutputDataArray("result2");
+		double[] result3 = manager.getOutputDataArray("result3");
+
+		Assert.assertEquals(4.0,  result[0]);
+		Assert.assertEquals(-2.0, result[1]);
+		Assert.assertEquals(0.0,  result2[2]);
+		Assert.assertEquals(2.0,  result3[3]);
+		Assert.assertEquals(4.0,  result3[4]);
+
+		GraphPassTester tester = new GraphPassTester("KernelMergerTest");
+		tester.setKernel(kernel);
+
+		int count = 0;
+		List<Node> nodeList = tester.getNodes();
+		for (Node node : nodeList) {
+			if (node instanceof NodeMux) {
+				count++;
+			}
+		}
+		Assert.assertEquals(4, count);
+	}
+}

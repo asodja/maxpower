@@ -1,42 +1,89 @@
 package maxpower.manager.superfifo;
 
-import maxpower.manager.superfifo.DdrFifo;
-import maxpower.manager.superfifo.SimpleWire;
-
 import com.maxeler.maxcompiler.v2.build.EngineParameters;
 import com.maxeler.maxcompiler.v2.managers.DFEModel;
 import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
 import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.StateMachineBlock;
 import com.maxeler.maxcompiler.v2.managers.custom.stdlib.DebugLevel;
-import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MemoryControlGroup;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemChannelGranularity;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemCommandGroup;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemInterface;
+import com.maxeler.maxeleros.managercompiler.configuration.ManagerDRAMConfiguration.LMemConfig;
 
 public class DdrFifoTest extends CustomManager {
 
-	public DdrFifoTest(boolean sim) {
-		super(new EngineParameters("DDRFifoTest_" + (sim ? "SIM" : "HW"), DFEModel.VECTIS,
-				sim ? com.maxeler.maxcompiler.v2.build.EngineParameters.Target.DFE_SIM :
-					com.maxeler.maxcompiler.v2.build.EngineParameters.Target.DFE));
+	public static class DdrFifoParameters extends EngineParameters {
 
-		debug.setDebugLevel(new DebugLevel().setHasStreamStatus(true));
+		protected DdrFifoParameters(String[] args) {
+			super(args);
+		}
 
+		@Override
+		protected void declarations() {
+			declareParam(s_parameterMaxFileName, DataType.STRING, "DDRFifoTest");
+			declareParam(s_parameterDFE, DataType.DFEMODEL, DFEModel.ISCA);
+			declareParam(s_parameterTarget, Target.class, Target.DFE_SIM);
+			declareParam("hasStreamStatus", DataType.BOOL, true);
+			declareParam("tag", DataType.STRING, "");
+			declareParam("ddrFrequency", DataType.INT, 400);
+		}
+
+		public boolean isSimulation() {
+			return getTarget() == com.maxeler.maxcompiler.v2.build.EngineParameters.Target.DFE_SIM;
+		}
+
+		public boolean hasStreamStatus() {
+			return getParam("hasStreamStatus");
+		}
+
+		public String getTag() {
+			return getParam("tag");
+		}
+
+		public int getDdrFrequency() {
+			return getParam("ddrFrequency");
+		}
+
+		@Override
+		public String getBuildName() {
+			return getMaxFileName()
+					+ (hasStreamStatus() ? "_SS" : "")
+					+ (getTag().length() > 0 ? "_" + getTag() : "")
+					+ "_" + getDFEModel().toString()
+					+ "_" + getTarget().toString();
+		}
+	}
+
+	public DdrFifoTest(final DdrFifoParameters params) {
+		super(params);
+
+		LMemConfig mcc = makeLMemConfig()
+			.setEnableParityMode(true)
+			.setEnableECCMode(true)
+			.setEnableFlagCommands(true)
+			.setChannelGranularity(LMemChannelGranularity.getGranularity(8));
+
+		LMemInterface iface = addLMemInterface(mcc);
+
+		config.setDefaultStreamClockFrequency(157);
+		debug.setDebugLevel(new DebugLevel().setHasStreamStatus(params.hasStreamStatus()));
 
 		StateMachineBlock wire = addStateMachine("cmdWire", new SimpleWire(this, 64));
 
-		getManagerConfiguration().dram.setEnableFlagCommands(true);
+		LMemCommandGroup ctrlGroup = iface.addCommandGroup("ctrlGroup", wire.getOutput(SimpleWire.OUTPUT));
 
-		MemoryControlGroup ctrlGroup = addMemoryControlGroup("ctrlGroup", wire.getOutput(SimpleWire.OUTPUT));
-
-		DFELink writeMemStream = addStreamToOnCardMemory("writeMemStream", ctrlGroup);
-		DFELink readMemStream = addStreamFromOnCardMemory("readMemStream", ctrlGroup);
+		DFELink writeMemStream = ctrlGroup.addStreamToLMem("writeMemStream");
+		DFELink readMemStream = ctrlGroup.addStreamFromLMem("readMemStream");
+		DFELink echoStream = ctrlGroup.addCommandCompletionStream();
 		ctrlGroup.finalise();
 
-		StateMachineBlock ddrFifo = addStateMachine("ddrFifo", new DdrFifo(this, 0, 32 * 1024,
-				ctrlGroup.getStreamIndexIdWithinGroup("writeMemStream"),
-				ctrlGroup.getStreamIndexIdWithinGroup("readMemStream"),
-				0, 1));
+		StateMachineBlock ddrFifo = addStateMachine("ddrFifo", new DdrFifo(this, iface, 0, 32 * 1024,
+				ctrlGroup.getIndexForStream("writeMemStream"),
+				ctrlGroup.getIndexForStream("readMemStream")));
 
 		wire.getInput(SimpleWire.INPUT) <== ddrFifo.getOutput(DdrFifo.OUTPUT_MEM_COMMAND);
+		ddrFifo.getInput(DdrFifo.INPUT_COMMAND_ECHO) <== echoStream;
 
 		writeMemStream <== ddrFifo.getOutput(DdrFifo.OUTPUT_MEM_DATA);
 		ddrFifo.getInput(DdrFifo.INPUT_MEM_DATA) <== readMemStream;
@@ -46,8 +93,8 @@ public class DdrFifoTest extends CustomManager {
 	}
 
 	public static void main(String [] args) {
-		boolean isSim = true;
-		DdrFifoTest m = new DdrFifoTest(isSim);
+		final DdrFifoParameters params = new DdrFifoParameters(args);
+		final DdrFifoTest m = new DdrFifoTest(params);
 		m.build();
 	}
 

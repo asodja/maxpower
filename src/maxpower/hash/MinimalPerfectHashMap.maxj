@@ -5,9 +5,8 @@ import java.util.List;
 
 import maxpower.hash.functions.HashFunction;
 import maxpower.hash.functions.JenkinsHash;
-import maxpower.hash.mem.MemInterface;
-import maxpower.hash.mem.MemInterface.Buffer;
-import maxpower.hash.mem.MemInterface.MemType;
+import maxpower.hash.mem.MemBacking;
+import maxpower.hash.mem.MemBacking.Buffer;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
@@ -21,8 +20,8 @@ class MinimalPerfectHashMap<T extends KernelObject<T>> extends
 		MaxHash<T> {
 
 	private final MaxHashParameters<T> m_params;
-	private final MemInterface m_hashParamMem;
-	private final MemInterface m_valueMem;
+	private final MemBacking m_hashParamMem;
+	private final MemBacking m_valueMem;
 	private final DFEVar m_key;
 	private final DFEVar m_keyValid;
 	private final DFEVar m_index;
@@ -68,27 +67,20 @@ class MinimalPerfectHashMap<T extends KernelObject<T>> extends
 		simPrintf(keyValid, "MinimalPerfectHashMap:\n");
 		simPrintf(keyValid & isDoubleBuffered, "  bufferSelect: %d\n", readBufferSelect);
 
-		int baseAddressBursts = m_params.getBaseAddressBursts();
-
-		m_hashParamMem = MemInterface.create(
+		m_hashParamMem = MemBacking.create(
 				this,
 				m_params.getIntermediateMemType(),
 				"HashParams",
 				getIntermediateStructType(),
-				baseAddressBursts,
 				m_params.getNumIntermediateBuckets(),
 				isDoubleBuffered,
 				readBufferSelect);
 
-		if (m_params.getIntermediateMemType() == MemType.LMEM)
-			baseAddressBursts += m_hashParamMem.getNumOccupiedBursts();
-
-		m_valueMem = MemInterface.create(
+		m_valueMem = MemBacking.create(
 				this,
 				m_params.getValuesMemType(),
 				"Values",
 				getOutputStructType(),
-				baseAddressBursts,
 				m_params.getNumValuesBuckets(),
 				isDoubleBuffered,
 				readBufferSelect);
@@ -201,8 +193,8 @@ class MinimalPerfectHashMap<T extends KernelObject<T>> extends
 	}
 
 	@Override
-	public List<MemInterface> getMemInterfaces() {
-		List<MemInterface> ret = new ArrayList<MemInterface>();
+	public List<MemBacking> getMemInterfaces() {
+		List<MemBacking> ret = new ArrayList<MemBacking>();
 		ret.add(m_hashParamMem);
 		ret.add(m_valueMem);
 		return ret;

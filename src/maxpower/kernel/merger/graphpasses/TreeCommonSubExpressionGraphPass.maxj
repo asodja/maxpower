@@ -1,0 +1,123 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeAdd;
+import maxpower.kernel.merger.nodes.KMNodeAnd;
+import maxpower.kernel.merger.nodes.KMNodeFloatingPointMultiAdder;
+import maxpower.kernel.merger.nodes.KMNodeMax;
+import maxpower.kernel.merger.nodes.KMNodeMin;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+import maxpower.kernel.merger.nodes.KMNodeOr;
+import maxpower.kernel.merger.nodes.KMNodeXor;
+import maxpower.kernel.merger.ops.AssociativeOp;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerInternalError;
+
+/**
+ * This graph pass tries to find common sub expressions in trees and eliminates them.
+ * Average Complexity: O(n^2)
+ * Worst Case Complexity: O(n^3)
+ * @author nvoss
+ *
+ */
+public class TreeCommonSubExpressionGraphPass {
+
+	public static boolean run(final KMGraph graph) {
+
+		return GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+
+			@Override
+			public boolean processNode(KMNode node) {
+				boolean changed = false;
+				if (node instanceof AssociativeOp && node.getInputs().size() > 2) {
+					for (KMNode possibleMatch : graph.getNodes()) {
+						if (possibleMatch.getClass().equals(node.getClass())) {
+							List<KMNode> intersection = KMNode.getIntersectionOfInputs(node, possibleMatch);
+							if (intersection.size() >= 2) {
+								if (possibleMatch.getInputs().size() == intersection.size() &&
+										node.getInputs().size() == intersection.size()) {
+									// This case will be covered by the normal CSE
+									continue;
+								} else if (possibleMatch.getInputs().size() == intersection.size()) {
+									for (KMNode input : possibleMatch.getInputs()) {
+										input.removeOneOutput(node);
+										node.removeOneInput(input);
+									}
+									possibleMatch.addOutput(node);
+									node.addInput(possibleMatch);
+									possibleMatch.addUsedInKernels(node.getUsedInKernels());
+									changed = true;
+									break;
+								} else if (node.getInputs().size() == intersection.size()) {
+									for (KMNode input : node.getInputs()) {
+										input.removeOneOutput(possibleMatch);
+										possibleMatch.removeOneInput(input);
+									}
+									node.addOutput(possibleMatch);
+									possibleMatch.addInput(node);
+									node.addUsedInKernels(possibleMatch.getUsedInKernels());
+									changed = true;
+									break;
+								} else {
+									KMNode newNode;
+									// If we add more associative ops we have to edit the following code
+									if (node instanceof KMNodeAdd) {
+										newNode = new KMNodeAdd();
+									} else if (node instanceof KMNodeMul) {
+										newNode = new KMNodeMul();
+									} else if (node instanceof KMNodeAnd) {
+										newNode = new KMNodeAnd();
+									} else if (node instanceof KMNodeOr) {
+										newNode = new KMNodeOr();
+									} else if (node instanceof KMNodeXor) {
+										newNode = new KMNodeXor();
+									} else if (node instanceof KMNodeMax) {
+										newNode = new KMNodeMax();
+									} else if (node instanceof KMNodeMin) {
+										newNode = new KMNodeMin();
+									} else if (node instanceof KMNodeFloatingPointMultiAdder) {
+										newNode = new KMNodeFloatingPointMultiAdder();
+									} else {
+										throw new MaxCompilerInternalError("Node: " + node.getClass() + " is not supported" +
+												" by this graph pass currently. Please fix this!");
+									}
+									newNode.setOrigin(node.getOrigin());
+									for (KMNode input : intersection) {
+										input.removeOneOutput(node);
+										input.removeOneOutput(possibleMatch);
+										node.removeOneInput(input);
+										possibleMatch.removeOneInput(input);
+
+										input.addOutput(newNode);
+										newNode.addInput(input);
+									}
+
+									node.addInput(newNode);
+									possibleMatch.addInput(newNode);
+									newNode.addOutput(node);
+									newNode.addOutput(possibleMatch);
+
+									Set<Integer> usedInKernels = new HashSet<Integer>();
+									usedInKernels.addAll(node.getUsedInKernels());
+									usedInKernels.addAll(possibleMatch.getUsedInKernels());
+									newNode.addUsedInKernels(usedInKernels);
+
+									graph.addNode(newNode);
+									changed = true;
+									break;
+								}
+							}
+						}
+					}
+				}
+				return changed;
+			}
+		});
+	}
+
+}

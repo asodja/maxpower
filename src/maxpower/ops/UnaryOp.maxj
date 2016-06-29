@@ -1,0 +1,13 @@
+package maxpower.ops;
+
+/**
+ * An interface representing a generic unary operator.
+ *
+ * @author Chris Jones
+ *
+ * @param <R> result type
+ * @param <T> type of operand
+ */
+public interface UnaryOp<R, T> {
+	R op(T a);
+};

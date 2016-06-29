@@ -1,0 +1,123 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeConstant;
+import maxpower.kernel.merger.ops.AssociativeOp;
+
+/**
+ * This graph pass merges different trees. Even if they have a different number of inputs.
+ * Average Complexity: O(n^3)
+ * @author nvoss
+ *
+ */
+
+public class MergeTreesOfDifferentSizesGraphPass {
+
+	public static boolean run(final KMGraph graph, final Merger merger, double lutWeight,
+			double FFWeight, double BRAMWeight, double DSPWeight, double minCosts) {
+
+		return GraphPass.runSortedByCost(graph, merger, lutWeight, FFWeight, BRAMWeight, DSPWeight, minCosts,
+				new GraphPass.NodewiseProcessor() {
+
+			@Override
+			public boolean processNode(KMNode node) {
+				List<KMNode> possibleMatches = getPossibleMatches(graph, node);
+				if (!possibleMatches.isEmpty()) {
+					Collections.sort(possibleMatches, new Comparator<KMNode>() {
+						@Override
+						public int compare(KMNode node1, KMNode node2) {
+							return -Double.compare(node1.getCosts(), node2.getCosts());
+						}
+					});
+
+					KMNode bestMatch = possibleMatches[0];
+
+					// MergeNode
+					equalizeNodeInputCount(graph, node, bestMatch);
+					List<KMNode> nodesToAdd =
+						MergeMostExpensiveNodeGraphPass.mergeNodes(graph, merger, node, bestMatch);
+					graph.addNodes(nodesToAdd);
+					graph.removeNode(bestMatch);
+					return true;
+				}
+				return false;
+			}
+		});
+	}
+
+	public static double estimateImprovement(final KMGraph graph, final Merger merger, double lutWeight,
+			double FFWeight, double BRAMWeight, double DSPWeight, double minCosts) {
+
+		return GraphPass.getImprovementByRunGraphPass(graph, merger, lutWeight, FFWeight, BRAMWeight, DSPWeight,
+				minCosts, new GraphPass.NodewiseEstimator() {
+
+			@Override
+			public double processNode(KMNode node) {
+				List<KMNode> possibleMatches = getPossibleMatches(graph, node);
+				if (!possibleMatches.isEmpty()) {
+					Collections.sort(possibleMatches, new Comparator<KMNode>() {
+						@Override
+						public int compare(KMNode node1, KMNode node2) {
+							return -Double.compare(node1.getCosts(), node2.getCosts());
+						}
+					});
+
+					return Math.min(node.getCosts(), possibleMatches[0].getCosts());
+				}
+				return 0;
+			}
+		});
+	}
+
+	private static List<KMNode> getPossibleMatches(KMGraph graph, KMNode node) {
+		List<KMNode> possibleMatches = new ArrayList<KMNode>();
+
+		for (KMNode possibleMatch : graph.getNodes()) {
+			if (node instanceof AssociativeOp &&
+					node.getClass().equals(possibleMatch.getClass()) && node != possibleMatch &&
+					node.getInputs().size() != possibleMatch.getInputs().size() &&
+					node.getResultType().equals(possibleMatch.getResultType())) {
+				Set<Integer> intersection = new HashSet<Integer>();
+				intersection.addAll(node.getUsedInKernels());
+				intersection.retainAll(possibleMatch.getUsedInKernels());
+				if (intersection.isEmpty()) {
+					if (!(node.isInput(possibleMatch) || possibleMatch.isInput(node))) {
+						possibleMatches.add(possibleMatch);
+					}
+				}
+			}
+		}
+
+		return possibleMatches;
+	}
+
+	private static void equalizeNodeInputCount(KMGraph graph, KMNode node, KMNode match) {
+		KMNode neutralElement = new KMNodeConstant(((AssociativeOp) node).getIdentity());
+
+		graph.addNode(neutralElement);
+		if (node.getInputs().size() > match.getInputs().size()) {
+			int diffCount = node.getInputs().size() - match.getInputs().size();
+			for (int i = 0; i < diffCount; i++) {
+				match.addInput(neutralElement);
+				neutralElement.addOutput(match);
+			}
+			neutralElement.addUsedInKernels(match.getUsedInKernels());
+		} else {
+			int diffCount = match.getInputs().size() - node.getInputs().size();
+			for (int i = 0; i < diffCount; i++) {
+				node.addInput(neutralElement);
+				neutralElement.addOutput(node);
+			}
+			neutralElement.addUsedInKernels(node.getUsedInKernels());
+		}
+	}
+}

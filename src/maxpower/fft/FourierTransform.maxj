@@ -187,8 +187,6 @@ public class FourierTransform {
 			boolean doBitReverse, boolean doIfft, List<DFEVector<DFEComplex>> input) {
 		KernelLib owner = input[0].getKernel();
 
-		owner.stream.suppressOffsetVectorWarnings();
-
 		if (doIfft) {
 			// Do complex conjugate
 			for (int i = 0; i < input.size(); i++) {

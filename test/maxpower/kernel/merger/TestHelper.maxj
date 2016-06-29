@@ -1,0 +1,31 @@
+package maxpower.kernel.merger;
+
+import maxpower.kernel.merger.KMKernel.KMKernelGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+
+// Expose some package private methods for use in the tests.
+public class TestHelper {
+	public static void addNodeToKernelGraph(KMKernel kernel, KMNode in) {
+		kernel.addNodeToKernelGraph(in);
+	}
+
+	public static KMKernelGraph getGraph(KMKernel kernel) {
+		return kernel.getGraph();
+	}
+
+	public static void setSource(KMVar var, KMNode src) {
+		var.setSource(src);
+	}
+
+	public static void addKernelGraph(KMGraph graph, KMKernelGraph kmGraph, int number) {
+		graph.addKernelGraph(kmGraph, number);
+	}
+
+	public static KMGraph getKMGraphOfMerger(Merger merger) {
+		return merger.getKMGraph();
+	}
+
+	public static KMVar createNewKMVar(KMKernel owner) {
+		return new KMVar(owner);
+	}
+}
