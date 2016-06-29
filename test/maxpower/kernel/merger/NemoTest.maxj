@@ -1,0 +1,598 @@
+package maxpower.kernel.merger;
+
+import maxpower.kernel.arithmetic.FloatingPointAccumulator;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Counter;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+public class NemoTest {
+
+	private static final int SLOW = 31;
+	private static final int MED = 122;
+	private static final int FAST = 182;
+
+	private static final String s_e3t_in = "e3t_in";
+	private static final String s_e3t_rvd_in = "e3t_rvd_in";
+	private static final String s_e3t_tp_in = "e3t_tp_in";
+	private static final String s_un_in = "un_in";
+	private static final String s_un_rvd_in = "un_rvd_in";
+	private static final String s_un_inStreamOffsetM1 = "un_inStreamOffsetM1";
+	private static final String s_un_rvd_inStreamOffsetM1 = "un_rvd_inStreamOffsetM1";
+	private static final String s_un_inStreamOffsetPFast = "un_inStreamOffsetPFast";
+	private static final String s_un_tp_in = "un_tp_in";
+	private static final String s_un_tp_inStreanOffsetMSlow = "un_tp_inStreanOffsetMSlow";
+	private static final String s_vn_in = "vn_in";
+	private static final String s_vn_rvd_in = "vn_rvd_in";
+	private static final String s_vn_inStreamOffsetMFast = "vn_inStreamOffsetMFast";
+	private static final String s_vn_rvd_inStreamOffsetMFast = "vn_rvd_inStreamOffsetMFast";
+	private static final String s_vn_inStreamOffsetP1 = "vn_inStreanOffsetP1";
+	private static final String s_vn_tp_in = "vn_tp_in";
+	private static final String s_vn_tp_inStreamOffsetMSlowTimesFast = "vn_tp_inStreamOffsetMSlowTimesFast";
+	private static final String s_hdivn_in = "hdivn_in";
+	private static final String s_hdivn_rvd_in = "hdivn_rvd_in";
+	private static final String s_rotn_in = "rotn_in";
+	private static final String s_wn_rvd_in = "wn_rvd_in";
+	private static final String s_wn_rvd_inStreamOffsetMMedTimesFast = "wn_rvd_inStreamOffsetMMedTimesFast";
+	private static final String s_sshb_in = "sshb_in";
+	private static final String s_emp_b_in = "emp_b_in";
+	private static final String s_emp_in = "emp_in";
+	private static final String s_e3w_in = "e3w_in";
+	private static final String s_tsb_tem_in = "tsb_tem_in";
+	private static final String s_tsb_tem_inStreamOffsetMOffset = "tsb_tem_inStreamOffsetMOffset";
+	private static final String s_tsb_sal_in = "tsb_sal_in";
+	private static final String s_tsb_sal_inStreamOffsetMOffset = "tsb_sal_inStreamOffsetMOffset";
+	private static final String s_tsn_tem_in = "tsn_tem_in";
+	private static final String s_tsn_tem_inStreamOffsetMOffset = "tsn_tem_inStreamOffsetMOffset";
+	private static final String s_tsn_sal_in = "tsn_sal_in";
+	private static final String s_tsn_sal_inStreamOffsetMOffset = "tsn_sal_inStreamOffsetMOffset";
+	private static final String s_gdepw_in = "gdepw_in";
+	private static final String s_zpelc_outStreamOffsetMMedTimesFast = "s_zpelc_outStreamOffsetMMedTimesFast";
+	private static final String s_taum_in = "taum_in";
+	private static final String s_markedStreamOffsetMMedTimesFast = "markedStreamOffsetMMedTimesFast";
+	private static final String s_zhlc_outStreamOffsetMFastTimesMed = "zhlc_outStreamOffsetMFastTimesMed";
+	private static final String s_zhlc_in = "zhlc_in";
+	private static final String s_gdepw_3D_in = "gdepw_3D_in";
+	private static final String s_avmu_k_in = "avmu_k_in";
+	private static final String s_un_inStreamOffsetMMedTimesFast = "un_inStreamOffsetMMedTimesFast";
+	private static final String s_ub_in = "ub_in";
+	private static final String s_ub_inStreamOffsetMMedTimesFast = "ub_inStreamOffsetMMedTimesFast";
+	private static final String s_e3uw_in = "e3uw_in";
+	private static final String s_avmu_in = "avmu_in";
+	private static final String s_avmv_k_in = "avmv_k_in";
+	private static final String s_vn_inStreamOffsetMMedTimesFast = "vn_inStreamOffsetMMedTimesFast";
+	private static final String s_vb_in = "vb_in";
+	private static final String s_vb_inStreamOffsetMMedTimesFast = "vb_inStreamOffsetMMedTimesFast";
+	private static final String s_e3vw_in = "e3vw_in";
+	private static final String s_avmv_in = "avmv_in";
+	private static final String s_avmu_outStreamOffsetM1 = "avmu_outStreamOffsetM1";
+	private static final String s_avmv_outStreamOffsetMFast = "avmv_outStreamOffsetMFast";
+	private static final String s_zwlc_in = "zwlc_in";
+	private static final String s_en_in = "en_in";
+	private static final String s_avt_in = "avt_in";
+	private static final String s_rn2_in = "rn2_in";
+	private static final String s_dissl_in = "dissl_in";
+	private static final String s_avm_in = "avm_in";
+	private static final String s_avm_inStreamOffsetPMedTimesFast = "avm_inStreamOffsetPMedTimesFast";
+	private static final String s_e3t_inStreamOffsetMMedTimesFast = "e3t_inStreamOffsetMMedTimesFast";
+	private static final String s_avm_inStreamOffsetMMedTimesFast = "avm_inStreamOffsetMMedTimesFast";
+	private static final String s_en_outStreamOffsetMMedTimesFast = "en_outStreamOffsetMMedTimesFast";
+	private static final String s_jk = "jk";
+	private static final String s_jj = "jj";
+	private static final String s_ji = "ji";
+	private static final String s_jk_tp = "jk_tp";
+	private static final String s_jj_tp = "jj_tp";
+	private static final String s_ji_tp = "ji_tp";
+	private static final String s_summand = "summand";
+	private static final String s_enable = "enable";
+	private static final String s_sum = "sum";
+	private static final String s_marked = "marked";
+	private static final String s_hdivn_out = "hdivn_out";
+	private static final String s_hdivn_rvd_out = "hdivn_rvd_out";
+	private static final String s_rotn_out = "rotn_out";
+	private static final String s_wn_rvd_out = "wn_rvd_out";
+	private static final String s_ssha_out = "ssha_out";
+	private static final String s_rn2b_out = "rn2b_out";
+	private static final String s_rn2_out = "rn2_out";
+	private static final String s_rhd_out = "rhd_out";
+	private static final String s_zpelc_out = "zpelc_out";
+	private static final String s_zhlc_out = "zhlc_out";
+	private static final String s_avmu_out = "avmu_out";
+	private static final String s_avmv_out = "avmv_out";
+	private static final String s_en_out = "en_out";
+	private static final String s_zd_up_out = "zd_up_out";
+	private static final String s_zdiag_out = "zdiag_out";
+	private static final String s_zd_lw_out = "zd_lw_out";
+
+	private static final int JPI      = 182;
+	private static final int JPJ      = 122;
+	private static final int JPK      = 31;
+	private static final double JPIM1 = 181;
+	private static final double JPJM1 = 121;
+	private static final double JPKM1 = 30;
+
+	private static final double RAU0     = 1035.0;
+	private static final double RDT      = 180.0;
+	private static final double Z1_RAU0  = 0.5 / RAU0;
+	private static final double E2D      = 106000;
+	private static final double Z2DT_    = RDT;
+	private static final double GRAV     = 9.80665;
+	private static final double RN_ALPHA = 0.0002;
+	private static final double RN_BETA  = 0.00077;
+
+	private static class EosBn2Compute extends KMKernel {
+
+		public EosBn2Compute() {
+			KMVar e3t_in = io.input(s_e3t_in);
+			KMVar e3t_rvd_in = io.input(s_e3t_rvd_in);
+			KMVar e3t_tp_in = io.input(s_e3t_tp_in);
+			KMVar un_in = io.input(s_un_in);
+			KMVar un_rvd_in = io.input(s_un_rvd_in);
+			KMVar un_inStreamOffsetM1 = io.input(s_un_inStreamOffsetM1);
+			KMVar un_rvd_inStreamOffsetM1 = io.input(s_un_rvd_inStreamOffsetM1);
+			KMVar un_inStreamOffsetPFast = io.input(s_un_inStreamOffsetPFast);
+			KMVar un_tp_in = io.input(s_un_tp_in);
+			KMVar un_tp_inStreanOffsetMSlow = io.input(s_un_tp_inStreanOffsetMSlow);
+			KMVar vn_in = io.input(s_vn_in);
+			KMVar vn_rvd_in = io.input(s_vn_rvd_in);
+			KMVar vn_inStreamOffsetMFast = io.input(s_vn_inStreamOffsetMFast);
+			KMVar vn_rvd_inStreamOffsetMFast = io.input(s_vn_rvd_inStreamOffsetMFast);
+			KMVar vn_inStreanOffsetP1 = io.input(s_vn_inStreamOffsetP1);
+			KMVar vn_tp_in = io.input(s_vn_tp_in);
+			KMVar vn_tp_inStreamOffsetMSlowTimesFast = io.input(s_vn_tp_inStreamOffsetMSlowTimesFast);
+			KMVar hdivn_in = io.input(s_hdivn_in);
+			KMVar hdivn_rvd_in = io.input(s_hdivn_rvd_in);
+			KMVar rotn_in = io.input(s_rotn_in);
+			KMVar wn_rvd_in = io.input(s_wn_rvd_in);
+			KMVar wn_rvd_inStreamOffsetMMedTimesFast = io.input(s_wn_rvd_inStreamOffsetMMedTimesFast);
+			KMVar sshb_in = io.input(s_sshb_in);
+			KMVar emp_b_in = io.input(s_emp_b_in);
+			KMVar emp_in = io.input(s_emp_in);
+			KMVar e3w_in = io.input(s_e3w_in);
+			KMVar tsb_tem_in = io.input(s_tsb_tem_in);
+			KMVar tsb_tem_inStreamOffsetMOffset = io.input(s_tsb_tem_inStreamOffsetMOffset);
+			KMVar tsb_sal_in = io.input(s_tsb_sal_in);
+			KMVar tsb_sal_inStreamOffsetMOffset = io.input(s_tsb_sal_inStreamOffsetMOffset);
+			KMVar tsn_tem_in = io.input(s_tsn_tem_in);
+			KMVar tsn_tem_inStreamOffsetMOffset = io.input(s_tsn_tem_inStreamOffsetMOffset);
+			KMVar tsn_sal_in = io.input(s_tsn_sal_in);
+			KMVar tsn_sal_inStreamOffsetMOffset = io.input(s_tsn_sal_inStreamOffsetMOffset);
+			KMVar gdepw_in = io.input(s_gdepw_in);
+			KMVar taum_in = io.input(s_taum_in);
+			KMVar zhlc_in = io.input(s_zhlc_in);
+			KMVar gdepw_3D_in = io.input(s_gdepw_3D_in);
+			KMVar jk = io.input(s_jk);
+			KMVar jj = io.input(s_jj);
+			KMVar ji = io.input(s_ji);
+			KMVar jk_tp = io.input(s_jk_tp);
+			KMVar jj_tp = io.input(s_jj_tp);
+			KMVar ji_tp = io.input(s_ji_tp);
+
+			KMVar cs0     = E2D * e3t_in;
+			KMVar cs0_rvd = E2D * e3t_rvd_in;
+			double cs1    = E2D * E2D;
+
+			KMVar hdivn_out = jj > 0 & ji > 0 & jj < JPJM1 & ji < JPIM1 ?
+					(cs0 * un_in - cs0 * un_inStreamOffsetM1 + cs0 * vn_in - cs0 * vn_inStreamOffsetMFast) / (cs1 * e3t_in) :
+					hdivn_in;
+			KMVar hdivn_rvd_out = jj > 0 & ji > 0 & jj < JPJM1 & ji < JPIM1 ?
+					(cs0_rvd * un_rvd_in - cs0_rvd * un_rvd_inStreamOffsetM1 + cs0_rvd * vn_rvd_in - cs0_rvd *
+							vn_rvd_inStreamOffsetMFast) / (cs1 * e3t_rvd_in) :
+					hdivn_rvd_in;
+
+			KMVar rotn_product = fmask(jk, jj, ji) ?
+					(E2D * vn_inStreanOffsetP1 - E2D * vn_in - E2D * un_inStreamOffsetPFast + E2D * un_in) / cs1 : 0;
+
+			KMVar rotn_out = jj > 0 & ji > 0 & jj < JPJM1 & ji < JPIM1 ? rotn_product : rotn_in;
+
+			KMVar wn_rvd_out = jk > 0 & jj > 0 & ji > 0 & jj < JPJM1 & ji < JPIM1 ?
+					wn_rvd_inStreamOffsetMMedTimesFast - e3t_rvd_in * hdivn_rvd_out : wn_rvd_in;
+
+			KMVar cs00 = E2D * e3t_tp_in;
+
+			KMVar product = (cs00 * un_tp_in - cs00 * un_tp_inStreanOffsetMSlow +
+					cs00 * vn_tp_in - cs00 * vn_tp_inStreamOffsetMSlowTimesFast) / cs1;
+
+			KMVar inBoundary = ji_tp > 0 & jj_tp > 0 & jj_tp < JPJM1 & ji_tp < JPIM1 & jk_tp < JPKM1;
+
+			// Floating point accumulator
+			io.output(s_summand, product);
+			io.output(s_enable, inBoundary);
+			KMVar sum = io.input(s_sum);
+
+			KMVar ssha_out = jk_tp === JPKM1 - 1 & jj_tp < JPJM1 & ji_tp < JPIM1 ?
+					sshb_in - (tmask(constant.var(0), jj_tp, ji_tp) ? Z2DT_ * (Z1_RAU0 * (emp_b_in + emp_in) + sum) : 0) : 0;
+
+			KMVar enable = jk > 0 & jk < JPKM1 & jj < JPJM1 & ji < JPIM1;
+
+			KMVar rn2b_out = enable & tmask(jk, jj, ji) ?
+					(GRAV / e3w_in) * (RN_ALPHA * (tsb_tem_inStreamOffsetMOffset - tsb_tem_in) -
+							           RN_BETA * (tsb_sal_inStreamOffsetMOffset - tsb_sal_in)) : 0;
+			KMVar rn2_out = enable & tmask(jk, jj, ji) ?
+					(GRAV / e3w_in) * (RN_ALPHA * (tsn_tem_inStreamOffsetMOffset - tsn_tem_in) -
+							           RN_BETA * (tsn_sal_inStreamOffsetMOffset - tsn_sal_in)) : 0;
+
+			enable = jk < JPKM1;
+			KMVar rhd_out = enable & tmask(jk, jj, ji) ? RN_BETA * tsb_sal_in - RN_ALPHA * tsb_tem_in : 0;
+
+			enable = jk === 0;
+			// LOOP
+			KMVar zpelc_out = enable ? max(rn2b_out, 0) * gdepw_in * e3w_in :
+				io.input(s_zpelc_outStreamOffsetMMedTimesFast) + max(rn2b_out, 0) * gdepw_in * e3w_in;
+			io.output(s_zpelc_out, zpelc_out);
+
+			double zcof = (0.5 * 0.016 * 0.016) / (1.22 * 1.5e-3);
+			KMVar zus = zcof * taum_in;
+			// LOOP
+			KMVar markedStreamOffset = io.input(s_markedStreamOffsetMMedTimesFast);
+			KMVar marked = jk === 0 ? 0 : zpelc_out > zus & jk < JPKM1 & markedStreamOffset === 0 ? jk : markedStreamOffset;
+			io.output(s_marked, marked);
+			// LOOP
+			KMVar zhlc_out = jk === 0 ? zhlc_in : marked === jk ? gdepw_3D_in : io.input(s_zhlc_outStreamOffsetMFastTimesMed);
+			io.output(s_zhlc_out, zhlc_out);
+
+			io.output(s_hdivn_out, hdivn_out);
+			io.output(s_hdivn_rvd_out, hdivn_rvd_out);
+			io.output(s_rotn_out, rotn_out);
+			io.output(s_wn_rvd_out, wn_rvd_out);
+			io.output(s_ssha_out, ssha_out);
+			io.output(s_rn2b_out, rn2b_out);
+			io.output(s_rn2_out, rn2_out);
+			io.output(s_rhd_out, rhd_out);
+		}
+
+	}
+
+	private static class ZdfLoop2Compute extends KMKernel {
+
+		public ZdfLoop2Compute() {
+			KMVar jk = io.input(s_jk);
+			KMVar jj = io.input(s_jj);
+			KMVar ji = io.input(s_ji);
+			KMVar avmu_k_in = io.input(s_avmu_k_in);
+			KMVar un_in = io.input(s_un_in);
+			KMVar un_inStreamOffsetMMedTimesFast = io.input(s_un_inStreamOffsetMMedTimesFast);
+			KMVar ub_in = io.input(s_ub_in);
+			KMVar ub_inStreamOffsetMMedTimesFast = io.input(s_ub_inStreamOffsetMMedTimesFast);
+			KMVar e3uw_in = io.input(s_e3uw_in);
+			KMVar avmu_in = io.input(s_avmu_in);
+			KMVar avmv_k_in = io.input(s_avmv_k_in);
+			KMVar vn_in = io.input(s_vn_in);
+			KMVar vn_inStreamOffsetMMedTimesFast = io.input(s_vn_inStreamOffsetMMedTimesFast);
+			KMVar vb_in = io.input(s_vb_in);
+			KMVar vb_inStreamOffsetMMedTimesFast = io.input(s_vb_inStreamOffsetMMedTimesFast);
+			KMVar e3vw_in = io.input(s_e3vw_in);
+			KMVar avmv_in = io.input(s_avmv_in);
+			KMVar zwlc_in = io.input(s_zwlc_in);
+			KMVar en_in = io.input(s_en_in);
+			KMVar zhlc_in = io.input(s_zhlc_in);
+			KMVar avt_in = io.input(s_avt_in);
+			KMVar rn2_in = io.input(s_rn2_in);
+			KMVar dissl_in = io.input(s_dissl_in);
+			KMVar avm_in = io.input(s_avm_in);
+			KMVar e3t_in = io.input(s_e3t_in);
+			KMVar e3w_in = io.input(s_e3w_in);
+			KMVar avm_inStreamOffsetPMedTimesFast = io.input(s_avm_inStreamOffsetPMedTimesFast);
+			KMVar avm_inStreamOffsetMMedTimesFast = io.input(s_avm_inStreamOffsetMMedTimesFast);
+			KMVar e3t_inStreamOffsetMMedTimesFast = io.input(s_e3t_inStreamOffsetMMedTimesFast);
+
+			KMVar jkAfterFirstBeforeLast = jk > 0 & jk < JPKM1;
+
+			KMVar avmu_out = jkAfterFirstBeforeLast ?
+					avmu_k_in * (un_inStreamOffsetMMedTimesFast - un_in) *
+					(ub_inStreamOffsetMMedTimesFast - ub_in) * e3uw_in : avmu_in;
+
+			KMVar avmv_out = jkAfterFirstBeforeLast ?
+					avmv_k_in * (vn_inStreamOffsetMMedTimesFast - vn_in) *
+					(vb_inStreamOffsetMMedTimesFast - vb_in) * e3vw_in : avmv_in;
+
+			KMVar inBoundary = jk > 0 & jk < JPKM1 & jj < JPJM1 & ji < JPIM1 & jj > 0 & ji > 0;
+
+			double zfact1 = -0.5 * RDT;
+			double zfact3 = 0.5 * 0.7;
+
+			// LOOP
+			KMVar zesh2 = inBoundary ?
+					io.input(s_avmu_outStreamOffsetM1) + avmu_out + io.input(s_avmv_outStreamOffsetMFast) + avmv_out : 0;
+
+			KMVar tke_langmuir = inBoundary ? (tmask(jk, jj, ji) ?
+					en_in + RDT * pow(zwlc_in, 3) / zhlc_in : en_in) : 0;
+			KMVar en_out = inBoundary ?
+					(tmask(jk, jj, ji) ?
+							tke_langmuir + RDT * (zesh2 - avt_in * rn2_in + zfact3 * dissl_in * tke_langmuir) : tke_langmuir) :
+					en_in;
+
+			KMVar zd_up_out = inBoundary ?
+					zfact1 * (avm_inStreamOffsetPMedTimesFast + avm_in) * 1 / (e3t_in * e3w_in) : 0;
+			KMVar zzd_lw = inBoundary ?
+					zfact1 * (avm_inStreamOffsetMMedTimesFast + avm_in) * 1 / (e3t_inStreamOffsetMMedTimesFast * e3w_in) : 0;
+
+			double zfact2 = 1.5 * RDT * 0.7;
+
+			KMVar zdiag_out = inBoundary & jk === 1 ? 1 - zzd_lw - zd_up_out + zfact2 * dissl_in : 0;
+			// LOOP
+			KMVar zd_lw_out = inBoundary & jk === 1 ? en_out - zzd_lw * io.input(s_en_outStreamOffsetMMedTimesFast) : 0;
+
+			io.output(s_avmu_out, avmu_out);
+			io.output(s_avmv_out, avmv_out);
+			io.output(s_en_out, en_out);
+			io.output(s_zd_up_out, zd_up_out);
+			io.output(s_zdiag_out, zdiag_out);
+			io.output(s_zd_lw_out, zd_lw_out);
+		}
+
+	}
+
+	private static KMVar tmask (KMVar jk, KMVar jj, KMVar ji) {
+		return ~(ji === JPIM1 | jj === JPJM1 | ji === 0 | jj === 0 | jk === JPKM1 | jk === 0);
+	}
+
+	private static KMVar fmask (KMVar jk, KMVar jj, KMVar ji) {
+		return jj === JPJ - 2 ? 0 : tmask(jk, jj, ji) & tmask(jk, jj, ji + 1);
+	}
+
+	private class NemoTestKernel extends Kernel {
+
+		public DFEType type = dfeFloat(8, 24);
+
+		public NemoTestKernel(KernelParameters parameters, boolean enableOptimizations) {
+			super(parameters);
+
+			Count.Params jpiCounterParams = control.count.makeParams(MathUtils.bitsToAddress(JPI))
+				.withMax(JPI)
+				.withInc (1);
+			Counter jpiCounter = control.count.makeCounter(jpiCounterParams);
+
+			Count.Params jpjCounterParams = control.count.makeParams(MathUtils.bitsToAddress(JPJ))
+				.withEnable(jpiCounter.getWrap())
+				.withMax (JPJ)
+				.withInc (1);
+			Counter jpjCounter = control.count.makeCounter(jpjCounterParams);
+
+			Count.Params jpkCounterParams = control.count.makeParams(MathUtils.bitsToAddress(JPK))
+				.withEnable(jpjCounter.getWrap())
+				.withMax(JPK)
+				.withInc (1);
+			Counter jpkCounter = control.count.makeCounter(jpkCounterParams);
+
+			DFEVar ji = jpiCounter.getCount();
+			DFEVar jj = jpjCounter.getCount();
+			DFEVar jk = jpkCounter.getCount();
+
+			Count.Params jpkCounterParams2 = control.count.makeParams(MathUtils.bitsToAddress(JPK))
+				.withMax(JPK)
+				.withInc (1);
+			Counter jpkMedFastSlowCounter = control.count.makeCounter(jpkCounterParams2);
+
+			Count.Params jpiCounterParams2 = control.count.makeParams(MathUtils.bitsToAddress(JPI))
+				.withEnable(jpkMedFastSlowCounter.getWrap())
+				.withMax (JPI)
+				.withInc (1);
+			Counter jpiMedFastSlowCounter = control.count.makeCounter(jpiCounterParams2);
+
+			Count.Params jpjCounterParams2 = control.count.makeParams(MathUtils.bitsToAddress(JPJ))
+				.withEnable(jpiMedFastSlowCounter.getWrap())
+				.withMax(JPJ)
+				.withInc (1);
+			Counter jpjMedFastSlowCounter = control.count.makeCounter(jpjCounterParams2);
+
+			DFEVar jk_tp = jpkMedFastSlowCounter.getCount();
+			DFEVar ji_tp = jpiMedFastSlowCounter.getCount();
+			DFEVar jj_tp = jpjMedFastSlowCounter.getCount();
+
+			Merger merger = new Merger(this);
+
+			DFEVar e3t_in = io.input(s_e3t_in, type);
+			DFEVar e3t_rvd_in = io.input(s_e3t_rvd_in, type);
+			DFEVar e3t_tp_in = io.input(s_e3t_tp_in, type);
+			DFEVar un_in = io.input(s_un_in, type);
+			DFEVar un_rvd_in = io.input(s_un_rvd_in, type);
+			DFEVar un_tp_in = io.input(s_un_tp_in, type);
+			DFEVar vn_in = io.input(s_vn_in, type);
+			DFEVar vn_rvd_in = io.input(s_vn_rvd_in, type);
+			DFEVar vn_tp_in = io.input(s_vn_tp_in, type);
+			DFEVar hdivn_in = io.input(s_hdivn_in, type);
+			DFEVar hdivn_rvd_in = io.input(s_hdivn_rvd_in, type);
+			DFEVar rotn_in = io.input(s_rotn_in, type);
+			DFEVar wn_rvd_in = io.input(s_wn_rvd_in, type);
+			DFEVar sshb_in = io.input(s_sshb_in, type);
+			DFEVar emp_b_in = io.input(s_emp_b_in, type);
+			DFEVar emp_in = io.input(s_emp_in, type);
+			DFEVar e3w_in = io.input(s_e3w_in, type);
+			DFEVar tsb_tem_in = io.input(s_tsb_tem_in, type);
+			DFEVar tsb_sal_in = io.input(s_tsb_sal_in, type);
+			DFEVar tsn_tem_in = io.input(s_tsn_tem_in, type);
+			DFEVar tsn_sal_in = io.input(s_tsn_sal_in, type);
+			DFEVar gdepw_in = io.input(s_gdepw_in, type);
+			DFEVar taum_in = io.input(s_taum_in, type);
+			DFEVar zhlc_in = io.input(s_zhlc_in, type);
+			DFEVar gdepw_3D_in = io.input(s_gdepw_3D_in, type);
+			DFEVar avmu_k_in = io.input(s_avmu_k_in, type);
+			DFEVar ub_in = io.input(s_ub_in, type);
+			DFEVar e3uw_in = io.input(s_e3uw_in, type);
+			DFEVar avmu_in = io.input(s_avmu_in, type);
+			DFEVar avmv_k_in = io.input(s_avmv_k_in, type);
+			DFEVar vb_in = io.input(s_vb_in, type);
+			DFEVar e3vw_in = io.input(s_e3vw_in, type);
+			DFEVar avmv_in = io.input(s_avmv_in, type);
+			DFEVar zwlc_in = io.input(s_zwlc_in, type);
+			DFEVar en_in = io.input(s_en_in, type);
+			DFEVar avt_in = io.input(s_avt_in, type);
+			DFEVar rn2_in = io.input(s_rn2_in, type);
+			DFEVar dissl_in = io.input(s_dissl_in, type);
+			DFEVar avm_in = io.input(s_avm_in, type);
+
+			merger.addInput(s_e3t_in, e3t_in);
+			merger.addInput(s_e3t_rvd_in, e3t_rvd_in);
+			merger.addInput(s_e3t_tp_in, e3t_tp_in);
+			merger.addInput(s_un_in, un_in);
+			merger.addInput(s_un_rvd_in, un_rvd_in);
+			merger.addInput(s_un_tp_in, un_tp_in);
+			merger.addInput(s_vn_in, vn_in);
+			merger.addInput(s_vn_rvd_in, vn_rvd_in);
+			merger.addInput(s_vn_tp_in, vn_tp_in);
+			merger.addInput(s_hdivn_in, hdivn_in);
+			merger.addInput(s_hdivn_rvd_in, hdivn_rvd_in);
+			merger.addInput(s_rotn_in, rotn_in);
+			merger.addInput(s_wn_rvd_in, wn_rvd_in);
+			merger.addInput(s_sshb_in, sshb_in);
+			merger.addInput(s_emp_b_in, emp_b_in);
+			merger.addInput(s_emp_in, emp_in);
+			merger.addInput(s_e3w_in, e3w_in);
+			merger.addInput(s_tsb_tem_in, tsb_tem_in);
+			merger.addInput(s_tsb_sal_in, tsb_sal_in);
+			merger.addInput(s_tsn_tem_in, tsn_tem_in);
+			merger.addInput(s_tsn_sal_in, tsn_sal_in);
+			merger.addInput(s_gdepw_in, gdepw_in);
+			merger.addInput(s_taum_in, taum_in);
+			merger.addInput(s_zhlc_in, zhlc_in);
+			merger.addInput(s_gdepw_3D_in, gdepw_3D_in);
+			merger.addInput(s_avmu_k_in, avmu_k_in);
+			merger.addInput(s_ub_in, ub_in);
+			merger.addInput(s_e3uw_in, e3uw_in);
+			merger.addInput(s_avmu_in, avmu_in);
+			merger.addInput(s_avmv_k_in, avmv_k_in);
+			merger.addInput(s_vb_in, vb_in);
+			merger.addInput(s_e3vw_in, e3vw_in);
+			merger.addInput(s_avmv_in, avmv_in);
+			merger.addInput(s_zwlc_in, zwlc_in);
+			merger.addInput(s_en_in, en_in);
+			merger.addInput(s_avt_in, avt_in);
+			merger.addInput(s_rn2_in, rn2_in);
+			merger.addInput(s_dissl_in, dissl_in);
+			merger.addInput(s_avm_in, avm_in);
+			merger.addInput(s_un_inStreamOffsetM1, stream.offset(un_in, -1));
+			merger.addInput(s_un_rvd_inStreamOffsetM1, stream.offset(un_rvd_in, -1));
+			merger.addInput(s_un_inStreamOffsetPFast, stream.offset(un_in, FAST));
+			merger.addInput(s_un_tp_inStreanOffsetMSlow, stream.offset(un_tp_in, -SLOW));
+			merger.addInput(s_vn_rvd_inStreamOffsetMFast, stream.offset(vn_rvd_in, -FAST));
+			merger.addInput(s_vn_inStreamOffsetP1, stream.offset(vn_in, 1));
+			merger.addInput(s_vn_inStreamOffsetMFast, stream.offset(vn_in, -FAST));
+			merger.addInput(s_vn_tp_inStreamOffsetMSlowTimesFast, stream.offset(vn_tp_in, -SLOW * FAST));
+			merger.addInput(s_wn_rvd_inStreamOffsetMMedTimesFast, stream.offset(wn_rvd_in, -MED * FAST));
+			merger.addInput(s_tsb_tem_inStreamOffsetMOffset, stream.offset(tsb_tem_in, -MED * FAST));
+			merger.addInput(s_tsb_sal_inStreamOffsetMOffset, stream.offset(tsb_sal_in, -MED * FAST));
+			merger.addInput(s_tsn_tem_inStreamOffsetMOffset, stream.offset(tsn_tem_in, -MED * FAST));
+			merger.addInput(s_tsn_sal_inStreamOffsetMOffset, stream.offset(tsn_sal_in, -MED * FAST));
+			merger.addInput(s_un_inStreamOffsetMMedTimesFast, stream.offset(un_in, -MED * FAST));
+			merger.addInput(s_ub_inStreamOffsetMMedTimesFast, stream.offset(ub_in, -MED * FAST));
+			merger.addInput(s_vn_inStreamOffsetMMedTimesFast, stream.offset(vn_in, -MED * FAST));
+			merger.addInput(s_vb_inStreamOffsetMMedTimesFast, stream.offset(vb_in, -MED * FAST));
+			merger.addInput(s_avm_inStreamOffsetPMedTimesFast, stream.offset(avm_in, MED * FAST));
+			merger.addInput(s_avm_inStreamOffsetMMedTimesFast, stream.offset(avm_in, -MED * FAST));
+			merger.addInput(s_e3t_inStreamOffsetMMedTimesFast, stream.offset(e3t_in, -MED * FAST));
+
+			merger.addInput(s_jk, jk);
+			merger.addInput(s_jj, jj);
+			merger.addInput(s_ji, ji);
+			merger.addInput(s_jk_tp, jk_tp);
+			merger.addInput(s_jj_tp, jj_tp);
+			merger.addInput(s_ji_tp, ji_tp);
+
+			DFEVar summand = type.newInstance(this);
+			DFEVar enable = dfeBool().newInstance(this);
+			merger.addInput(s_sum,
+					FloatingPointAccumulator.accumulateWithReset(summand, enable, jk_tp === JPKM1, false));
+
+			DFEVar zpelc_out = type.newInstance(this);
+			merger.addInput(s_zpelc_outStreamOffsetMMedTimesFast, stream.offset(zpelc_out, -MED * FAST));
+
+			DFEVar marked = jk.getType().newInstance(this);
+			merger.addInput(s_markedStreamOffsetMMedTimesFast, stream.offset(marked, -MED * FAST));
+
+			DFEVar zhlc_out = type.newInstance(this);
+			merger.addInput(s_zhlc_outStreamOffsetMFastTimesMed, stream.offset(zhlc_out, -MED * FAST));
+
+			DFEVar avmu_out = type.newInstance(this);
+			merger.addInput(s_avmu_outStreamOffsetM1, stream.offset(avmu_out, -1));
+
+			DFEVar avmv_out = type.newInstance(this);
+			merger.addInput(s_avmv_outStreamOffsetMFast, stream.offset(avmv_out, -FAST));
+
+			DFEVar en_out = type.newInstance(this);
+			merger.addInput(s_en_outStreamOffsetMMedTimesFast, stream.offset(en_out, -MED * FAST));
+
+			merger.addKernel(new EosBn2Compute());
+			merger.addKernel(new ZdfLoop2Compute());
+
+			merger.setKernel(io.input("KernelSelect", dfeInt(32)));
+
+			merger.setIOConnectedOutside(s_sum, s_summand);
+			merger.setIOConnectedOutside(s_sum, s_enable);
+			merger.setIOConnectedOutside(s_zpelc_outStreamOffsetMMedTimesFast, s_zpelc_out);
+			merger.setIOConnectedOutside(s_markedStreamOffsetMMedTimesFast, s_marked);
+			merger.setIOConnectedOutside(s_zhlc_outStreamOffsetMFastTimesMed, s_zhlc_out);
+			merger.setIOConnectedOutside(s_avmu_outStreamOffsetM1, s_avmu_out);
+			merger.setIOConnectedOutside(s_avmv_outStreamOffsetMFast, s_avmv_out);
+
+			if (enableOptimizations) {
+				merger.dumpInputGraph("/tmp/");
+				merger.dumpResultGraph("/tmp/");
+
+				merger.showNodeCount();
+				merger.showDetailedStatistics();
+			} else {
+				merger.disableAllOptimizations();
+			}
+
+			merger.build();
+
+			summand <== (DFEVar) merger.getOutput(s_summand);
+			enable <== (DFEVar) merger.getOutput(s_enable);
+			zpelc_out <== (DFEVar) merger.getOutput(s_zpelc_out);
+			marked <== (DFEVar) merger.getOutput(s_marked);
+			zhlc_out <== (DFEVar) merger.getOutput(s_zhlc_out);
+			avmu_out <== (DFEVar) merger.getOutput(s_avmu_out);
+			avmv_out <== (DFEVar) merger.getOutput(s_avmv_out);
+			en_out <== (DFEVar) merger.getOutput(s_en_out);
+
+
+			io.output(s_zpelc_out, zpelc_out, zpelc_out.getType());
+			io.output(s_zhlc_out, zhlc_out, zhlc_out.getType());
+			io.output(s_avmu_out, avmu_out, avmu_out.getType());
+			io.output(s_avmv_out, avmv_out, avmv_out.getType());
+
+			DFEVar hdivn_out = (DFEVar) merger.getOutput(s_hdivn_out);
+			DFEVar hdivn_rvd_out = (DFEVar) merger.getOutput(s_hdivn_rvd_out);
+			DFEVar rotn_out = (DFEVar) merger.getOutput(s_rotn_out);
+			DFEVar wn_rvd_out = (DFEVar) merger.getOutput(s_wn_rvd_out);
+			DFEVar ssha_out = (DFEVar) merger.getOutput(s_ssha_out);
+			DFEVar rn2b_out = (DFEVar) merger.getOutput(s_rn2b_out);
+			DFEVar rn2_out = (DFEVar) merger.getOutput(s_rn2_out);
+			DFEVar rhd_out = (DFEVar) merger.getOutput(s_rhd_out);
+			DFEVar zd_up_out = (DFEVar) merger.getOutput(s_zd_up_out);
+			DFEVar zdiag_out = (DFEVar) merger.getOutput(s_zdiag_out);
+			DFEVar zd_lw_out = (DFEVar) merger.getOutput(s_zd_lw_out);
+
+			io.output(s_hdivn_out, hdivn_out, hdivn_out.getType());
+			io.output(s_hdivn_rvd_out, hdivn_rvd_out, hdivn_rvd_out.getType());
+			io.output(s_rotn_out, rotn_out, rotn_out.getType());
+			io.output(s_wn_rvd_out, wn_rvd_out, wn_rvd_out.getType());
+			io.output(s_ssha_out, ssha_out, ssha_out.getType());
+			io.output(s_rn2b_out, rn2b_out, rn2b_out.getType());
+			io.output(s_rn2_out, rn2_out, rn2_out.getType());
+			io.output(s_rhd_out, rhd_out, rhd_out.getType());
+			io.output(s_en_out, en_out, en_out.getType());
+			io.output(s_zd_up_out, zd_up_out, zd_up_out.getType());
+			io.output(s_zdiag_out, zdiag_out, zdiag_out.getType());
+			io.output(s_zd_lw_out, zd_lw_out, zd_lw_out.getType());
+		}
+
+	}
+
+	@Test
+	public void test() {
+		SimulationManager manager = new SimulationManager("NemoTest");
+		NemoTestKernel kernel = new NemoTestKernel(manager.makeKernelParameters(), true);
+		manager.setKernel(kernel);
+		manager.build();
+	}
+
+}

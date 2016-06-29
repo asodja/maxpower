@@ -30,7 +30,6 @@ typedef struct maxhash_entry_iterator  maxhash_entry_iterator_t;
 struct maxhash_engine_state {
 	max_file_t   *maxfile;
 	max_engine_t *engine;
-	size_t lmem_burst_size_bytes;
 };
 
 maxhash_err_t maxhash_table_params_init(
@@ -92,14 +91,6 @@ maxhash_err_t maxhash_free(maxhash_table_t *table);
  * Enable or disable additional debug prints.
  */
 maxhash_err_t maxhash_set_debug_mode(maxhash_table_t *table, bool debug);
-
-/**
- * Set callback function for memory accesses.
- */
-maxhash_err_t maxhash_set_memory_access_fn(maxhash_table_t *table,
-		void (*mem_access_fn)(void *arg, bool is_read, size_t
-			base_address_bursts, void *data, size_t data_size_bursts),
-		void *mem_access_fn_arg);
 
 /**
  * Put a key-value pair in a hash table.

@@ -1,0 +1,71 @@
+package maxpower.kernel.merger.types;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+
+/**
+ * Base class from which other kernel merge types inherit.
+ *
+ * We do not really have our own type system in this library but provide access to the underlying DFETypes
+ * and use this to store the information as well as provide easy access to it.
+ *
+ * @author nvoss
+ */
+public abstract class KMType {
+	/**
+	 * Create the appropriate {@link KMType} object for a {@link KernelObjectVectorizable}.
+	 * @param object The {@link KernelObjectVectorizable}
+	 * @return The created type.
+	 */
+	public static KMType getTypeForKernelObject(KernelObjectVectorizable<?, ?> object) {
+		return getTypeForKernelType(object.getType());
+	}
+
+	/**
+	 * Create the {@link KMType} for a given {@link KernelType}.
+	 * @param type The {@link KernelType}
+	 * @return The created type.
+	 */
+	static KMType getTypeForKernelType(KernelType<?> type) {
+		if (type instanceof DFEType) {
+			return new KMScalarType((DFEType) type);
+		} else if (type instanceof DFEComplexType) {
+			return new KMComplexType((DFEComplexType) type);
+		} else if (type instanceof DFEVectorType) {
+			return new KMVectorType((DFEVectorType<?>) type);
+		} else {
+			throw new MaxCompilerAPIError("Only DFEVar, DFEComplex and DFEVector supported!");
+		}
+	}
+
+	/**
+	 * Returns the type of the primitive element. E.g. the inner type of a {@link DFEVector}.
+	 * @return The {@link DFEType} of the primitive element.
+	 */
+	public abstract DFEType getPrimitiveType();
+
+	/**
+	 * The count of primitive elements in the type. E.g. how many elements a {@link DFEVector} has.
+	 * @return The primitive element count.
+	 */
+	public abstract int getPrimitiveCount();
+
+	@Override
+	public abstract String toString();
+	@Override
+	public abstract boolean equals(Object obj);
+
+	/**
+	 * Checks if a {@link KMType} represents fixed point numbers.
+	 * @return True if the {@link KMType} represents fixed point numbers.
+	 */
+	public boolean isFixed() {
+		return getPrimitiveType() instanceof DFEFix;
+	}
+}

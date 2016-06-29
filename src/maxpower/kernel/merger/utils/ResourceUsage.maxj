@@ -1,0 +1,267 @@
+package maxpower.kernel.merger.utils;
+
+import maxpower.kernel.merger.Merger;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+public class ResourceUsage {
+	public final int luts;
+	public final int flipflops;
+	public final int mems;
+	public final int dsps;
+
+	public ResourceUsage(int luts, int flipflops, int mems, int dsps) {
+		this.luts      = luts;
+		this.flipflops = flipflops;
+		this.mems      = mems;
+		this.dsps      = dsps;
+	}
+
+	public ResourceUsage add(ResourceUsage that) {
+		return new ResourceUsage(
+				this.luts      + that.luts,
+				this.flipflops + that.flipflops,
+				this.mems      + that.mems,
+				this.dsps      + that.dsps);
+	}
+
+	public ResourceUsage mul(int multiplier) {
+		return new ResourceUsage(
+				this.luts      * multiplier,
+				this.flipflops * multiplier,
+				this.mems      * multiplier,
+				this.dsps      * multiplier);
+	}
+
+	public static ResourceUsage getFixedPointAddSub(int width) {
+		return new ResourceUsage(width * 2 + 1, width * 2 + 2, 0, 0);
+	}
+
+	public static ResourceUsage getFloatingPointAbs() {
+		return new ResourceUsage(0, 0, 0, 0);
+	}
+
+	private static ResourceUsage interpolate(ResourceUsage min, ResourceUsage max, double lambda) {
+		double mu = 1 - lambda;
+		int luts = (int)Math.round(lambda * max.luts + mu * min.luts);
+		int ffs  = (int)Math.round(lambda * max.flipflops + mu * min.flipflops);
+		int mems = (int)Math.round(lambda * max.mems + mu * min.mems);
+		int dsps = (int)Math.round(lambda * max.dsps + mu * min.dsps);
+		return new ResourceUsage(luts, ffs, mems, dsps);
+	}
+
+	public static ResourceUsage getFloatingPointAddSub(Merger merger, DFEFloat type) {
+		int mantBits = type.getMantissaBits();
+		double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FLOAT_ADDSUB);
+		if (merger.isAltera()) {
+			ResourceUsage nonPipelined   = new ResourceUsage(22 * mantBits + 100, 11 * mantBits + 85, 0, 0);
+			ResourceUsage fullyPipelined = new ResourceUsage(16 * mantBits + 200, 25 * mantBits + 50, 2, 0);
+			return interpolate(nonPipelined, fullyPipelined, pipeliningFactor);
+		} else {
+			int expBits = type.getExponentBits();
+			ResourceUsage nonPipelined   = new ResourceUsage(12 * mantBits + expBits + 72, 0, 0, 0);
+			ResourceUsage fullyPipelined = new ResourceUsage(12 * mantBits + 4 * expBits + 72, 17 * mantBits + 8 * expBits + 48, 0, 0);
+			return interpolate(nonPipelined, fullyPipelined, pipeliningFactor);
+		}
+	}
+
+	public static ResourceUsage getLogicOperation(int width) {
+		return new ResourceUsage((int) Math.ceil((double) width / 3), 0, 0, 0);
+	}
+
+	public static ResourceUsage getEquals(int width) {
+		return new ResourceUsage(width, width, 0, 0);
+	}
+
+	public static ResourceUsage getMux(int width) {
+		return new ResourceUsage(width, width, 0, 0);
+	}
+
+	public static ResourceUsage getCompare(int width) {
+		return new ResourceUsage(width, width, 0, 0);
+	}
+
+	public static ResourceUsage getFixedPointSin(Merger merger, int width) {
+		ResourceUsage mulResource = getFixedPointMul(merger, width) * 4;
+		ResourceUsage addResource = getFixedPointAddSub(width) * 4;
+		ResourceUsage lutResource = new ResourceUsage(0, 0, width < 40 ? 4 : 40, 0);
+		return mulResource + addResource + lutResource;
+	}
+
+	public static ResourceUsage getFloatingPointSin(Merger merger, DFEFloat type) {
+		ResourceUsage mulResource = getFixedPointMul(merger, type.getTotalBits()) * 4;
+		ResourceUsage addResource = getFloatingPointAddSub(merger, type) * 2;
+		int mantBits = type.getMantissaBits();
+		int tableSize = mantBits * mantBits * 300;
+		int memSize = merger.isAltera() ? 20 * 1024 : 36 * 512;
+		ResourceUsage lutResource = new ResourceUsage(0, 0, tableSize / memSize, 0);
+		return mulResource + addResource + lutResource;
+	}
+
+	private static int getShiftResource(int bits, boolean isAltera) {
+		int rotateSize = isAltera ? 3 : 4;
+		return (int)Math.ceil(Math.log(bits) / Math.log(rotateSize)) * bits;
+	}
+
+	private static int getAdderTreeResource(int bits, int count) {
+		if (count < 2) {
+			return 0;
+		}
+		int resultBits = bits + 1;//bitgrowth
+		if (count == 2) {
+			return resultBits;
+		}
+		int numLevelAdds = count / 2;
+		return numLevelAdds * resultBits + getAdderTreeResource(resultBits, count - numLevelAdds);
+	}
+
+	public static ResourceUsage getFloatingPointMutliAdder(Merger merger, DFEFloat type, int count) {
+		if (count == 2) {
+			return getFloatingPointAddSub(merger, type);
+		}
+		int mantBits = type.getMantissaBits();
+		int shiftLuts = getShiftResource(mantBits + 1, merger.isAltera());//assume 1 guard bit
+		int adderLuts = getAdderTreeResource(mantBits, count);//with bitgrowth
+		int lutsForExp = 2 * count + type.getExponentBits();//find max and subtract
+		int resultBits = mantBits + 1 + MathUtils.bitsToAddress(count);//after bitgrowth in adder tree
+		int lutsForCast = getShiftResource(resultBits, merger.isAltera()) + resultBits + mantBits;//shift and mux
+
+		int totalLuts = shiftLuts + adderLuts + lutsForExp + lutsForCast;
+		int totalFFs = merger.isAltera() ? (int)(1.15 * totalLuts) : totalLuts;
+		return new ResourceUsage(totalLuts, totalFFs, merger.isAltera() ? 1 : 0, 0);//altera uses an M20K for the cast
+	}
+
+	public static ResourceUsage getFixedPointDiv(int width) {
+		int luts = width * (width + 17) - 120;
+		int ffs  = width * (width + 14) + 50;
+		return new ResourceUsage(luts, ffs, 0, 0);
+	}
+
+	public static ResourceUsage getFloatingPointDiv(Merger merger, DFEFloat type) {
+		int mantBits = type.getMantissaBits();
+		int expBits  = type.getExponentBits();
+		double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FLOAT_DIV);
+		if (merger.isAltera()) {
+			if (pipeliningFactor < 0.4) {
+				int luts = (int)(0.25 * mantBits * mantBits - mantBits + 50);
+				int ffs  = luts * 2 - 100;
+				int fmem = mantBits / 16;
+				int dsps = ((mantBits + expBits) / 12) * 3;
+				return new ResourceUsage(luts, ffs, fmem, dsps);
+			} else if(pipeliningFactor < 0.75) {
+				int luts = (int)(0.25 * mantBits * mantBits - mantBits +100);
+				int ffs  = luts * 2;
+				int fmem = ((mantBits + expBits) / 12) * 3 - 1;
+				int dsps = ((mantBits + expBits) / 12) * 3;
+				return new ResourceUsage(luts, ffs, fmem, dsps);
+			} else {
+				int luts = (int)(4.5 * mantBits * mantBits + 4 * mantBits - 10 * expBits + 600);
+				int ffs  = (int)(4.5 * mantBits * mantBits + 1 * mantBits - 90 * expBits + 1200);
+				int fmem = mantBits / 2 - 2;
+				return new ResourceUsage(luts, ffs, fmem, 0);
+			}
+		} else {
+			ResourceUsage nonPipelined   = new ResourceUsage((int)(1.1  * mantBits * mantBits) + 10 * expBits + 15, 0, 0, 0);
+			ResourceUsage fullyPipelined = new ResourceUsage((int)(1.2  * mantBits * mantBits) +  9 * expBits + 65,
+			                                                 (int)(2.04 * mantBits * mantBits) +  4 * expBits + 90, 0, 0);
+			return interpolate(nonPipelined, fullyPipelined, pipeliningFactor);
+		}
+	}
+
+	public static ResourceUsage getFixedPointMul(Merger merger, int width) {
+		if (merger.isAltera()) {
+			int dsps = width <= 27 ? 1 : (width <= 36 ? 2 : 4);
+			return new ResourceUsage(width, width+1, 0, dsps);
+		} else {
+			int dsps = xilinxDspTiling(width);
+			return new ResourceUsage(width, width+1, 0, dsps);
+		}
+	}
+
+	private static int xilinxDspTiling(int bits) {
+		int horizontalBlockDsps = MathUtils.ceilDivide(bits, 17) * (bits / 24);
+		int verticalBlockWidth = bits - (bits / 24) * 24;
+		int verticalBlockDsps = MathUtils.ceilDivide(bits, 24) * MathUtils.ceilDivide(verticalBlockWidth, 17);
+		int mixedTiling = horizontalBlockDsps + verticalBlockDsps;
+		int uniformTiling = MathUtils.ceilDivide(bits, 17) * MathUtils.ceilDivide(bits, 24);
+		return Math.max(mixedTiling, uniformTiling);
+	}
+
+	public static ResourceUsage getFloatingPointMul(Merger merger, DFEFloat type) {
+		int mantBits = type.getMantissaBits();
+		int expBits  = type.getExponentBits();
+		double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FLOAT_MUL);
+		if (merger.isAltera()) {
+			int dsps = mantBits <= 27 ? 1 : (mantBits <= 36 ? 2 : 4);
+			ResourceUsage nonPipelined   = new ResourceUsage(6 * mantBits - 30,  5 * mantBits - 13 * expBits + 180, 0, dsps);
+			ResourceUsage fullyPipelined = new ResourceUsage(8 * mantBits - 30, 13 * mantBits - 15 * expBits + 175, 3, dsps);
+			return interpolate(nonPipelined, fullyPipelined, pipeliningFactor);
+		} else {
+			int dsps = xilinxDspTiling(mantBits);
+			ResourceUsage nonPipelined   = new ResourceUsage(2 * mantBits + 1 * expBits + 50, 0, 0, dsps);
+			ResourceUsage fullyPipelined = new ResourceUsage(6 * mantBits + 4 * expBits - 30, 10 * mantBits + 4 * expBits - 80, 0, dsps);
+			return interpolate(nonPipelined, fullyPipelined, pipeliningFactor);
+		}
+	}
+
+	public static ResourceUsage getFixedPointExp(Merger merger, int width) {
+		ResourceUsage mulResource = getFixedPointMul(merger, 12);
+		ResourceUsage lutResource = new ResourceUsage(0, 0, 1, 0);
+		for (int i = 12; i < width; i+=12) {
+			mulResource += getFixedPointMul(merger, i + 12);//calculate fraction part
+			lutResource += new ResourceUsage(0, 0, 1, 0);
+		}
+		mulResource += getFixedPointMul(merger, width) * 2;//turn into pow2
+
+		int lutsForCasting = 2 * (getShiftResource(width, merger.isAltera()) + 2 * width);//shift and mux
+		ResourceUsage castResource = new ResourceUsage(lutsForCasting, lutsForCasting, 0, 0);
+		return mulResource + castResource + lutResource;
+	}
+
+	public static ResourceUsage getFloatingPointExp(Merger merger, DFEFloat type) {
+		int mantBits = type.getMantissaBits();
+		ResourceUsage mulResource = getFixedPointMul(merger, 12);
+		ResourceUsage lutResource = new ResourceUsage(0, 0, 1, 0);
+		for (int i = 12; i < mantBits; i+=12) {
+			mulResource += getFixedPointMul(merger, i + 12);//calculate fraction part
+			lutResource += new ResourceUsage(0, 0, 1, 0);
+		}
+		mulResource += getFloatingPointMul(merger, type) * 2;//turn into pow2
+
+		int lutsForCasting = 2 * (getShiftResource(mantBits, merger.isAltera()) + 2 * mantBits);//shift and mux
+		ResourceUsage castResource = new ResourceUsage(lutsForCasting, lutsForCasting, 0, 0);
+		return mulResource + castResource + lutResource;
+	}
+
+	public static ResourceUsage getFixedPointSqrt(Merger merger, int width) {
+		ResourceUsage mulResource = getFixedPointMul(merger, width) * 4;
+		ResourceUsage addResource = getFixedPointAddSub(width) * 6;
+		ResourceUsage lutResource = new ResourceUsage(0, 0, width < 40 ? 5 : 10, 0);
+		return mulResource + addResource + lutResource;
+	}
+
+	public static ResourceUsage getFloatingPointSqrt(Merger merger, DFEFloat type) {
+		int mantBits = type.getMantissaBits();
+		int expBits = type.getExponentBits();
+		int sq = (int)(mantBits * mantBits * 0.6);
+		double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FLOAT_SQRT);
+		if (merger.isAltera()) {
+			if(pipeliningFactor >= 0.4) {
+				return new ResourceUsage(sq + 7 * mantBits - 15 * expBits + 75,
+				                         mantBits * (mantBits + 17) - 120,
+				                         Math.max(mantBits / 2 - 15, 1), 0);
+			} else {
+				return new ResourceUsage(sq + 4 * mantBits - 15 * expBits + 130,
+				                         sq + mantBits + 160,
+				                         Math.max(mantBits / 4 - 7, 1), 0);
+			}
+		} else {
+			ResourceUsage nonPipelined   = new ResourceUsage(sq + mantBits + expBits + 110,  0, 0, 0);
+			ResourceUsage fullyPipelined = new ResourceUsage(sq + 6 * mantBits + 3 * expBits + 30,
+			                                                 mantBits * (mantBits + 7) + 3 * expBits + 15, 0, 0);
+			return interpolate(nonPipelined, fullyPipelined, pipeliningFactor);
+		}
+	}
+}

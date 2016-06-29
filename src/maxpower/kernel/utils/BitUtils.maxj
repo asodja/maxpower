@@ -20,15 +20,8 @@ public class BitUtils {
 	/**
 	 * @return <tt>true</tt> if any bits in any value are '1'.
 	 */
-	public static DFEVar any(List<KernelObject<?>> vals) {
-		return any(Bitops.concat(vals));
-	}
-
-	/**
-	 * @return <tt>true</tt> if any bits in value are '1'.
-	 */
-	public static DFEVar any(KernelObject<?> val) {
-		return (val.pack() !== 0);
+	public static <T extends KernelObject<?>> DFEVar any(List<T> vals) {
+		return (Bitops.catLsbToMsb(vals) !== 0);
 	}
 
 	/**
@@ -41,17 +34,11 @@ public class BitUtils {
 	/**
 	 * @return <tt>true</tt> if all bits in all values are '1'.
 	 */
-	public static DFEVar all(List<KernelObject<?>> vals) {
-		return all(Bitops.concat(vals));
-	}
+	public static <T extends KernelObject<?>> DFEVar all(List<T> vals) {
+		DFEVar raw     = Bitops.catLsbToMsb(vals);
+		int    numBits = raw.getType().getTotalBits();
+		DFEVar allOnes = raw.getKernel().constant.var(DFETypeFactory.dfeRawBits(numBits), Bits.allOnes(numBits));
 
-	/**
-	 * @return <tt>true</tt> if all bits in value are '1'.
-	 */
-	public static DFEVar all(KernelObject<?> val) {
-		int    numBits = val.getType().getTotalBits();
-		DFEVar allOnes = val.getKernel().constant.var(DFETypeFactory.dfeRawBits(numBits), Bits.allOnes(numBits));
-
-		return (val.pack() === allOnes);
+		return (raw === allOnes);
 	}
 }

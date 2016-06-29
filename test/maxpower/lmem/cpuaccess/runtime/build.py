@@ -30,9 +30,9 @@ MAXFILE = 'LMemCpuAccessTest.max'
 DESIGN_NAME = MAXFILE.replace('.max', '')
 sources = ['lmem_cpu_access_test.c']
 target = 'cpu_access_test'
-includes = ['-I%s/src/maxpower/lmem/cpu_access/runtime/' % (MAXPOWERDIR)] 
+includes = ['-I%s/src/maxpower/lmem/cpuaccess/runtime/' % (MAXPOWERDIR)] 
 MAXPOWER_LIBS = ['-L%s/src/maxpower/lmem/runtime/' % (MAXPOWERDIR),	
-				 '-L%s/src/maxpower/lmem/cpu_access/runtime/' % (MAXPOWERDIR), '-llmem_cpu_access', '-llmem' ]
+				 '-L%s/src/maxpower/lmem/cpuaccess/runtime/' % (MAXPOWERDIR), '-llmem_cpu_access', '-llmem' ]
 
 
 

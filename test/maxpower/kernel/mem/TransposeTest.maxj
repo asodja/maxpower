@@ -27,8 +27,6 @@ public class TransposeTest {
 		public TransposeTestKernel(KernelParameters parameters, final int width, final int height) {
 			super(parameters);
 
-			stream.suppressOffsetVectorWarnings();
-
 			DFEVar input = io.input("input", dfeFloat(8, 24));
 
 			io.output("output", dfeFloat(8, 24)) <==
@@ -44,8 +42,6 @@ public class TransposeTest {
 		public TransposeMultiPipeTestKernel(KernelParameters parameters, final int width, final int height,
 				final int pipes) {
 			super(parameters);
-
-			stream.suppressOffsetVectorWarnings();
 
 			dataType = new DFEVectorType<DFEVar>(dfeFloat(8, 24), pipes);
 

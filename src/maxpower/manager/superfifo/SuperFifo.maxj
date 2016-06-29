@@ -8,9 +8,9 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.managers.DFEManager;
 import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
 import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
-import com.maxeler.maxcompiler.v2.managers.custom._CustomManagers;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.StateMachineBlock;
-import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MemoryControlGroup;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemCommandGroup;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemInterface;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmStateEnum;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmStateValue;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmValue;
@@ -25,9 +25,7 @@ import com.maxeler.maxcompiler.v2.statemachine.stdlib._State;
 import com.maxeler.maxcompiler.v2.statemachine.stdlib.buffer.DFEsmFifo;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 import com.maxeler.maxeleros.managerblocks.DualAspectPush;
-import com.maxeler.maxeleros.managercompiler.core.WrapperNode.IODesc;
 import com.maxeler.statemachine.utils.SMUtils;
-import com.maxeler.utils.MemoryManager;
 
 public class SuperFifo extends ManagerStateMachine {
 	public static final String INPUT_FIFO = "fifo_in";
@@ -35,71 +33,95 @@ public class SuperFifo extends ManagerStateMachine {
 	public static final String OUTPUT_EXTERNAL_WRITE = "external_write";
 	public static final String INPUT_EXTERNAL_READ = "external_read";
 
+    private static boolean debugMessagesEnable = false; // whether debug messages are printed
+
+    /**
+     * Returns whether debug messages will be printed in simulation
+     * @return True for messages being printed, false otherwise
+     */
+	public static boolean getDebugMessagesEnabled() { return debugMessagesEnable; }
+
+	/**
+	 * Sets whether debug messages will be printed in simulation. Set before creating the superfifo.
+	 * @param enableDebugMessages True for messages, false otherwise
+	 */
+	public static void setDebugMessagesEnable(boolean enableDebugMessages) { debugMessagesEnable = enableDebugMessages; }
+
 	public static class FifoIO {
 		public DFELink write;
 		public DFELink read;
 	}
 
-	public static FifoIO create(CustomManager manager, String name, DFEType slotType, long depth, MemoryManager memoryMgr) {
+    /**
+     * Create the superfifo - legacy interface
+     * Note: This will claim all DIMMs on the DFE.  If you want to use LMem for any other purpose besides a superfifo (or even if
+     * you want more than one superfifo), you must explicitly create an LMemInterface and use the other create().
+     * @param manager owner
+     * @param name prefix name of the block. used to create the names of the different parts of the superfifo.
+     * @param slotType the datatype for the words written into the superfifo. Must fit an integer number of times into the memory word
+     * @param depth the number of slotType which are stored in the superfifo
+     * @return
+     */
+	public static FifoIO create(CustomManager manager, String name, DFEType slotType, long depth) {
+		return create(manager, manager.addLMemInterface(), "superFifo", slotType, depth);
+	}
 
-		manager.getManagerConfiguration().dram.setEnableFlagCommands(true);
+    /**
+     * Create the superfifo. debug print messages disabled by default
+     * @param manager owner
+     * @param iface the LMem interface on which to create the superfifo
+     * @param name prefix name of the block. used to create the names of the different parts of the superfifo.
+     * @param slotType the datatype for the words written into the superfifo. Must fit an integer number of times into the memory word
+     * @param depth the number of slotType which are stored in the superfifo
+     * @return
+     */
+	public static FifoIO create(CustomManager manager, LMemInterface iface, String name, DFEType slotType, long depth) {
 
-		long memoryBaseAddress = memoryMgr.allocBursts(name + "_superFifo", getMemoryUsageBursts(manager, depth, slotType));
+		long memoryBaseAddress = iface.allocBursts(name + "_superFifo", getMemoryUsageBursts(iface, depth, slotType));
 		manager.addMaxFileConstant(name + "_superFifo_baseAddress", (int)memoryBaseAddress);
 
 		StateMachineBlock superFifo = manager.addStateMachine(name + "_superFifo",
-				new SuperFifo(manager, name,
+				new SuperFifo(manager, iface, name,
 					slotType.getTotalBits(),
 					depth,
 					memoryBaseAddress));
 
 		StateMachineBlock wire = manager.addStateMachine(name + "_cmdWire", new SimpleWire(manager, 64));
 
-//		MemoryControllerConfig mcc = new MemoryControllerConfig();
-//		mcc.setCMDQSize(1);
-//		if (manager.getManagerConfiguration().getBoardModel() == MaxelerBoardModel.MAX4AB24A)
-//			mcc.setEnableParityMode(true, true, 72, false);
-//		manager.config.setMemoryControllerConfig(mcc);
+		LMemCommandGroup ctrlGroup = iface.addCommandGroup(name + "_ctrlGroup", wire.getOutput(SimpleWire.OUTPUT));
 
-
-		MemoryControlGroup ctrlGroup = manager.addMemoryControlGroup(name + "_ctrlGroup", wire.getOutput(SimpleWire.OUTPUT));
-
-		DFELink writeMemStream = manager.addStreamToOnCardMemory(name + "_writeMemStream", ctrlGroup);
-		DFELink readMemStream = manager.addStreamFromOnCardMemory(name + "_readMemStream", ctrlGroup);
+		DFELink writeMemStream = ctrlGroup.addStreamToLMem(name + "_writeMemStream");
+		DFELink readMemStream = ctrlGroup.addStreamFromLMem(name + "_readMemStream");
+		DFELink echoStream = ctrlGroup.addCommandCompletionStream();
 		ctrlGroup.finalise();
 
-		long burstsNeeded = getMemoryUsageBursts(manager, depth, slotType);
+		long burstsNeeded = getMemoryUsageBursts(iface, depth, slotType);
 
 		manager.logInfo("Super FIFO: Base @ 0x%x, Size: %d bursts\n", memoryBaseAddress, burstsNeeded);
 
 		StateMachineBlock ddrFifo = manager.addStateMachine(name + "_ddrFifo",
-				new DdrFifo(manager,
-					memoryBaseAddress,
-					burstsNeeded,
-					ctrlGroup.getStreamIndexIdWithinGroup(name + "_writeMemStream"),
-					ctrlGroup.getStreamIndexIdWithinGroup(name + "_readMemStream"),
-					memoryMgr.allocMemoryFlag(name + "_ddrFifo_flag1"), memoryMgr.allocMemoryFlag(name + "_ddrFifo_flag2")));
+				new DdrFifo(manager, iface, memoryBaseAddress, burstsNeeded,
+						ctrlGroup.getIndexForStream(name + "_writeMemStream"),
+						ctrlGroup.getIndexForStream(name + "_readMemStream")));
 
 		wire.getInput(SimpleWire.INPUT) <== ddrFifo.getOutput(DdrFifo.OUTPUT_MEM_COMMAND);
 		writeMemStream <== ddrFifo.getOutput(DdrFifo.OUTPUT_MEM_DATA);
 
-		IODesc src_desc = _CustomManagers.streamToImp(readMemStream).getSource();
-		int src_width = src_desc.getWidth();
+		final int src_width = readMemStream.getSourceWidth();
+		final DFELink ddrFifoInput = ddrFifo.getInput(DdrFifo.INPUT_MEM_DATA);
+		final int dst_width = ddrFifoInput.getSinkWidth();
 
-		IODesc dst_desc = _CustomManagers.streamToImp(ddrFifo.getInput(DdrFifo.INPUT_MEM_DATA)).getSink();
-		int dst_width = dst_desc.getWidth();
-
+		//TODO Can we dispense with this?
 		if (src_width < dst_width) {
 			StateMachineBlock dap = manager.addStateMachine(name + "_dualAspectPush_ddrFifoRead",
-					new DualAspectPush(manager, readMemStream, ddrFifo.getInput(DdrFifo.INPUT_MEM_DATA), 10));
+					new DualAspectPush(manager, readMemStream, ddrFifoInput, 10));
 			dap.getInput("src") <== readMemStream;
-			ddrFifo.getInput(DdrFifo.INPUT_MEM_DATA) <== dap.getOutput("dst");
+			ddrFifoInput <== dap.getOutput("dst");
 		} else {
-			ddrFifo.getInput(DdrFifo.INPUT_MEM_DATA) <== readMemStream;
+			ddrFifoInput <== readMemStream;
 		}
 
-
-
+		ddrFifo.getInput(DdrFifo.INPUT_COMMAND_ECHO) <== echoStream;
 		superFifo.getInput(SuperFifo.INPUT_EXTERNAL_READ) <== ddrFifo.getOutput(DdrFifo.OUTPUT_DATA);
 		ddrFifo.getInput(DdrFifo.INPUT_DATA) <== superFifo.getOutput(SuperFifo.OUTPUT_EXTERNAL_WRITE);
 
@@ -110,8 +132,8 @@ public class SuperFifo extends ManagerStateMachine {
 		return fifoIO;
 	}
 
-	public static int nextUsableWidth(CustomManager manager, int w) {
-		int burstWidth = manager.getManagerConfiguration().dram.getAdjustedBurstSizeInBytes() * 8;
+	public static int nextUsableWidth(LMemInterface iface, int w) {
+		long burstWidth = iface.getBurstSizeBits();
 
 		while ((burstWidth % w) != 0 && w < burstWidth) {
 			w = MathUtils.nextMultiple(w + 1, 64);
@@ -124,8 +146,8 @@ public class SuperFifo extends ManagerStateMachine {
 		return w;
 	}
 
-	public static long getMemoryUsageBursts(DFEManager manager, long depth, DFEType slotType) {
-		long burstSizeBits = manager.getManagerConfiguration().dram.getAdjustedBurstSizeInBytes() * 8;
+	public static long getMemoryUsageBursts(LMemInterface iface, long depth, DFEType slotType) {
+		long burstSizeBits = iface.getBurstSizeBits();
 
 		return MathUtils.nextPowerOfTwo((int) (depth * slotType.getTotalBits() / burstSizeBits));
 	}
@@ -134,7 +156,6 @@ public class SuperFifo extends ManagerStateMachine {
 	private enum States {
 		InternalFifo,
 		ExternalFifo,
-		PushBurst
 	}
 
 	private enum ReaderStates {
@@ -183,12 +204,13 @@ public class SuperFifo extends ManagerStateMachine {
 	private final PipelinedMux pmux;
 	private final DFEsmStateValue latencyCounter;
 	private final DFEsmStateValue externalWriteStall;
-	private DFEsmStateValue externalWritePointer_r;
+	private DFEsmStateValue externalWritePointer_r; // used for debug print messages when external pointers change (write or read from LMEM
 	private DFEsmStateValue externalReadPointer_r;
+	private final DFEsmStateValue flushingStaging;
 
 
 
-	private SuperFifo(DFEManager owner, String name, int width, long depth, long memoryBaseAddress) {
+	private SuperFifo(DFEManager owner, LMemInterface iface, String name, int width, long depth, long memoryBaseAddress) {
 		super(owner);
 
 		superFifoName = name;
@@ -196,7 +218,7 @@ public class SuperFifo extends ManagerStateMachine {
 		superFifoDepth = depth;
 		superFifoMemoryBaseAddress = memoryBaseAddress;
 
-		burstSizeBits = owner.getManagerConfiguration().dram.getAdjustedBurstSizeInBytes() * 8;
+		burstSizeBits = (int) iface.getBurstSizeBits();
 
 		if (burstSizeBits % superFifoWidth != 0) {
 			throw new MaxCompilerAPIError("Input width (%d bits) must fit an integer number of times in to a memory burst (%d bits), but %d / %d = %.4f\n",
@@ -217,19 +239,20 @@ public class SuperFifo extends ManagerStateMachine {
 		wordWidth = superFifoWidth;
 		wordsPerBurst = burstSizeBits / superFifoWidth;
 
-		outboundStagingRegister = _State.value(state, dfeUInt(burstSizeBits), "outboundStagingRegister");
+		outboundStagingRegister = _State.value(state, dfeUInt(burstSizeBits - wordWidth), "outboundStagingRegister");
 		outboundStagingRegLoadEnable = _State.value(state, dfeUInt(wordsPerBurst), 0, "outboundStagingRegLoadEnable");
 		outboundStagingRegisterValid = _State.value(state, dfeBool(), false, "outboundStagingRegisterValid");
 
 		stagingFifoDepth = Math.max(MathUtils.nextPowerOfTwo(wordsPerBurst + 1), 512);
 		DFEsmFifoConfig stagingFifoConfig = new DFEsmFifoConfig();
 		stagingFifoConfig.setHasDataCount();
-		stagingFifoConfig.setProgrammableFull(stagingFifoDepth-32);
+		stagingFifoConfig.setProgrammableFull(stagingFifoDepth - 32);
 		stagingFifoConfig.setIsFirstWordFallThrough();
 		stagingFifo = buffer.fifo(dfeUInt(superFifoWidth), stagingFifoDepth, stagingFifoConfig);
 		stagingFifoFull = _State.value(state, dfeBool(), true, "stagingFifoFull");
 
 
+		//TODO Stream width (burst / 2?)
 		externalWrite = io.pushOutput(OUTPUT_EXTERNAL_WRITE, dfeUInt(burstSizeBits), 5);
 		externalRead = io.pullInput(INPUT_EXTERNAL_READ, dfeUInt(burstSizeBits), 5);
 		externalWriteStall = _State.value(state, dfeBool(), true, "externalWriteStall");
@@ -241,16 +264,20 @@ public class SuperFifo extends ManagerStateMachine {
 		writeInputRegValid = _State.value(state, dfeBool(), false, "writeInputRegValid");
 
 		externalWritePointer = _State.value(state, dfeUInt(1 + MathUtils.bitsToAddress(superFifoDepth)), 0, "externalWritePointer");
-		externalWritePointer_r  = _State.value(state, dfeUInt(1 + MathUtils.bitsToAddress(superFifoDepth)), 0, "externalWritePointer_r");
 		externalReadPointer = _State.value(state, dfeUInt(1 + MathUtils.bitsToAddress(superFifoDepth)), 0, "externalReadPointer");
-		externalReadPointer_r  = _State.value(state, dfeUInt(1 + MathUtils.bitsToAddress(superFifoDepth)), 0, "externalReadPointer_r");
+
+		if (debugMessagesEnable) {
+			externalWritePointer_r = _State.value(state, dfeUInt(1 + MathUtils.bitsToAddress(superFifoDepth)), 0, "externalWritePointer_r");
+			externalReadPointer_r = _State.value(state, dfeUInt(1 + MathUtils.bitsToAddress(superFifoDepth)), 0, "externalReadPointer_r");
+		}
 
 		externalReadNow  = _State.value(state, dfeBool(), false, "externalReadNow");
 		externalReadNow_r = _State.value(state, dfeBool(), false, "externalReadNow_r");
+		//TODO Stream width (burst / 2?)
 		inboundStagingReg  = _State.value(state, dfeUInt(burstSizeBits), "inboundStagingReg");
 		inboundStagingMuxNow  = _State.value(state, dfeBool(), false, "inboundStagingMuxNow");
 		inboundStagingCounter = _State.value(state, dfeUInt(MathUtils.bitsToAddress(wordsPerBurst)), 0, "inboundStagingCounter");
-
+		flushingStaging  = _State.value(state, dfeBool(), false, "inboundStagingMuxNow");
 
 		currentState = _State.enumerated(state, States.class, States.InternalFifo, "currentState");
 		readerState  = _State.enumerated(state, ReaderStates.class, ReaderStates.WaitForData, "readerStates");
@@ -271,6 +298,7 @@ public class SuperFifo extends ManagerStateMachine {
 		internalFifoInputRegValid =  _State.value(state, dfeBool(), false, "internalFifoInputRegValid");
 
 		pmux = new PipelinedMux(this, dfeUInt(superFifoWidth), 4, wordsPerBurst);
+		//TODO Deal with latency of 1 (zero-bit counter?)
 		latencyCounter = _State.value(state, dfeUInt(MathUtils.bitsToAddress(pmux.getLatency())), 0, "latencyCounter");
 
 		logParams(owner);
@@ -302,26 +330,34 @@ public class SuperFifo extends ManagerStateMachine {
 		internalFifo.input.dataIn <== internalFifoInputReg;
 		internalFifo.input.writeEnable <== internalFifoInputRegValid;
 
-		externalReadPointer_r.next <== externalReadPointer;
-		externalWritePointer_r.next <== externalWritePointer;
-
-		IF (externalWritePointer !== externalWritePointer_r | externalReadPointer !== externalReadPointer_r) {
-			printf("External Pointers: Write --> %6d , %6d <-- Read\n", externalWritePointer, externalReadPointer);
+		if (debugMessagesEnable) {
+			externalReadPointer_r.next <== externalReadPointer;
+			externalWritePointer_r.next <== externalWritePointer;
+			IF (externalWritePointer !== externalWritePointer_r | externalReadPointer !== externalReadPointer_r) {
+				printf("External Pointers: Write --> %6d , %6d <-- Read\n", externalWritePointer, externalReadPointer);
+			}
 		}
 
 		internalFifoInputReg.next <== stagingFifo.output.dataOut;
 		stagingFifo.output.readEnable <== false;
-		outboundStagingRegLoadEnable.next <== 0;
+		outboundStagingRegLoadEnable.next <== 1;
 		internalFifoInputRegValid.next <== false;
 		outboundStagingRegisterValid.next <== false;
+		flushingStaging.next <== false;
 		externalWriteStall.next <== externalWrite.stall;
 
 		DFEsmValue externalFifoEmpty = externalWritePointer === externalReadPointer;
+
+//		debug.simPrintf("INPUT %dV%d, stage %dV%d, internal %dV%d\n"
+//				, writeInput, writeInput.valid
+//				, stagingFifo.input.dataIn, stagingFifo.input.writeEnable
+//				, internalFifo.input.dataIn, internalFifo.input.writeEnable);
 
 		SWITCH (currentState) {
 			CASE (States.InternalFifo) {
 				IF (~internalFifoFull) {
 					IF (~stagingFifo.output.empty) {
+						printf("Writer: InternalFifo: data_count=%d\n", internalFifo.data_count);
 						internalFifoInputRegValid.next <== true;
 						stagingFifo.output.readEnable <== true;
 					}
@@ -332,32 +368,46 @@ public class SuperFifo extends ManagerStateMachine {
 			}
 
 			CASE (States.ExternalFifo) {
-				IF (~internalFifoFull & externalFifoEmpty) {
+				printf("Writer: ExternalFifo: staging_count=%d, flushing%d\n"
+						, stagingFifo.data_count, flushingStaging);
+
+				IF (~internalFifoFull & externalFifoEmpty & ~flushingStaging) {
 					printf("Writer: ExternalFifo -> InternalFifo\n");
 					currentState.next <== States.InternalFifo;
-				} ELSE IF (stagingFifo.data_count >= wordsPerBurst) {
-					printf("Writer: ExternalFifo -> PushBurst\n");
-					outboundStagingRegLoadEnable.next <== 1;
-					currentState.next <== States.PushBurst;
-				}
-			}
+				} ELSE IF (stagingFifo.data_count >= wordsPerBurst | flushingStaging) {
+//					printf("Writer: ExternalFifo full\n");
 
-			CASE (States.PushBurst) {
-				IF (~externalWriteStall) {
-					printf("Writer [PushBurst]: offloading burst... 0x%x\n", outboundStagingRegLoadEnable);
 					stagingFifo.output.readEnable <== true;
-					IF (outboundStagingRegLoadEnable[wordsPerBurst-1] !== true) {
-						outboundStagingRegLoadEnable.next <== SMUtils.shiftLeft(this, outboundStagingRegLoadEnable, 1);
+					IF (~flushingStaging) {
+						printf("Writer: start staging flush\n");
+						outboundStagingRegLoadEnable.next <== 2;
+						flushingStaging.next <== true;
 					} ELSE {
-						printf("Writer: PushBurst -> ExternalFifo\n");
-						outboundStagingRegisterValid.next <== true;
-						currentState.next <== States.ExternalFifo;
-						externalWritePointer.next <== externalWritePointer + 1;
-					}
-				} ELSE {
-					outboundStagingRegLoadEnable.next <== outboundStagingRegLoadEnable;
-				}
-			}
+						flushingStaging.next <== flushingStaging;
+
+						IF (~externalWriteStall) {
+							IF (outboundStagingRegLoadEnable[wordsPerBurst - 2] === true) {
+								printf("Writer: PushBurst -> ExternalFifo\n");
+								outboundStagingRegisterValid.next <== true;
+								externalWritePointer.next <== externalWritePointer + 1;
+								outboundStagingRegLoadEnable.next <== SMUtils.shiftLeft(this, outboundStagingRegLoadEnable, 1);
+							} ELSE IF (outboundStagingRegLoadEnable[wordsPerBurst - 1] === true) {
+								printf("Writer: FinaliseBurst: %x\n", outboundStagingRegLoadEnable);
+								IF (stagingFifo.data_count >= wordsPerBurst) {
+									flushingStaging.next <== true;
+								} ELSE {
+									flushingStaging.next <== false;
+								}
+							} ELSE {
+								printf("Writer: CreateBurst: %x\n", outboundStagingRegLoadEnable);
+								outboundStagingRegLoadEnable.next <== SMUtils.shiftLeft(this, outboundStagingRegLoadEnable, 1);
+							}
+						} ELSE {
+							outboundStagingRegLoadEnable.next <== outboundStagingRegLoadEnable;
+						}
+					} // END if flushing
+				} // END if internal full etc
+			} //END switch write state
 		}
 
 
@@ -412,15 +462,18 @@ public class SuperFifo extends ManagerStateMachine {
 
 		IF (externalReadNow_r) {
 			inboundStagingReg.next <== externalRead;
+			printf("external read: %x", externalRead);
 		}
 
 		List<DFEsmValue> inputs = new ArrayList<DFEsmValue>();
 		for (int w = 0; w < wordsPerBurst; w++) {
-			IF (outboundStagingRegLoadEnable[w]) {
-				outboundStagingRegister.next[(w+1)*wordWidth-1:w*wordWidth] <== stagingFifo.output.dataOut;
+			if (w < wordsPerBurst - 1) {
+				IF (outboundStagingRegLoadEnable[w]) {
+					outboundStagingRegister.next[(w + 1) * wordWidth - 1: w * wordWidth] <== stagingFifo.output.dataOut;
+				}
 			}
 
-			inputs.add(inboundStagingReg[(w+1)*wordWidth-1:w*wordWidth]);
+			inputs.add(inboundStagingReg[(w + 1) * wordWidth - 1 : w * wordWidth]);
 		}
 
 		DFEsmValue muxOut = pmux.next(inboundStagingMuxNow, inboundStagingCounter, inputs);
@@ -431,6 +484,8 @@ public class SuperFifo extends ManagerStateMachine {
 		}
 
 		internalFifo.output.readEnable <== readOutput.read;
+
+//		printf("externalWrite: %xV%d\n", externalWrite, externalWrite.valid);
 	}
 
 	@Override
@@ -440,13 +495,17 @@ public class SuperFifo extends ManagerStateMachine {
 		readOutput.empty <== internalFifo.output.empty;
 		readOutput <== internalFifo.output.dataOut;
 
-		externalWrite <== outboundStagingRegister;
+		externalWrite <== stagingFifo.output.dataOut # outboundStagingRegister;
 		externalWrite.valid <== outboundStagingRegisterValid;
+		IF (outboundStagingRegisterValid) {
+			printf("external write :%x\n", stagingFifo.output.dataOut # outboundStagingRegister);
+		}
 		externalRead.read <== externalReadNow;
 	}
 
 	void printf(String message, Object... args) {
-//		debug.printf(message, args);
+        if (debugMessagesEnable)
+        	debug.simPrintf(message, args);
 	}
 
 }

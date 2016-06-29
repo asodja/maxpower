@@ -6,11 +6,11 @@
  */
 
 
-#define DESIGN_NAME DDRFifoTest
-#include <MaxCompilerRT.h>
-#undef DESIGN_NAME
+#include <MaxSLiCInterface.h>
 
-#define INIT_NAME max_maxfile_init_DDRFifoTest
+#define _CONCAT(x, y) x ## y
+#define CONCAT(x, y) _CONCAT(x, y)
+#define INIT_NAME CONCAT(DESIGN_NAME, _init)
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -27,43 +27,34 @@
 #include <pthread.h>
 #include <time.h>
 
-
-static max_device_handle_t * device;
-
 typedef struct {
 	uint8_t data[384];
 } single_burst_t;
 
 
-#define MAX_DEPTH (1024*256)
+#define NUM_BURSTS_HW  (1024 * 1024 * 16)
+#define NUM_BURSTS_SIM (1024 * 16)
 
 int main(int argc, char *argv[])
 {
-	bool is_sim = true;
-	max_maxfile_t *maxfile = INIT_NAME();
-	device = max_open_device( maxfile, ( is_sim ? "sim0:sim" : "/dev/maxeler2" ) );
+	(void)argc; (void)argv;
 
-	assert(device != NULL);
-
-	if( is_sim )
-	{
-		max_redirect_sim_debug_output_to_stdout( device );
-		max_disable_sim_watchnodes( device );
+	max_file_t *maxfile = INIT_NAME();
+	if(!maxfile) {
+		fprintf(stderr, "Failed to init MAX file\n");
+		exit(-1);
 	}
 
+	max_config_set_bool(MAX_CONFIG_PRINTF_TO_STDOUT, true);
 
-	max_set_shutdown_on_exit( device, 1, 10000 );
-	max_set_terminate_on_error( device );
-	max_set_dump_trace_on_error( device );
+	const int isSimulation = max_get_constant_uint64t(maxfile, "IS_SIMULATION") == 1ul;
+	const size_t numBursts = isSimulation ? NUM_BURSTS_SIM : NUM_BURSTS_HW;
 
-	max_reset_device( device );
-
-	srand(time(NULL));
-	single_burst_t *inputData = malloc(sizeof(single_burst_t) * MAX_DEPTH);
-	single_burst_t *outputData = calloc(MAX_DEPTH, sizeof(single_burst_t));
+	single_burst_t *inputData = malloc(sizeof(single_burst_t) * numBursts);
+	single_burst_t *outputData = calloc(numBursts, sizeof(single_burst_t));
 
 	printf("Building data...\n"); fflush(stdout);
-	for (size_t burst=0; burst < MAX_DEPTH; burst++) {
+	for (size_t burst=0; burst < numBursts; burst++) {
 		uint64_t *d = (uint64_t *)inputData[burst].data;
 		size_t quadsPerBurst = sizeof(single_burst_t) / sizeof(uint64_t);
 
@@ -72,23 +63,31 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	max_stream_handle_t *write_fifo = max_get_pcie_stream(device, "write_fifo");
-	max_stream_handle_t *read_fifo = max_get_pcie_stream(device, "read_fifo");
+	printf("Loading engine...\n"); fflush(stdout);
+	max_engine_t *engine = max_load(maxfile, "*");
+	if(!engine) {
+		fprintf(stderr, "Failed to open Max device\n");
+		exit(-1);
+	}
 
+	printf("Running test...\n"); fflush(stdout);
+	max_actions_t *action = max_actions_init(maxfile, NULL);
+	if (!action) {
+		fprintf(stderr, "Failed to create action set\n");
+		exit(-1);
+	}
+	max_queue_input(action, "write_fifo", inputData, sizeof(single_burst_t) * numBursts);
+	max_queue_output(action, "read_fifo", outputData, sizeof(single_burst_t) * numBursts);
 
-	printf("Streaming ...\n"); fflush(stdout);
-	max_queue_pcie_stream(device, write_fifo, inputData, sizeof(single_burst_t) * MAX_DEPTH, 0);
-	max_queue_pcie_stream(device, read_fifo, outputData, sizeof(single_burst_t) * MAX_DEPTH, 0);
+	max_run(engine, action);
 
-
-	printf("Syncing read ...\n"); fflush(stdout);
-	max_sync_pcie_stream(device, write_fifo);
-	max_sync_pcie_stream(device, read_fifo);
-
+	max_actions_free(action);
+	max_unload(engine);
+	max_file_free(maxfile);
 
 	printf("Comparing...\n"); fflush(stdout);
 	uint8_t fail = 0;
-	for (size_t burst=0; burst < MAX_DEPTH; burst++) {
+	for (size_t burst=0; burst < numBursts; burst++) {
 		uint64_t *input = (uint64_t *)inputData[burst].data;
 		uint64_t *output = (uint64_t *)outputData[burst].data;
 		size_t quadsPerBurst = sizeof(single_burst_t) / sizeof(uint64_t);
@@ -100,6 +99,8 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
+	free(inputData);
+	free(outputData);
 
 	printf("%s\n", fail ? "FAILED!" : "Success");
 	return fail;

@@ -30,7 +30,7 @@ public class BitonicSort {
 	 * @return Sorted DFEVars
 	 */
 	public static DFEVector<DFEVar> sort(DFEVector<DFEVar> input) {
-		return input.getType().newInstance(input.getKernel(), sort(input.getElementsAsList()));
+		return input.getType().newInstance(input.getOwner(), sort(input.getElementsAsList()));
 	}
 
 	/**

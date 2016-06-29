@@ -1,0 +1,540 @@
+package maxpower.kernel.merger.nodes;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.types.KMType;
+import maxpower.kernel.merger.utils.ResourceUsage;
+import maxpower.kernel.pipeline.FanoutLimiter;
+import maxpower.utils.TreeReduce;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.utils.CreationLogger;
+
+/**
+ * Base class for all nodes in the merger dataflow graph.
+ *
+ * @author nvoss
+ */
+public abstract class KMNode implements java.io.Serializable {
+	private static final long serialVersionUID = -1984608380021437330L;
+
+	private static int id = 0;
+
+	/**
+	 * Unique node identifier.
+	 * */
+	final int m_id;
+
+	/**
+	 * Result of the operation represented by the node. A {@link FanoutLimiter} is used in order to improve timing.
+	 * The properties of the {@link FanoutLimiter} can be changed in the {@link Merger} Class.
+	 */
+	FanoutLimiter<?> m_result = null;
+
+	/**
+	 * The datatype of the result presented as a {@link KMType}.
+	 * The resultType is transient: If a graph is loaded from a file the DetermineTypeGraphPass has to be run again.
+	 */
+	transient KMType m_resultType = null;
+
+	/**
+	 * Estimated costs for implementing this node in hardware.
+	 */
+	double m_costs;
+
+	/**
+	 * List of all {@link KMNode}s which are inputs to this node.
+	 */
+	final List<KMNode> m_inputs = new ArrayList<KMNode>();
+
+	/**
+	 * List of all {@link KMNode}s which are outputs of this node.
+	 */
+	private final List<KMNode> m_outputs = new ArrayList<KMNode>();
+
+	/**
+	 * A Set used to store in which kernels this node is used.
+	 */
+	private final Set<Integer> m_usedInKernels = new HashSet<Integer>();
+
+	/**
+	 * This {@link CreationLogger} is used to keep track of the node creation.
+	 * This enables the use of Compiler tools like the resource annotation.
+	 * Sadly currently this information once a graph is serialized. In order to avoid this changes to the compiler are probably needed.
+	 */
+	private transient CreationLogger m_originLogger; //TODO: FIXME
+
+	/**
+	 * Flag indicating if a report should be generated if the output of this output is not connected to any other node.
+	 */
+	private boolean m_reportOnUnused = true;
+
+	/**
+	 * Standard constructor. Creates the ID of the node and the origin stack trace.
+	 */
+	public KMNode() {
+		m_id = id++;
+		m_originLogger = new CreationLogger(null);
+	}
+
+	/**
+	 * Returns the ID of a node.
+	 * @return ID of the node.
+	 */
+	public int getID() {
+		return m_id;
+	}
+
+	/**
+	 * Disables the warning if the output of this node is not connected.
+	 */
+	public void disableReportOnUnused() {
+		m_reportOnUnused = false;
+	}
+
+	/**
+	 * Indicates if a warning should be created if the output of this node is not connected to anything.
+	 * @return A flag indicating if a warning should be created if the output of this node is not connected.
+	 */
+	public boolean getReportOnUnused() {
+		return m_reportOnUnused;
+	}
+
+	/**
+	 * Add a input to the node.
+	 * @param node The {@link KMNode} which should be added as input to this {@link KMNode}.
+	 */
+	public void addInput(KMNode node) {
+		m_inputs.add(node);
+	}
+
+	/**
+	 * Removes the provided {@link KMNode} from the list of inputs once.
+	 * @param node {@link KMNode} which should be removed from the list of inputs once.
+	 */
+	public void removeOneInput(KMNode node) {
+		m_inputs.remove(node);
+	}
+
+	/**
+	 * Removes all inputs.
+	 */
+	public void removeAllInputs() {
+		m_inputs.clear();
+	}
+
+	/**
+	 * Returns the result of the calculation represented by this node.
+	 * @return The result of the calculation represented by this node as {@link KernelObjectVectorizable}.
+	 */
+	@SuppressWarnings("rawtypes")
+	public KernelObjectVectorizable getResult() {
+		KernelObjectVectorizable result = (KernelObjectVectorizable) m_result.get();
+		return result;
+	}
+
+	/**
+	 * Returns the datatype of the result of the calculation represented by this node.
+	 * @return {@link KMType} of the result of the calculation represented by this node.
+	 */
+	public KMType getResultType() {
+		return m_resultType;
+	}
+
+	/**
+	 * Provides a list of all inputs to this node.
+	 * @return list of all {@KMNode}s which are used as inputs to this node.
+	 */
+	public List<KMNode> getInputs() {
+		return m_inputs;
+	}
+
+	/**
+	 * Provides a list of all nodes which use the result of this node.
+	 * @return A list of all {@link KMNode}s which use the result of this node.
+	 */
+	public List<KMNode> getOutputs() {
+		return m_outputs;
+	}
+
+	/**
+	 * Provides a set indicating in which kernels this node is used.
+	 * @return Set containing an integer for each kernel in which this node is used.
+	 */
+	public Set<Integer> getUsedInKernels() {
+		return Collections.unmodifiableSet(m_usedInKernels);
+	}
+
+	/**
+	 * Adds multiple outputs to this node.
+	 * @param outputs List of {@link KMNode}s which use the result of the calculation represented by this node.
+	 */
+	public void addOutputs(List<KMNode> outputs) {
+		m_outputs.addAll(outputs);
+	}
+
+	/**
+	 * Adds a output to this node.
+	 * @param output {@link KMNode} which uses the result of the calculation represented by this node.
+	 */
+	public void addOutput(KMNode output) {
+		m_outputs.add(output);
+	}
+
+	/**
+	 * Adds a Set of kernels in which this node is used.
+	 * @param usedInKernels Set of integers which represent the kernel in which this node should be used.
+	 */
+	public void addUsedInKernels(Set<Integer> usedInKernels) {
+		m_usedInKernels.addAll(usedInKernels);
+	}
+
+	/**
+	 * Replaces all occurances of a {@link KMNode} in the list of inputs with a new {@link KMNode}.
+	 * @param oldNode {@link KMNode} which is not any longer a input to this node.
+	 * @param newNode {@link KMNode} which is the new input to this node.
+	 */
+	public void replaceInputs(KMNode oldNode, KMNode newNode) {
+		for (int i = 0; i < m_inputs.size(); i++) {
+			if (m_inputs[i].equals(oldNode)) {
+				m_inputs.set(i, newNode);
+			}
+		}
+	}
+
+	/**
+	 * Replaces a single occurance of a {@link KMNode} in the list of inputs with a new {@link KMNode}.
+	 * @param oldNode {@link KMNode} which is not any longer a input to this node.
+	 * @param newNode {@link KMNode} which is the new input to this node.
+	 */
+	public void replaceOneInput(KMNode oldNode, KMNode newNode) {
+		for (int i = 0; i < m_inputs.size(); i++) {
+			if (m_inputs[i].equals(oldNode)) {
+				m_inputs.set(i, newNode);
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Replaces all occurances of a {@link KMNode} in the list of outputs with a new {@link KMNode}.
+	 * @param oldNode {@link KMNode} which is not a output of this node.
+	 * @param newNode {@link KMNode} which is the new output of this node.
+	 */
+	public void replaceOutputs(KMNode oldNode, KMNode newNode) {
+		for (int i = 0; i < m_outputs.size(); i++) {
+			if (m_outputs[i].equals(oldNode)) {
+				m_outputs.set(i, newNode);
+			}
+		}
+	}
+
+	/**
+	 * Replaces a single occurance of a {@link KMNode} in the list of outputs with a new {@link KMNode}.
+	 * @param oldNode {@link KMNode} which is not a output of this node.
+	 * @param newNode {@link KMNode} which is the new output of this node.
+	 */
+	public void replaceOneOutput(KMNode oldNode, KMNode newNode) {
+		for (int i = 0; i < m_outputs.size(); i++) {
+			if (m_outputs[i].equals(oldNode)) {
+				m_outputs.set(i, newNode);
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Removes all outputs from this node.
+	 */
+	public void removeAllOutputs() {
+		m_outputs.clear();
+	}
+
+	/**
+	 * Removes all occurances of a {@link KMNode} in the list of outputs.
+	 * @param oldNode node which is not longer an output of this node.
+	 */
+	public void removeOutput(KMNode oldNode) {
+		while(m_outputs.remove(oldNode));
+	}
+
+	/**
+	 * Removes a single occurance of a {@link KMNode} in the list of outputs.
+	 * @param oldNode node which is not longer an output of this node.
+	 */
+	public void removeOneOutput(KMNode oldNode) {
+		m_outputs.remove(oldNode);
+	}
+
+	/**
+	 * Resets the type of the result of this node to null.
+	 */
+	public void resetResultType() {
+		m_resultType = null;
+	}
+
+	/**
+	 * Sets the type of the result of the calculation represented by this node.
+	 * @param {@link KMType} of the result of this node.
+	 */
+	public void setResultType(KMType resultType) {
+		m_resultType = resultType;
+	}
+
+	/**
+	 * Checks if a given node is a input (at a previous point in the graph) to the node this method is executed on.
+	 * @param node Node to check.
+	 * @return Flag indicating if the provided node is an input.
+	 */
+	public boolean isInput(KMNode node) {
+		boolean result = false;
+		Set<KMNode> visited = new HashSet<KMNode>();
+		List<KMNode> inputs = getNodesThisNodeIsDependentOn();
+		for (KMNode input : inputs) {
+			if (!visited.contains(input)) {
+				visited.add(input);
+				if (input == node) {
+					return true;
+				} else {
+					result |= input.isInput(node, visited);
+				}
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Checks if a given node is a input (at a previous point in the graph) to the node this method is executed on.
+	 * @param node Node to check.
+	 * @param visited Set of all nodes already processed in this search. Used in order to decrease the runtime.
+	 * @return Flag indicating if the provided node is an input.
+	 */
+	private boolean isInput(KMNode node, Set<KMNode> visited) {
+		boolean result = false;
+		List<KMNode> inputs = getNodesThisNodeIsDependentOn();
+		for (KMNode input : inputs) {
+			if (!visited.contains(input)) {
+				visited.add(input);
+				if (input == node) {
+					return true;
+				} else {
+					result |= input.isInput(node, visited);
+				}
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Calculates the maximum estimated latency from the inputs.
+	 * @param merger {@link Merger} in which this node is used.
+	 */
+	public int getMaxDistanceFromInputs(Merger merger) {
+		int result = 0;
+		Set<KMNode> visited = new HashSet<KMNode>();
+		List<KMNode> inputs = getNodesThisNodeIsDependentOn();
+		for (KMNode input : inputs) {
+			if (!visited.contains(input)) {
+				visited.add(input);
+				result = Math.max(result, input.getMaxDistanceFromInputs(merger, visited) +
+						input.getLatencyEstimate(merger));
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Calculates the maximum estimated latency from the inputs.
+	 * @param merger {@link Merger} in which this node is used.
+	 * @param visited Set of all nodes already processed in this search. Used in order to decrease the runtime.
+	 */
+	private int getMaxDistanceFromInputs(Merger merger, Set<KMNode> visited) {
+		int result = 0;
+		List<KMNode> inputs = getNodesThisNodeIsDependentOn();
+		for (KMNode input : inputs) {
+			if (!visited.contains(input)) {
+				visited.add(input);
+				result = Math.max(result, input.getMaxDistanceFromInputs(merger, visited) +
+						input.getLatencyEstimate(merger));
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Returns a list of all nodes which results have to be available for this node.
+	 * In the normal case this is the list of all inputs.
+	 * If this {@link KMNode} is a {@link KMNodeInput} it might be a {@link KMNodeOutput} which is connected to the input outside of the merger.
+	 * @return List of all {@link KMNode}s this {@link KMNode} is dependent on.
+	 */
+	private List<KMNode> getNodesThisNodeIsDependentOn() {
+		if (this instanceof KMNodeInput) {
+			return ((KMNodeInput) this).getOutputsDependentFrom();
+		} else {
+			return m_inputs;
+		}
+	}
+
+	/**
+	 * Returns the estimated costs for implementing this node in hardware.
+	 * @return Estimated costs for implementing this node in hardware.
+	 */
+	public double getCosts() {
+		return m_costs;
+	}
+
+	/**
+	 * Provides access to the {@link CreationLogger} which saves where this {@link KMNode} was created.
+	 * @return {@link CreationLogger} of this {@link KMNode}.
+	 */
+	public CreationLogger getOrigin() {
+		return m_originLogger;
+	}
+
+	/**
+	 * Sets the {@link CreationLogger} which saves where this {@link KMNode} was created.
+	 */
+	public void setOrigin(CreationLogger origin) {
+		m_originLogger = origin;
+	}
+
+	/**
+	 * Gets the origin stack trace of this {@link KMNode}
+	 * @return Origin stack trace.
+	 */
+	public String getOriginStackTrace() {
+		return m_originLogger.getCreationStackTraceString();
+	}
+
+	/**
+	 * Calculates the datatype of the result of this {@link KMNode}.
+	 * @param {@link Merger} object in which this node is used.
+	 */
+	public void calcResultType(Merger merger) {
+		for (KMNode input : m_inputs) {
+			if (input.getResultType() != null) {
+				m_resultType = input.getResultType();
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Creates the hardware needed for this node.
+	 * @param {@link Merger} object in which this node is used.
+	 */
+	public abstract void execute(Merger merger);
+	/**
+	 * Estimates the usage of hardware units for this node.
+	 * @return {@link ResourceUsage} of this node.
+	 */
+	public abstract ResourceUsage getResourceUsageEstimate(Merger merger);
+	/**
+	 * Estimates the latency of this node.
+	 * @param {@link Merger} object in which this node is used.
+	 * @return Estimated latency of this node.
+	 */
+	abstract int getLatencyEstimate(Merger merger);
+
+	/**
+	 * Calculates the estimated costs for this node.
+	 */
+	public void calculateCosts(Merger merger, double lutWeight, double ffWeight, double memWeight, double dspWeight) {
+		ResourceUsage resources = getResourceUsageEstimate(merger);
+		m_costs = lutWeight * resources.luts
+		+ ffWeight  * resources.flipflops
+		+ memWeight * resources.mems
+		+ dspWeight * resources.dsps;
+	}
+
+	/**
+	 * Calculates the intersection of all inputs connected to two nodes.
+	 * @param node1 First node.
+	 * @param node2 Second node.
+	 * @return List of all nodes which are the inputs to both nodes.
+	 */
+	public static List<KMNode> getIntersectionOfInputs(KMNode node1, KMNode node2) {
+		List<KMNode> inputsNode1 = new ArrayList<KMNode>(node1.getInputs());
+		List<KMNode> inputsNode2 = new ArrayList<KMNode>(node2.getInputs());
+
+		List<KMNode> result = new ArrayList<KMNode>();
+
+		boolean changed;
+		do {
+			changed = false;
+			for (int i = 0; i < inputsNode1.size(); i++) {
+				if (inputsNode2.contains(inputsNode1[i])) {
+					KMNode tmp = inputsNode1[i];
+					result.add(tmp);
+					inputsNode1.remove(tmp);
+					inputsNode2.remove(tmp);
+
+					changed = true;
+					break;
+				}
+			}
+		} while (changed);
+
+		return result;
+	}
+
+	@Override
+	public int hashCode() {
+		return new Integer(m_id).hashCode();
+	}
+
+	@Override
+	public boolean equals(Object object) {
+		if (this == object) return true;
+		if (!(object instanceof KMNode)) return false;
+		return m_id == ((KMNode) object).m_id;
+	}
+
+	@Override
+	public abstract String toString();
+
+	/**
+	 * Apply a unary op to a DFEVar, DFEVector or nested DFEVectors
+	 */
+	protected static <T> T apply(T val, maxpower.ops.UnaryOp<DFEVar, DFEVar> op) {
+		if (val instanceof DFEVar) {
+			return uncheckedCast(op.op((DFEVar) val));
+		} else if (val instanceof DFEVector) {
+			return uncheckedCast(applyVec((DFEVector<?>) val, op));
+		} else {
+			throw new MaxCompilerAPIError("apply() only supports DFEVars and DFEVectors");
+		}
+	}
+
+	private static <T extends KernelObjectVectorizable<T, ?>>
+	DFEVector<T> applyVec(DFEVector<T> val, maxpower.ops.UnaryOp<DFEVar, DFEVar> op) {
+		List<T> ret = new ArrayList<T>();
+		for (T x : val.getElementsAsList()) {
+			ret.add(apply(x, op));
+		}
+		return DFEVectorType.newInstance(ret);
+	}
+
+	@SuppressWarnings("unchecked")
+	protected static <T> T uncheckedCast(Object v) {
+		return (T) v;
+	}
+
+	@SuppressWarnings("rawtypes")
+	protected KernelObjectVectorizable reduceInputs(maxpower.ops.AssociativeOp<KernelObjectVectorizable> op) {
+		List<KernelObjectVectorizable> inputs = new ArrayList<KernelObjectVectorizable>();
+		for (KMNode n : m_inputs) {
+			inputs.add(n.getResult());
+		}
+		return TreeReduce.reduce(op, inputs);
+	}
+}

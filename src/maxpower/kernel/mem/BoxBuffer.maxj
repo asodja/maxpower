@@ -9,7 +9,8 @@ import maxpower.kernel.arithmetic.ConstDenominator.ConstDivModResult;
 import maxpower.utils.TreeReduce;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelComponent;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
@@ -47,7 +48,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
  * Also note that when using this buffer with more than one dimension, the fast dimension
  * (the one we write in linearly) is the last dimension specified.
  */
-public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelLib {
+public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelComponent {
 
 	private static final int DEFAULT_LUT_COST = 200;
 
@@ -66,14 +67,14 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	/**
 	 * Create a single buffered N-dimensional box buffer (see {@link BoxBuffer}).
 	 */
-	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType) {
+	public BoxBuffer(KernelBase<?> root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType) {
 		this(root, maxItems, numOutputItems, inputType, DEFAULT_LUT_COST);
 	}
 
 	/**
 	 * Create an N-dimensional box buffer (see {@link BoxBuffer}).
 	 */
-	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
+	public BoxBuffer(KernelBase<?> root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered) {
 		this(root, maxItems, numOutputItems, inputType, doubleBuffered, DEFAULT_LUT_COST);
 	}
 
@@ -81,7 +82,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	 * Create a single buffered N-dimensional box buffer (see {@link BoxBuffer}).
 	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow. The default value is 200.
 	 */
-	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
+	public BoxBuffer(KernelBase<?> root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, int costOfBramInLuts) {
 		this(root, maxItems, numOutputItems, inputType, false, costOfBramInLuts);
 	}
 
@@ -89,7 +90,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	 * Create an N-dimensional box buffer (see {@link BoxBuffer}).
 	 * @param costOfBramInLuts This can be altered to favour BRAM usage over LUTs. The higher the number the fewer BRAMs will be used, but LUT usage may grow.
 	 */
-	public BoxBuffer(KernelLib root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
+	public BoxBuffer(KernelBase<?> root, int[] maxItems, int[] numOutputItems, DFEVectorType<T> inputType, boolean doubleBuffered, int costOfBramInLuts) {
 		super(root);
 		if (maxItems.length != numOutputItems.length) {
 			throw new RuntimeException("The number of dimensions of the box must be the same as the number of dimensions of the buffer.");
@@ -227,14 +228,14 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			return oneHot;
 		}
 
-		optimization.pushPipeliningFactor(0.0);//Unless the number of dimensions is larger than 6, then we should be fine squashing this.
+		optimization.pushNoPipelining(); // Unless the number of dimensions is larger than 6, then we should be fine squashing this.
 		List<DFEVar> slowerDimensions = getIsInThisBuffer(addressDivMod, dimension - 1);
 		for (int j = 0; j < slowerDimensions.size(); j++) {
 			for (int i = 0; i < oneHot.size(); i++) {
 				inThisBuffer.add(oneHot[i] & slowerDimensions[j]);
 			}
 		}
-		optimization.popPipeliningFactor();
+		optimization.popNoPipelining();
 
 		return inThisBuffer;
 	}
@@ -299,7 +300,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		if (bufferOutput.size() > 1) {
 			DFEVectorType<T> outputType = bufferOutput[0].getType();
 			DFEVectorType<DFEVar> rotateType = new DFEVectorType<DFEVar>(dfeRawBits(outputType.getTotalBits()), bufferOutput.size());
-			DFEVector<DFEVar> rotated = rotateType.newInstance(this);
+			DFEVector<DFEVar> rotated = rotateType.newInstance(getOwner());
 			for (int i = 0; i < rotated.getSize(); i++) {
 				rotated[i] <== bufferOutput[i].pack();
 			}
@@ -375,7 +376,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 	private DFEVector<T> asDFEVector(List<T> input) {
 		DFEVectorType<T> type = new DFEVectorType<T>(input[0].getType(), input.size());
-		DFEVector<T> output = type.newInstance(this);
+		DFEVector<T> output = type.newInstance(getOwner());
 		for (int i = 0; i < input.size(); i++) {
 			output[i] <== input[i];
 		}
@@ -396,7 +397,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			}
 		}
 		DFEVectorType<T> type = new DFEVectorType<T>(input[0][0].getType(), totalSize);
-		DFEVector<T> output = type.newInstance(this);
+		DFEVector<T> output = type.newInstance(getOwner());
 		for (int i = 0; i < input.size(); i++) {
 			for (int j = 0; j < input[i].getSize(); j++) {
 				output[i * input[i].getSize() + j] <== input[i][j];
@@ -408,7 +409,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 
 	private DFEVector<DFEVector<T>> as2dDFEVector(DFEVector<T> input, int numItems, int numVectors) {
 		DFEVectorType<DFEVector<T>> type = new DFEVectorType<DFEVector<T>>(new DFEVectorType<T>(input[0].getType(), numItems), numVectors);
-		DFEVector<DFEVector<T>> output = type.newInstance(this);
+		DFEVector<DFEVector<T>> output = type.newInstance(getOwner());
 
 		for (int i = 0; i < numVectors; i++) {
 			for (int j = 0; j < numItems; j++) {
@@ -468,11 +469,11 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 	 *     <tr><td> ...      </td><td> ...      </td></tr>
 	 *     </table>
 	 */
-	private class Buffer1D extends KernelLib {
+	private class Buffer1D extends KernelComponent {
 		private final List<Memory<DFEVector<T>>> m_rams;
 
 		public Buffer1D(KernelType<T> itemType) {
-			super(BoxBuffer.this);
+			super(BoxBuffer.this.getOwner());
 			DFEVectorType<T> tileType = new DFEVectorType<T>(itemType, m_1dParams.tileItems);
 			m_rams = new ArrayList<Memory<DFEVector<T>>>(m_1dParams.numTiles);
 			for (int i = 0; i < m_1dParams.numTiles; i++) {
@@ -625,7 +626,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 			int bestWidth = -1;
 			int bestScore= Integer.MAX_VALUE;
 
-			boolean isAltera = BoxBuffer.this.getManager().getManagerConfiguration().getBoardModel().isAltera();
+			boolean isAltera = BoxBuffer.this.getOwner().getManager().getManagerConfiguration().getBoardModel().isAltera();
 			int bramWidth = isAltera ? 40 : 72;
 
 			int biggestTile = MathUtils.leastCommonMultiple(bramWidth, itemWidthBits);
@@ -675,7 +676,7 @@ public class BoxBuffer<T extends KernelObjectVectorizable<T, ?>> extends KernelL
 		}
 
 		private int getLutsForRotate(int size, int bitWidth) {
-			boolean isAltera = BoxBuffer.this.getManager().getManagerConfiguration().getBoardModel().isAltera();
+			boolean isAltera = BoxBuffer.this.getOwner().getManager().getManagerConfiguration().getBoardModel().isAltera();
 			int luts;
 			if (isAltera) {
 				luts = Math.min(log(size, 4) * 2, log(size, 3));

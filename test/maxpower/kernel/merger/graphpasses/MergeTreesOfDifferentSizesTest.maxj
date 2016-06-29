@@ -1,0 +1,110 @@
+package maxpower.kernel.merger.graphpasses;
+
+import static org.junit.Assert.assertArrayEquals;
+import junit.framework.Assert;
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.KMKernel;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.TestHelper;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeFloatingPointMultiAdder;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class MergeTreesOfDifferentSizesTest {
+	private class KMTestKernel1 extends KMKernel {
+		public KMTestKernel1(KernelLib owner) {
+			KMVar kmA = io.input("a");
+			KMVar kmB = io.input("b");
+
+			io.output("result", kmA + kmB);
+		}
+	}
+
+	private class KMTestKernel2 extends KMKernel {
+		public KMTestKernel2(KernelLib owner) {
+			KMVar kmC = io.input("c");
+			KMVar kmD = io.input("d");
+			KMVar kmE = io.input("e");
+
+			io.output("result", kmC + kmD + kmE);
+		}
+	}
+
+	private class MergerTestKernel extends Kernel {
+		private final KMGraph m_graph;
+
+		@SuppressWarnings("unchecked")
+		public MergerTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+
+			merger.dumpInputGraph("/tmp/");
+			merger.dumpResultGraph("/tmp/");
+
+			merger.disableMergingOfNodesSharingOneInput();
+			merger.disableMergingOfRemainingNodes();
+
+			merger.addInput("a", io.input("a", dfeFloat(8, 24)));
+			merger.addInput("b", io.input("b", dfeFloat(8, 24)));
+			merger.addInput("c", io.input("c", dfeFloat(8, 24)));
+			merger.addInput("d", io.input("d", dfeFloat(8, 24)));
+			merger.addInput("e", io.input("e", dfeFloat(8, 24)));
+			merger.setKernel(io.input("KernelSelect", dfeUInt(32)));
+
+			merger.addKernel(new KMTestKernel1(this));
+			merger.addKernel(new KMTestKernel2(this));
+
+			merger.build();
+			m_graph = TestHelper.getKMGraphOfMerger(merger);
+
+			io.output("result", merger.getOutput("result").getType()) <== merger.getOutput("result");
+		}
+	}
+
+	@Test
+	public void testSimpleKernelMerger() {
+		SimulationManager manager = new SimulationManager("KernelMergerTest");
+		MergerTestKernel kernel = new MergerTestKernel(manager.makeKernelParameters());
+		manager.setKernel(kernel);
+		manager.build();
+
+		double[] a = {1, 2};
+		double[] b = {3, 4};
+		double[] c = {5, 6};
+		double[] d = {7, 8};
+		double[] e = {9, 10};
+		double[] kernelSelect = {0, 1};
+
+		manager.setInputData("a", a);
+		manager.setInputData("b", b);
+		manager.setInputData("c", c);
+		manager.setInputData("d", d);
+		manager.setInputData("e", e);
+		manager.setInputData("KernelSelect", kernelSelect);
+		manager.setKernelCycles(2);
+		manager.run();
+
+		double[] result = manager.getOutputDataArray("result");
+		double[] expected = {4, 24};
+
+		assertArrayEquals(expected, result, 0);
+
+		KMGraph graph = kernel.m_graph;
+		int countFPMA = 0;
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeFloatingPointMultiAdder) {
+				countFPMA++;
+			}
+		}
+
+		Assert.assertEquals(1, countFPMA);
+	}
+}

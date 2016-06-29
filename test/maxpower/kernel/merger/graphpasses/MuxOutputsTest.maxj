@@ -1,0 +1,122 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.HashSet;
+import java.util.Set;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.KMKernel;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.TestHelper;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeInput;
+import maxpower.kernel.merger.nodes.KMNodeMux;
+import maxpower.kernel.merger.nodes.KMNodeOutput;
+
+import org.junit.Assert;
+import org.junit.Test;
+
+public class MuxOutputsTest {
+
+	@Test
+	public void simpleTest() {
+		/* We create a simple graph in order to test the functionality.
+		 * We should probably add more tests later (especially after we encountered some problems)
+		 *
+		 *  In1 In2       In1 In2   KernelSelect
+		 *   |   |    ->   |   |        |
+		 *  Out Out         Mux <--------
+		 *                   |
+		 *                  Out
+		 */
+
+		KMGraph graph = createSimpleGraphInput();
+
+		KMNodeInput kernelSelectNode = new KMNodeInput(new KMKernel() {}, "__KernelMuxSelect");
+		Set<Integer> usedInKernel = new HashSet<Integer>();
+		usedInKernel.add(0);
+		usedInKernel.add(1);
+		kernelSelectNode.addUsedInKernels(usedInKernel);
+		graph.addNode(kernelSelectNode);
+
+		MuxOutputsGraphPass.run(graph, kernelSelectNode);
+
+		boolean result = checkSimpleTest(graph);
+
+		Assert.assertTrue(result);
+	}
+
+	private static KMGraph createSimpleGraphInput() {
+		KMGraph graph = new KMGraph();
+
+		KMKernel kernel1 = new KMKernel() {};
+		KMKernel kernel2 = new KMKernel() {};
+
+		KMNodeInput in1 = new KMNodeInput(kernel1, "in1");
+		TestHelper.addNodeToKernelGraph(kernel1, in1);
+		KMNodeInput in2 = new KMNodeInput(kernel2, "in2");
+		TestHelper.addNodeToKernelGraph(kernel2, in2);
+
+		KMVar inVar1 = TestHelper.createNewKMVar(kernel1);
+		TestHelper.setSource(inVar1, in1);
+		KMVar inVar2 = TestHelper.createNewKMVar(kernel2);
+		TestHelper.setSource(inVar2, in2);
+
+		KMNodeOutput out1 = new KMNodeOutput(kernel1, "out", inVar1);
+		TestHelper.addNodeToKernelGraph(kernel1, out1);
+		KMNodeOutput out2 = new KMNodeOutput(kernel2, "out", inVar2);
+		TestHelper.addNodeToKernelGraph(kernel2, out2);
+
+		in1.addOutput(out1);
+		in2.addOutput(out2);
+
+		TestHelper.addKernelGraph(graph, TestHelper.getGraph(kernel1), 0);
+		TestHelper.addKernelGraph(graph, TestHelper.getGraph(kernel2), 1);
+
+		return graph;
+	}
+
+	private static boolean checkSimpleTest(KMGraph graph) {
+		boolean result = true;
+		int inputCount = 0;
+		int muxCount = 0;
+		int outputCount = 0;
+
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeInput) {
+				inputCount++;
+				KMNodeInput nodeIn = (KMNodeInput) node;
+				if (nodeIn.getName().equals("__KernelMuxSelect")) {
+					result &= node.getUsedInKernels().size() == 2;
+				} else {
+					result &= nodeIn.getName().equals("in1") || nodeIn.getName().equals("in2");
+					result &= nodeIn.getUsedInKernels().size() == 1;
+				}
+				result &= nodeIn.getOutputs().size() == 1;
+				if (result) {
+					result &= nodeIn.getOutputs()[0] instanceof KMNodeMux;
+				}
+			} else if (node instanceof KMNodeOutput) {
+				outputCount++;
+				KMNodeOutput nodeOut = (KMNodeOutput) node;
+				result &= nodeOut.getName().equals("out");
+				result &= nodeOut.getInputs().size() == 1;
+				result &= nodeOut.getUsedInKernels().size() == 2;
+				if (result) {
+					result &= nodeOut.getInputs()[0] instanceof KMNodeMux;
+				}
+			} else if (node instanceof KMNodeMux) {
+				muxCount++;
+				result &= node.getInputs().size() == 3;
+				result &= node.getOutputs().size() == 1;
+				result &= node.getUsedInKernels().size() == 2;
+			} else {
+				result = false;
+			}
+		}
+
+		result &= inputCount == 3 && muxCount == 1 && outputCount == 1;
+
+		return result;
+	}
+
+}

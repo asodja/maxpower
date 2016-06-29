@@ -1,0 +1,147 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeConstant;
+import maxpower.kernel.merger.nodes.KMNodeInput;
+import maxpower.kernel.merger.nodes.KMNodeMux;
+import maxpower.kernel.merger.nodes.KMNodeOutput;
+
+/**
+ * This graph pass tries to merge any node in the graph based on how expensiv it is.
+ * Average Complexity: O(n^3)
+ * @author nvoss
+ *
+ */
+public class MergeMostExpensiveNodeGraphPass {
+
+	public static boolean run(final KMGraph graph, final Merger merger, double lutWeight,
+			double FFWeight, double BRAMWeight, double DSPWeight, double minCosts) {
+
+		return GraphPass.runSortedByCost(graph, merger, lutWeight, FFWeight, BRAMWeight, DSPWeight, minCosts,
+				new GraphPass.NodewiseProcessor() {
+
+			@Override
+			public boolean processNode(KMNode node) {
+				List<KMNode> possibleMatches = getPossibleMatches(graph, node);
+				if (!possibleMatches.isEmpty()) {
+					/*
+					 * In order to determine which node is used for merging we use a heuristic.
+					 * We measure the maximal distance (in terms of latency) from the inputs to the node.
+					 * Since we do not allow loops this should be a rather good assumption in order to determine the point
+					 * in time when the node is going to be scheduled.
+					 *
+					 * We use so that we can try to merge nodes which are roughly at "the same height" in the graph.
+					 * This minimises scheduling resources and enables more nodes to be merged since we introduce less new
+					 * dependencies between nodes.
+					 */
+					int minDifference = Integer.MAX_VALUE;
+					KMNode bestMatch = null;
+					for (KMNode possibleMatch : possibleMatches) {
+						int diff = Math.abs(possibleMatch.getMaxDistanceFromInputs(merger) -
+								node.getMaxDistanceFromInputs(merger));
+						if (diff < minDifference) {
+							minDifference = diff;
+							bestMatch = possibleMatch;
+						}
+					}
+
+					// MergeNode
+					List<KMNode> nodesToAdd = mergeNodes(graph, merger, node, bestMatch);
+					graph.addNodes(nodesToAdd);
+					graph.removeNode(bestMatch);
+					return true;
+				}
+				return false;
+			}
+		});
+	}
+
+	public static double estimateImprovement(final KMGraph graph, final Merger merger, double lutWeight,
+			double FFWeight, double BRAMWeight, double DSPWeight, double minCosts) {
+
+		return GraphPass.getImprovementByRunGraphPass(graph, merger, lutWeight, FFWeight, BRAMWeight, DSPWeight,
+				minCosts, new GraphPass.NodewiseEstimator() {
+
+			@Override
+			public double processNode(KMNode node) {
+				List<KMNode> possibleMatches = getPossibleMatches(graph, node);
+				if (!possibleMatches.isEmpty()) {
+					return node.getCosts();
+				}
+				return 0;
+			}
+		});
+	}
+
+	private static List<KMNode> getPossibleMatches(KMGraph graph, KMNode node) {
+		List<KMNode> possibleMatches = new ArrayList<KMNode>();
+
+		for (KMNode possibleMatch : graph.getNodes()) {
+			if (node.getClass().equals(possibleMatch.getClass()) && node != possibleMatch &&
+					!(node instanceof KMNodeMux || node instanceof KMNodeInput || node instanceof KMNodeOutput ||
+					node instanceof KMNodeConstant) && node.getInputs().size() == possibleMatch.getInputs().size() &&
+					node.getResultType().equals(possibleMatch.getResultType())) {
+				Set<Integer> intersection = new HashSet<Integer>();
+				intersection.addAll(node.getUsedInKernels());
+				intersection.retainAll(possibleMatch.getUsedInKernels());
+				if (intersection.isEmpty()) {
+					if (!(node.isInput(possibleMatch) || possibleMatch.isInput(node))) {
+						possibleMatches.add(possibleMatch);
+					}
+				}
+			}
+		}
+
+		return possibleMatches;
+	}
+
+	public static List<KMNode> mergeNodes(KMGraph graph, Merger merger, KMNode node, KMNode match) {
+		List<KMNode> nodesToAdd = new ArrayList<KMNode>();
+		node.addOutputs(match.getOutputs());
+		for (KMNode output : match.getOutputs()) {
+			output.replaceInputs(match, node);
+		}
+
+		for (int i = 0; i < node.getInputs().size(); i++) {
+			nodesToAdd.add(createMux(graph, merger, node, match, i));
+		}
+		node.addUsedInKernels(match.getUsedInKernels());
+
+		return nodesToAdd;
+	}
+
+	private static KMNode createMux(KMGraph graph, Merger merger, KMNode node, KMNode match, int position) {
+		List<KMNode> nodeInputs = new ArrayList<KMNode>();
+
+		for (int i = 0; i < graph.getKernelCount(); i++) {
+			if (node.getUsedInKernels().contains(i)) {
+				nodeInputs.add(node.getInputs()[position]);
+			} else if (match.getUsedInKernels().contains(i)) {
+				nodeInputs.add(match.getInputs()[position]);
+			} else {
+				nodeInputs.add(null);
+			}
+		}
+
+		KMNode mux = new KMNodeMux(merger.getKernelSelectNode(), nodeInputs);
+		mux.addUsedInKernels(node.getUsedInKernels());
+		mux.addUsedInKernels(match.getUsedInKernels());
+		mux.addOutput(node);
+		merger.getKernelSelectNode().addOutput(mux);
+
+		node.getInputs()[position].replaceOneOutput(node, mux);
+		match.getInputs()[position].replaceOneOutput(match, mux);
+
+		node.getInputs().set(position, mux);
+
+		return mux;
+	}
+
+}

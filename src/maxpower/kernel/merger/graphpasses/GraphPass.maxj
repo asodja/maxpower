@@ -1,0 +1,91 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.nodes.KMNode;
+
+/**
+ * Abstract class providing some interfaces and standard functions that can be used by
+ * the graph passes
+ * @author nvoss
+ *
+ */
+public abstract class GraphPass {
+
+	public interface NodewiseProcessor {
+		boolean processNode(KMNode node);
+	}
+
+	public interface NodewiseEstimator {
+		double processNode(KMNode node);
+	}
+
+	public static boolean runUntilNoChange(KMGraph graph, NodewiseProcessor processor) {
+		boolean changed;
+		boolean changedAtAll = false;
+		do {
+			changed = false;
+			for (int i = 0; i < graph.getNodes().size(); i++) {
+				KMNode node = graph.getNodes()[i];
+				changed |= processor.processNode(node);
+			}
+			changedAtAll |= changed;
+		} while (changed);
+		return changedAtAll;
+	}
+
+	public static boolean runSortedByCost(KMGraph graph, Merger merger, double lutWeight, double FFWeight,
+			double BRAMWeight, double DSPWeight, double minCosts , NodewiseProcessor processor) {
+		boolean changed = false;
+		List<KMNode> nodes = nodesSortedByCost(graph, merger, lutWeight, FFWeight, BRAMWeight, DSPWeight);
+		for (KMNode node : nodes) {
+			if (node.getCosts() < minCosts) {
+				break;
+			}
+			changed = processor.processNode(node);
+			if (changed) {
+				break;
+			}
+		}
+		return changed;
+	}
+
+	public static double getImprovementByRunGraphPass(KMGraph graph, Merger merger, double lutWeight, double FFWeight,
+			double BRAMWeight, double DSPWeight, double minCosts , NodewiseEstimator estimator) {
+		double improvement = 0;
+		List<KMNode> nodes = nodesSortedByCost(graph, merger, lutWeight, FFWeight, BRAMWeight, DSPWeight);
+		for (KMNode node : nodes) {
+			if (node.getCosts() < minCosts) {
+				break;
+			}
+			improvement = estimator.processNode(node);
+			if (improvement != 0) {
+				break;
+			}
+		}
+		return improvement;
+	}
+
+	private static List<KMNode> nodesSortedByCost(KMGraph graph, Merger merger, double lutWeight,
+		                                          double FFWeight, double BRAMWeight, double DSPWeight) {
+		List<KMNode> result = new ArrayList<KMNode>();
+		result.addAll(graph.getNodes());
+
+		for (KMNode node : result) {
+			node.calculateCosts(merger, lutWeight, FFWeight, BRAMWeight, DSPWeight);
+		}
+
+		Collections.sort(result, new Comparator<KMNode>() {
+			@Override
+			public int compare(KMNode node1, KMNode node2) {
+				return -Double.compare(node1.getCosts(), node2.getCosts());
+			}
+		});
+		return result;
+	}
+}

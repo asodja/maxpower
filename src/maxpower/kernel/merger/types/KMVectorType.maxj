@@ -1,0 +1,34 @@
+package maxpower.kernel.merger.types;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+
+public class KMVectorType extends KMType {
+	private final DFEVectorType<?> m_type;
+
+	KMVectorType(DFEVectorType<?> type) {
+		m_type = type;
+	}
+
+	@Override
+	public DFEType getPrimitiveType() {
+		return KMType.getTypeForKernelType(m_type.getContainedType()).getPrimitiveType();
+	}
+
+	@Override
+	public int getPrimitiveCount() {
+		return m_type.getTotalPrimitives();
+	}
+
+	@Override
+	public String toString() {
+		return m_type.toString();
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) return true;
+		if (!(obj instanceof KMVectorType)) return false;
+		return m_type.equals(((KMVectorType) obj).m_type);
+	}
+}

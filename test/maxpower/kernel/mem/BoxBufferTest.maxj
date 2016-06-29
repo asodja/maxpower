@@ -67,7 +67,6 @@ public class BoxBufferTest {
 	private class TestKernel extends Kernel {
 		TestKernel(KernelParameters p, int numDimensions, int[] maxItems, int numInputItems, int[] numOutputItems) {
 			super(p);
-			stream.suppressOffsetVectorWarnings();
 			int numCycles = product(maxItems);
 			DFEVectorType<DFEVar> inType  = new DFEVectorType<DFEVar>(dfeUInt(m_itemBitWidth), numInputItems);
 			DFEVectorType<DFEVar> outType = new DFEVectorType<DFEVar>(dfeUInt(m_itemBitWidth), product(numOutputItems));

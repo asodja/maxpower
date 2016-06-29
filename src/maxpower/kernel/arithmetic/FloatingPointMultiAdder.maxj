@@ -17,19 +17,26 @@ import maxpower.ops.AssociativeOp;
 import maxpower.utils.TreeReduce;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
 import com.maxeler.maxcompiler.v2.kernelcompiler.SMIO;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.FloatingPoint;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmInput;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmOutput;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmStateValue;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmValue;
 import com.maxeler.maxcompiler.v2.statemachine.kernel.KernelStateMachine;
 import com.maxeler.maxcompiler.v2.statemachine.types.DFEsmValueType;
@@ -48,14 +55,14 @@ public class FloatingPointMultiAdder {
 	/**
 	 * Sum values using the default number of guard bits.
 	 */
-	public static DFEVar add(DFEVar... summands) {
+	public static <T extends KernelObjectVectorizable<T, ?>> T add(T... summands) {
 		return add(Arrays.asList(summands));
 	}
 
 	/**
 	 * Sum values using the default number of guard bits.
 	 */
-	public static DFEVar add(List<DFEVar> summands) {
+	public static <T extends KernelObjectVectorizable<T, ?>> T add(List<T> summands) {
 		return add(DEFAULT_NUM_GUARD_BITS, summands);
 	}
 
@@ -68,7 +75,7 @@ public class FloatingPointMultiAdder {
 	 * @param numGuardBits  Number of extra bits used during summation to improve precision.
 	 * @param summands      Values to sum.
 	 */
-	public static DFEVar add(int numGuardBits, DFEVar... summands) {
+	public static <T extends KernelObjectVectorizable<T, ?>> T add(int numGuardBits, T... summands) {
 		return add(numGuardBits, Arrays.asList(summands));
 	}
 
@@ -84,7 +91,23 @@ public class FloatingPointMultiAdder {
 	 * @param numGuardBits  Number of extra bits used during summation to improve precision.
 	 * @param summands      Values to sum.
 	 */
-	public static DFEVar add(int numGuardBits, List<DFEVar> summands) {
+	public static <T extends KernelObjectVectorizable<T, ?>> T add(int numGuardBits, List<T> summands) {
+		if (summands[0] instanceof DFEVar) {
+			List<DFEVar> summandsVar = uncheckedCast(summands);
+			return uncheckedCast(addVars(numGuardBits, summandsVar));
+		} else if (summands[0] instanceof DFEComplex) {
+			List<DFEComplex> summandsCplx = uncheckedCast(summands);
+			return uncheckedCast(addCplx(numGuardBits, summandsCplx));
+		} else if (summands[0] instanceof DFEVector) {
+			@SuppressWarnings("rawtypes")
+			List<DFEVector> summandsVec = uncheckedCast(summands);
+			return uncheckedCast(addVecs(numGuardBits, summandsVec));
+		} else {
+			throw new MaxCompilerAPIError("Type not supported by floating point multi-adder");
+		}
+	}
+
+	private static DFEVar addVars(int numGuardBits, List<DFEVar> summands) {
 		switch (summands.size()) {
 		case 0: throw new MaxCompilerAPIError("Must have at least one float.");
 		case 1: return summands[0];
@@ -97,8 +120,8 @@ public class FloatingPointMultiAdder {
 
 		checkTypesIdentical(summands);
 
-		KernelLib owner = summands[0].getKernel();
-		DFEFloat  type  = (DFEFloat) summands[0].getType();
+		KernelBase<?> owner = summands[0].getOwner();
+		DFEFloat      type  = (DFEFloat) summands[0].getType();
 
 		FanoutLimiter<DFEVar> maxExponent = getMaxExponent(summands);
 
@@ -110,18 +133,18 @@ public class FloatingPointMultiAdder {
 
 		DFEVar sumFlt = sumVal.cast(type);
 		// fix sign
-		owner.optimization.pushPipeliningFactor(0);
+		owner.optimization.pushNoPipelining();
 		sumFlt = ((FloatingPoint.getSignBit(sumFlt) ^ sumNeg)
 		         # FloatingPoint.getExponentBits(sumFlt)
 		         # FloatingPoint.getMantissaBits(sumFlt)).cast(type);
-		owner.optimization.popPipeliningFactor();
+		owner.optimization.popNoPipelining();
 		// fix exponent and we're done
 		DFEVar scale = asSigned(maxExponent.get()) - type.getExponentBias();
 		return KernelMath.scalb(sumFlt, scale);
 	}
 
 	private static FanoutLimiter<DFEVar> getMaxExponent(List<DFEVar> summands) {
-		KernelLib owner = summands[0].getKernel();
+		KernelBase<?> owner = summands[0].getOwner();
 
 		List<DFEVar> exponents = new ArrayList<DFEVar>();
 		for (DFEVar summand : summands) {
@@ -129,7 +152,7 @@ public class FloatingPointMultiAdder {
 		}
 
 		// TODO Is this too conservative?
-		int fanoutLimit = 8 + (int)((1 - owner.optimization.getPipeliningFactor()) * 8);
+		int fanoutLimit = 8 + (int)((1 - owner.optimization.peekPipeliningFactor(PipelinedOps.FLOAT_ADDSUB)) * 8);
 		return new FanoutLimiter<DFEVar>(TreeReduce.reduce(new Max(), exponents), fanoutLimit);
 	}
 
@@ -144,7 +167,7 @@ public class FloatingPointMultiAdder {
 
 	// get mantissas with implicit leading 1 and guard bits appended
 	private static DFEVar getMantissa(int numGuardBits, DFEVar val) {
-		KernelLib owner = val.getKernel();
+		KernelBase<?> owner = val.getOwner();
 		DFEVar implicit1 = (getExponent(val) !== 0);
 		DFEVar mantissa  = implicit1 # FloatingPoint.getMantissaBits(val);
 
@@ -156,12 +179,12 @@ public class FloatingPointMultiAdder {
 
 	private static DFEVar getShift(DFEVar maxExponent, DFEVar summand, int maxShiftBits) {
 		DFEVar expDelta = maxExponent - getExponent(summand);
-		DFEVar maxShift = summand.getKernel().constant.var(expDelta.getType(), (1 << maxShiftBits) - 1);
+		DFEVar maxShift = summand.getOwner().constant.var(expDelta.getType(), (1 << maxShiftBits) - 1);
 		return KernelMath.min(maxShift, expDelta).cast(dfeUInt(maxShiftBits));
 	}
 
 	private static List<DFEStruct> getReductionInputs(int numGuardBits, List<DFEVar> summands, FanoutLimiter<DFEVar> maxExponent) {
-		KernelLib owner = summands[0].getKernel();
+		KernelBase<?> owner = summands[0].getOwner();
 
 		List<DFEStruct> redVals = new ArrayList<DFEStruct>();
 		for (DFEVar summand : summands) {
@@ -207,23 +230,17 @@ public class FloatingPointMultiAdder {
 	private static class CondAddSubWithBitGrowth implements AssociativeOp<DFEStruct> {
 		// Implement using state machine so we're not unnecessarily creating extra nodes in graph.
 		private static class SM extends KernelStateMachine {
-			private final DFEsmInput a, b, aNeg, bNeg;
-			private final DFEsmOutput r;
-
-			protected SM(KernelLib owner, int bits) {
+			SM(KernelBase<?> owner, int bits) {
 				super(owner);
 
-				a    = io.input("a",    dfeInt(bits));
-				b    = io.input("b",    dfeInt(bits));
-				aNeg = io.input("aNeg", dfeBool());
-				bNeg = io.input("bNeg", dfeBool());
-				r    = io.output("r",   dfeInt(bits));
-			}
+				DFEsmInput  a    = io.input("a", dfeInt(bits));
+				DFEsmInput  b    = io.input("b", dfeInt(bits));
+				DFEsmInput  aNeg = io.input("aNeg", dfeBool());
+				DFEsmInput  bNeg = io.input("bNeg", dfeBool());
+				DFEsmOutput r    = io.output("r", dfeInt(bits), 1);
 
-			@Override
-			protected void outputFunction() {
 				DFEsmValue c = aNeg ^ bNeg;
-				r <== a + (b ^ mask(c, r.getType())) + c.cast(r.getType());
+				r <== reg(a + (b ^ mask(c, r.getType())) + c.cast(r.getType()));
 			}
 
 			private DFEsmValue mask(DFEsmValue c, DFEsmValueType type) {
@@ -234,7 +251,11 @@ public class FloatingPointMultiAdder {
 				return mask.cast(type);
 			}
 
-			@Override protected void nextState() {} // there is no state!!
+			private DFEsmValue reg(DFEsmValue val) {
+				DFEsmStateValue r = state.value(val.getType());
+				r.next <== val;
+				return r;
+			}
 		}
 
 		private static int i = 0;
@@ -245,7 +266,7 @@ public class FloatingPointMultiAdder {
 			DFEVar aVal = a["val"];
 			DFEVar bVal = b["val"];
 
-			KernelLib owner = a.getKernel();
+			KernelBase<?> owner = a.getOwner();
 
 			owner.optimization.pushEnableBitGrowth(true);
 			DFEVar unusedSum = aVal + bVal;
@@ -264,8 +285,59 @@ public class FloatingPointMultiAdder {
 
 			DFEStruct result = getReductionType(rValType).newInstance(a.getKernel());
 			result["neg"] <== aNeg;
-			result["val"] <== owner.optimization.pipeline(reinterpretCast(sm.getOutput("r"), rValType));
+			result["val"] <== reinterpretCast(sm.getOutput("r"), rValType);
 			return result;
 		}
+	}
+
+	private static DFEComplex addCplx(int numGuardBits, List<DFEComplex> summands) {
+		List<DFEVar> reals = new ArrayList<DFEVar>();
+		List<DFEVar> imags = new ArrayList<DFEVar>();
+		for (DFEComplex z : summands) {
+			reals.add(z.getReal());
+			imags.add(z.getImaginary());
+		}
+		return DFEComplexType.newInstance(summands[0].getKernel(), add(numGuardBits, reals), add(numGuardBits, imags));
+	}
+
+	@SuppressWarnings("rawtypes")
+	private static DFEVector addVecs(int numGuardBits, List<DFEVector> summands) {
+		// I <3 Java generics
+		if (summands[0][0] instanceof DFEVar) {
+			return addVecTs(numGuardBits, FloatingPointMultiAdder.<DFEVar>vecListCast(summands));
+		} else if (summands[0][0] instanceof DFEComplex) {
+			return addVecTs(numGuardBits, FloatingPointMultiAdder.<DFEComplex>vecListCast(summands));
+		} else if (summands[0][0] instanceof DFEVector) {
+			return addVecTs(numGuardBits, FloatingPointMultiAdder.<DFEVector<?>>vecListCast(summands));
+		} else {
+			throw new MaxCompilerAPIError("Type not supported by floating point multi-adder");
+		}
+	}
+
+	@SuppressWarnings("rawtypes")
+	private static <T extends KernelObjectVectorizable<T, ?>> List<DFEVector<T>> vecListCast(List<DFEVector> vecs) {
+		return uncheckedCast(vecs);
+	}
+
+	private static <T extends KernelObjectVectorizable<T, ?>> DFEVector<T> addVecTs(int numGuardBits, List<DFEVector<T>> summands) {
+		for (int i = 1; i < summands.size(); ++i) {
+			if (summands[i].getSize() != summands[0].getSize())
+				throw new MaxCompilerAPIError("Vector sizes must match");
+		}
+
+		List<T> results = new ArrayList<T>();
+		for (int i = 0; i < summands[0].getSize(); ++i) {
+			List<T> summandsInner = new ArrayList<T>();
+			for (int j = 0; j < summands.size(); ++j) {
+				summandsInner.add(summands[j][i]);
+			}
+			results.add(add(numGuardBits, summandsInner));
+		}
+		return DFEVectorType.newInstance(results);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static <T, U> U uncheckedCast(T v) {
+		return (U) v;
 	}
 }

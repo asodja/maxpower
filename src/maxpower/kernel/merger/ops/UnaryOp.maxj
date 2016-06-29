@@ -1,0 +1,15 @@
+package maxpower.kernel.merger.ops;
+
+/**
+ * Unary operation.
+ *
+ * @author nvoss
+ */
+public interface UnaryOp {
+	/**
+	 * Evaluates the operation on a constant.
+	 * @param val Input value.
+	 * @return Result value.
+	 */
+	public double evaluate(double val);
+}

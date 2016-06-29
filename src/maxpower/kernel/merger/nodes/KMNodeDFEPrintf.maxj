@@ -1,0 +1,77 @@
+package maxpower.kernel.merger.nodes;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.utils.ResourceUsage;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+
+public class KMNodeDFEPrintf extends KMNode implements java.io.Serializable {
+
+	private static final long serialVersionUID = 5524811389420948029L;
+
+	private final String m_formatString;
+	private final boolean m_hasEnable;
+
+	public KMNodeDFEPrintf(String formatString, KMVar... inputs) {
+		super();
+		m_hasEnable = false;
+		for (KMVar input : inputs) {
+			m_inputs.add(input.getSource());
+		}
+		m_formatString = formatString;
+	}
+
+	public KMNodeDFEPrintf(KMVar enable, String formatString, KMVar... inputs) {
+		super();
+		m_hasEnable = true;
+		m_inputs.add(enable.getSource());
+		for (KMVar input : inputs) {
+			m_inputs.add(input.getSource());
+		}
+		m_formatString = formatString;
+	}
+
+	@SuppressWarnings("rawtypes")
+	@Override
+	public void execute(Merger merger) {
+		List<KernelObjectVectorizable> objects = new ArrayList<KernelObjectVectorizable>();
+		for (int i = m_hasEnable ? 1 : 0; i < m_inputs.size(); i++) {
+			objects.add(m_inputs[i].getResult());
+		}
+		DFEVar enable;
+		if (merger.getKernelSelectNode() != null) {
+			enable = merger.getOwner().constant.var(false);
+			for (Integer kernel : getUsedInKernels()) {
+				enable |= (DFEVar) merger.getKernelSelectNode().getResult() === kernel;
+			}
+		} else {
+			enable = merger.getOwner().constant.var(true);
+		}
+
+		if (m_hasEnable) {
+			enable &= (DFEVar) m_inputs[0].getResult();
+		}
+
+		merger.getOwner().debug.dfePrintf(enable, m_formatString, objects.toArray());
+	}
+
+	@Override
+	public ResourceUsage getResourceUsageEstimate(Merger merger) {
+		return new ResourceUsage(0, 0, 0, 0);
+	}
+
+	@Override
+	int getLatencyEstimate(Merger merger) {
+		return 0;
+	}
+
+	@Override
+	public String toString() {
+		return "NodeDFEPrintf: " + m_id;
+	}
+}

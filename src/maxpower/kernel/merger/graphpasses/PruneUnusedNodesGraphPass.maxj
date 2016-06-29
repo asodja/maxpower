@@ -1,0 +1,91 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeDFEPrintf;
+import maxpower.kernel.merger.nodes.KMNodeInput;
+import maxpower.kernel.merger.nodes.KMNodeOutput;
+import maxpower.kernel.merger.nodes.KMNodeSimPrintf;
+import maxpower.kernel.merger.nodes.KMNodeSimWatch;
+
+/**
+ * This graphpass removes nodes with unconnected outputs from the graph.
+ * Average Complexity: O(n)
+ * Worst Case Complexity: O(n^2)
+ * @author nvoss
+ *
+ */
+
+public class PruneUnusedNodesGraphPass {
+
+	static boolean wasWritten = false;
+
+	public static boolean run(final KMGraph graph, final Merger merger) {
+
+		String unconnectedFileName = "/tmp/unconnected_elements_" +
+			merger.getOwner().getManager().getEngineParameters().getBuildName() + "_" + merger.getID() + ".txt";
+
+		FileWriter writer = null;
+		try {
+			writer = new FileWriter(unconnectedFileName, false);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		final PrintWriter out;
+		if (writer != null) {
+			out = new PrintWriter(writer);
+		} else {
+			out = null;
+		}
+
+		wasWritten = false;
+
+		boolean result = GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+			@Override
+			public boolean processNode(KMNode node) {
+				if (notForbiddenNode(node) && node.getOutputs().size() == 0) {
+					for (KMNode input : node.getInputs()) {
+						input.removeOutput(node);
+						processNode(input);
+					}
+					node.removeAllInputs();
+					writeWarningToFile(node);
+					graph.removeNode(node);
+					return true;
+				}
+				return false;
+			}
+
+			private boolean notForbiddenNode(KMNode node) {
+				return (!(node instanceof KMNodeOutput || node instanceof KMNodeDFEPrintf ||
+						node instanceof KMNodeSimPrintf || node instanceof KMNodeSimWatch ||
+						(node instanceof KMNodeInput &&
+								((KMNodeInput)node).getName().equals(Merger.KERNEL_MUX_SELECT_NAME))));
+			}
+
+			private void writeWarningToFile(KMNode node) {
+				if (node.getReportOnUnused()) {
+					if (out != null) {
+						wasWritten = true;
+						out.println(node);
+						out.println(node.getOriginStackTrace());
+						out.println();
+					}
+				}
+			}
+		});
+
+		if (wasWritten) {
+			System.err.println("Unconnected elements in design!");
+			System.err.println("Details in: " + unconnectedFileName);
+		}
+
+		return result;
+	}
+
+}

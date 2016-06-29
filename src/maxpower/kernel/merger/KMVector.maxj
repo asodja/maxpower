@@ -1,0 +1,442 @@
+package maxpower.kernel.merger;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+import maxpower.ops.BinaryOp;
+import maxpower.ops.UnaryOp;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+
+/**
+ * A KMVector is a datatype which consists of multiple {@link KMVar}s.
+ *
+ * It provides a similar functionality to normal Java arrays or lists but additionally provides operator overloading.
+ *
+ * @author nvoss
+ */
+public class KMVector {
+	private final List<KMVar> m_elements;
+
+	/**
+	 * Creates a {@link KMVector} of the given size, with elements initialized to null.
+	 * @param numElements the size of the {@link KMVector}
+	 */
+	public KMVector(int numElements) {
+		m_elements = new ArrayList<KMVar>(Collections.nCopies(numElements, (KMVar) null));
+	}
+
+	/**
+	 * Creates a {@link KMVector} from a list of {@link KMVar}s.
+	 * @param elements the contents of the vector
+	 */
+	public KMVector(List<KMVar> elements) {
+		m_elements = new ArrayList<KMVar>(elements);
+	}
+
+	/**
+	 * Creates a {@link KMVector} from an array of {@link KMVar}s.
+	 * @param elements the contents of the vector
+	 */
+	public KMVector(KMVar... elements) {
+		this(Arrays.asList(elements));
+	}
+
+	/**
+	 * Replaces the contents of the {@link KMVector} at the specified position.
+	 *
+	 * @param i the index to replace
+	 * @param element the new content
+	 */
+	public void set(int i, KMVar element) {
+		m_elements.set(i, element);
+	}
+
+	/**
+	 * Returns the element at the specified position.
+	 * <p>
+	 * Also available as []-operator overloaded function.
+	 */
+	public KMVar get(int i) {
+		try {
+			return m_elements.get(i);
+		} catch (IndexOutOfBoundsException e) {
+			throw new MaxCompilerAPIError("Index " + i + " is out of bounds for KMVector of size " +
+					m_elements.size() + ".");
+		}
+	}
+
+	/**
+	 * Returns the number of elements.
+	 */
+	public int getSize() {
+		return m_elements.size();
+	}
+
+	/**
+	 * Returns the {@link KMKernel} which owns this {@link KMVector}.
+	 */
+	public KMKernel getOwner() {
+		if (getSize() < 1) {
+			throw new MaxCompilerAPIError("Vector has to have atleast one element in order to determine the owner.");
+		}
+		return m_elements[0].getOwner();
+	}
+
+	/**
+	 * Returns all elements ({@link KMVar}s) this {@link KMVector} contains.
+	 *
+	 * @return Unmodifiable list containing all elements of the {@link KMVector}.
+	 */
+	public List<KMVar> getElementsAsList() {
+		return Collections.unmodifiableList(m_elements);
+	}
+
+	/**
+	 * Disables the warning if the result of the last calculation performed on this {@link KMVector} is not used.
+	 */
+	public void disableReportOnUnused() {
+		for (KMVar var : m_elements) {
+			var.disableReportOnUnused();
+		}
+	}
+
+	public KMVector add(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a + b; }
+		});
+	}
+
+	public KMVector add(KMVar rhs) {
+		return add(asVector(rhs));
+	}
+
+	public KMVector add(double rhs) {
+		return add(asVector(rhs));
+	}
+
+	public KMVector addAsRHS(KMVar lhs) {
+		return asVector(lhs) + this;
+	}
+
+	public KMVector addAsRHS(double lhs) {
+		return addAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector sub(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a - b; }
+		});
+	}
+
+	public KMVector sub(KMVar rhs) {
+		return sub(asVector(rhs));
+	}
+
+	public KMVector sub(double rhs) {
+		return sub(asVector(rhs));
+	}
+
+	public KMVector subAsRHS(KMVar lhs) {
+		return asVector(lhs) - this;
+	}
+
+	public KMVector subAsRHS(double lhs) {
+		return subAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector mul(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a * b; }
+		});
+	}
+
+	public KMVector mul(KMVar rhs) {
+		return mul(asVector(rhs));
+	}
+
+	public KMVector mul(double rhs) {
+		return mul(asVector(rhs));
+	}
+
+	public KMVector mulAsRHS(KMVar lhs) {
+		return asVector(lhs) * this;
+	}
+
+	public KMVector mulAsRHS(double lhs) {
+		return mulAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector div(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a / b; }
+		});
+	}
+
+	public KMVector div(KMVar rhs) {
+		return div(asVector(rhs));
+	}
+
+	public KMVector div(double rhs) {
+		return div(asVector(rhs));
+	}
+
+	public KMVector divAsRHS(KMVar lhs) {
+		return asVector(lhs) / this;
+	}
+
+	public KMVector divAsRHS(double lhs) {
+		return divAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector and(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a & b; }
+		});
+	}
+
+	public KMVector and(KMVar rhs) {
+		return and(asVector(rhs));
+	}
+
+	public KMVector and(double rhs) {
+		return and(asVector(rhs));
+	}
+
+	public KMVector andAsRHS(KMVar lhs) {
+		return asVector(lhs) & this;
+	}
+
+	public KMVector andAsRHS(double lhs) {
+		return andAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector or(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a | b; }
+		});
+	}
+
+	public KMVector or(KMVar rhs) {
+		return or(asVector(rhs));
+	}
+
+	public KMVector or(double rhs) {
+		return or(asVector(rhs));
+	}
+
+	public KMVector orAsRHS(KMVar lhs) {
+		return asVector(lhs) | this;
+	}
+
+	public KMVector orAsRHS(double lhs) {
+		return orAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector xor(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a ^ b; }
+		});
+	}
+
+	public KMVector xor(KMVar rhs) {
+		return xor(asVector(rhs));
+	}
+
+	public KMVector xor(double rhs) {
+		return xor(asVector(rhs));
+	}
+
+	public KMVector xorAsRHS(KMVar lhs) {
+		return asVector(lhs) ^ this;
+	}
+
+	public KMVector xorAsRHS(double lhs) {
+		return xorAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector lt(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a < b; }
+		});
+	}
+
+	public KMVector lt(KMVar rhs) {
+		return lt(asVector(rhs));
+	}
+
+	public KMVector lt(double rhs) {
+		return lt(asVector(rhs));
+	}
+
+	public KMVector ltAsRHS(KMVar lhs) {
+		return asVector(lhs) < this;
+	}
+
+	public KMVector ltAsRHS(double lhs) {
+		return ltAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector lte(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a <= b; }
+		});
+	}
+
+	public KMVector lte(KMVar rhs) {
+		return lte(asVector(rhs));
+	}
+
+	public KMVector lte(double rhs) {
+		return lte(asVector(rhs));
+	}
+
+	public KMVector lteAsRHS(KMVar lhs) {
+		return asVector(lhs) <= this;
+	}
+
+	public KMVector lteAsRHS(double lhs) {
+		return lteAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector gt(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a > b; }
+		});
+	}
+
+	public KMVector gt(KMVar rhs) {
+		return gt(asVector(rhs));
+	}
+
+	public KMVector gt(double rhs) {
+		return gt(asVector(rhs));
+	}
+
+	public KMVector gtAsRHS(KMVar lhs) {
+		return asVector(lhs) > this;
+	}
+
+	public KMVector gtAsRHS(double lhs) {
+		return gtAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector gte(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a >= b; }
+		});
+	}
+
+	public KMVector gte(KMVar rhs) {
+		return gte(asVector(rhs));
+	}
+
+	public KMVector gte(double rhs) {
+		return gte(asVector(rhs));
+	}
+
+	public KMVector gteAsRHS(KMVar lhs) {
+		return asVector(lhs) >= this;
+	}
+
+	public KMVector gteAsRHS(double lhs) {
+		return gteAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector eq(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a === b; }
+		});
+	}
+
+	public KMVector eq(KMVar rhs) {
+		return eq(asVector(rhs));
+	}
+
+	public KMVector eq(double rhs) {
+		return eq(asVector(rhs));
+	}
+
+	public KMVector eqAsRHS(KMVar lhs) {
+		return asVector(lhs) === this;
+	}
+
+	public KMVector eqAsRHS(double lhs) {
+		return eqAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector neq(KMVector rhs) {
+		return map2(this, rhs, new BinaryOp<KMVar, KMVar, KMVar>() {
+			@Override public KMVar op(KMVar a, KMVar b) { return a !== b; }
+		});
+	}
+
+	public KMVector neq(KMVar rhs) {
+		return neq(asVector(rhs));
+	}
+
+	public KMVector neq(double rhs) {
+		return neq(asVector(rhs));
+	}
+
+	public KMVector neqAsRHS(KMVar lhs) {
+		return asVector(lhs) !== this;
+	}
+
+	public KMVector neqAsRHS(double lhs) {
+		return neqAsRHS(new KMVar(m_elements[0].getOwner(), lhs));
+	}
+
+	public KMVector neg() {
+		return map(new UnaryOp<KMVar, KMVar>() { @Override public KMVar op(KMVar a) { return -a; } });
+	}
+
+	public KMVector complement() {
+		return map(new UnaryOp<KMVar, KMVar>() { @Override public KMVar op(KMVar a) { return ~a; } });
+	}
+
+	/**
+	 * Creates a new {@link KMVector} of the same size which only contains copies of the parameter.
+	 */
+	KMVector asVector(KMVar var) {
+		return new KMVector(Collections.nCopies(getSize(), var));
+	}
+
+	/**
+	 * Creates a new {@link KMVector} of the same size which only contains copies of the parameter.
+	 */
+	KMVector asVector(double val) {
+		return asVector(new KMVar(m_elements[0].getOwner(), val));
+	}
+
+	private static void checkVectorSize(KMVector lhs, KMVector rhs) {
+		if (lhs.getSize() != rhs.getSize()) {
+			throw new MaxCompilerAPIError("Both Vectors have to have the same size in order to be operated on.");
+		}
+	}
+
+	/**
+	 * Apply a unary function to each element of the vector and return them as a new vector.
+	 */
+	public KMVector map(UnaryOp<KMVar, KMVar> op) {
+		List<KMVar> result = new ArrayList<KMVar>(getSize());
+		for (KMVar v : getElementsAsList()) {
+			result.add(op.op(v));
+		}
+		return new KMVector(result);
+	}
+
+	/**
+	 * Apply a binary function to each element of two vectors and return them as a new vector.
+	 */
+	public static KMVector map2(KMVector a, KMVector b, BinaryOp<KMVar, KMVar, KMVar> op) {
+		checkVectorSize(a, b);
+		List<KMVar> result = new ArrayList<KMVar>(a.getSize());
+		for (int i = 0; i < a.getSize(); ++i) {
+			result.add(op.op(a[i], b[i]));
+		}
+		return new KMVector(result);
+	}
+}

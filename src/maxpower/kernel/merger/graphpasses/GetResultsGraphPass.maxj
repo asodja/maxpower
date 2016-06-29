@@ -1,0 +1,35 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeOutput;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+
+/**
+ * This graph pass reads the results from the output nodes
+ * so that they are available from outside the merger.
+ * Average Complexity: O(n)
+ * @author nvoss
+ *
+ */
+public class GetResultsGraphPass {
+
+	@SuppressWarnings("rawtypes")
+	public static Map<String, KernelObjectVectorizable> run(KMGraph graph) {
+		Map<String, KernelObjectVectorizable> outputs = new HashMap<String, KernelObjectVectorizable>();
+
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeOutput) {
+				KMNodeOutput nodeOut = (KMNodeOutput) node;
+				outputs.put(nodeOut.getName(), nodeOut.getResult());
+			}
+		}
+
+		return outputs;
+	}
+
+}

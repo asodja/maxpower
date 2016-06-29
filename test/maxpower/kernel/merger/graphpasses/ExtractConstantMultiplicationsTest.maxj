@@ -1,0 +1,114 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.Random;
+
+import junit.framework.Assert;
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.KMKernel;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.TestHelper;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeConstantMul;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class ExtractConstantMultiplicationsTest {
+	private final int RUNS = 1000;
+
+	private class ExtractConstantMultiplicationsTestKernel extends KMKernel {
+		public ExtractConstantMultiplicationsTestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+
+			io.output("result1", a * 2);
+			io.output("result2", b * 3);
+		}
+	}
+
+	// This optimization is only enabled for mutliple kernels
+	private class ExtractConstantMultiplicationsTestKernel2 extends KMKernel {
+		public ExtractConstantMultiplicationsTestKernel2(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+
+			io.output("result1", a * a);
+			io.output("result2", b * b);
+		}
+	}
+
+	private class ExtractConstantMultiplicationsMergerTestKernel extends Kernel {
+		private final KMGraph m_graph;
+
+		@SuppressWarnings("unchecked")
+		public ExtractConstantMultiplicationsMergerTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+			merger.addInput("a", io.input("a", dfeFloat(8, 24)));
+			merger.addInput("b", io.input("b", dfeInt(32)));
+			merger.addKernel(new ExtractConstantMultiplicationsTestKernel(this));
+			merger.addKernel(new ExtractConstantMultiplicationsTestKernel2(this));
+			merger.setKernel(constant.var(0));
+			merger.build();
+			m_graph = TestHelper.getKMGraphOfMerger(merger);
+			io.output("result1", merger.getOutput("result1").getType()) <== merger.getOutput("result1");
+			io.output("result2", merger.getOutput("result2").getType()) <== merger.getOutput("result2");
+		}
+	}
+
+	@Test
+	public void extractConstantMultiplicationsTest() {
+		SimulationManager manager = new SimulationManager("ExtractConstantMultiplicationsTest");
+		ExtractConstantMultiplicationsMergerTestKernel kernel = new ExtractConstantMultiplicationsMergerTestKernel(manager.makeKernelParameters());
+		manager.setKernel(kernel);
+		manager.build();
+
+		final long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		manager.logInfo("Seed: %d", seed);
+
+		double[] a = new double[RUNS];
+		long[] b = new long[RUNS];
+		for (int i = 0; i < RUNS; i++) {
+			a[i] = rng.nextFloat();
+			b[i] = rng.nextInt();
+		}
+
+		manager.setInputData("a", a);
+		manager.setInputDataLong("b", b);
+		manager.setKernelCycles(RUNS);
+		manager.run();
+
+		double[] result1 = manager.getOutputDataArray("result1");
+		long[] result2 = manager.getOutputDataLongArray("result2");
+
+		for (int i = 0; i < RUNS; i++) {
+			float expected1 = (float) (a[i] * 2);
+			int expected2 = ((int) b[i]) * 3;
+			Assert.assertEquals(expected1, result1[i], expected1 * 0.00001);
+			Assert.assertEquals(expected2, result2[i]);
+		}
+
+		KMGraph graph = kernel.m_graph;
+		int countMul = 0;
+		int countConstantMul = 0;
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeMul) {
+				countMul++;
+			}
+			if (node instanceof KMNodeConstantMul) {
+				countConstantMul++;
+			}
+		}
+
+		Assert.assertEquals(2, countMul);
+		Assert.assertEquals(2, countConstantMul);
+	}
+}

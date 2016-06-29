@@ -1,0 +1,52 @@
+package maxpower.hash;
+
+import maxpower.hash.mem.MemBacking.MemType;
+
+import com.maxeler.maxcompiler.v2.build.EngineParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.DebugLevel;
+
+public class MaxHashTest extends CustomManager {
+
+	private class MaxHashTestKernel extends Kernel {
+		protected MaxHashTestKernel(CustomManager manager, KernelParameters parameters) {
+			super(parameters);
+			MaxHashParameters<DFEVar> mhp = new MaxHashParameters<DFEVar>(manager, "maxHashTestTable",
+					dfeUInt(32),
+					dfeUInt(32), // Element type
+					4096, // Number of Elements
+					MemType.LMEM);
+			mhp.setJenkinsChunkWidth(32);
+			mhp.setMaxBucketEntries(1); // Needs to be 1 for MPH
+			mhp.setPerfect(MemType.LMEM);
+			mhp.setValidateResults(false);
+
+			DFEVar key = io.input("keyIn", dfeUInt(32));
+			MaxHash<DFEVar> hash = MaxHashFactory.create(this, mhp, key, constant.var(true));
+
+			DFEVar value = hash.get();
+			//DFEVar contains = hash.containsKey();
+
+			io.output("valueOut", dfeUInt(32)) <== value;
+		}
+	}
+
+	public MaxHashTest(EngineParameters configuration) {
+		super(configuration);
+		debug.setDebugLevel(new DebugLevel().setHasStreamStatus(true));
+		MaxHashTestKernel maxHashTestKernel = new MaxHashTestKernel(this, makeKernelParameters("maxHashTestKernel"));
+		KernelBlock kernel = addKernel(maxHashTestKernel);
+		MaxHash.connectKernelMemoryStreams(this, maxHashTestKernel, kernel);
+		MaxHash.setupHostMemoryStreams(this);
+		kernel.getInput("keyIn") <== addStreamFromCPU("keyFromCPU");
+		addStreamToCPU("valueToCPU") <== kernel.getOutput("valueOut");
+	}
+
+	public static void main(String[] args) {
+		new MaxHashTest(new EngineParameters(args, "target=DFE_SIM", "maxFileName=MaxHashTest", "DFEModel=ISCA")).build();
+	}
+}

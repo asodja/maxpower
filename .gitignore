@@ -3,3 +3,8 @@ jar
 report
 maxjdoc
 *.pyc
+*.a
+*.o
+*.max
+.deps
+

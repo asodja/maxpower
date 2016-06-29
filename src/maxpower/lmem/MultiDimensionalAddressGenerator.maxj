@@ -14,6 +14,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
 import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
 import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemInterface;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 public class MultiDimensionalAddressGenerator extends Kernel {
@@ -133,9 +134,9 @@ public class MultiDimensionalAddressGenerator extends Kernel {
 
 		//Flush after we have sent out the final command
 		DFEVar finished = Reductions.streamHold(finalCmd, finalCmd);
-		optimization.pushPipeliningFactor(0.0);
+		optimization.pushNoPipelining();
 		DFEVar trigger = finished & ~finalCmd;
-		optimization.popPipeliningFactor();
+		optimization.popNoPipelining();
 
 		flush.onTrigger(trigger);
 	}
@@ -155,9 +156,9 @@ public class MultiDimensionalAddressGenerator extends Kernel {
 	//This ands in the wrap signal of the current counter. This is put in a method just to hide the pipelining factor.
 	private DFEVar andWrap(CounterChain chain, DFEVar wrap) {
 		DFEVar newWrap = chain.getCurrentCounterWrap();
-		optimization.pushPipeliningFactor(0.0);
+		optimization.pushNoPipelining();
 		DFEVar output = wrap & newWrap;
-		optimization.popPipeliningFactor();
+		optimization.popNoPipelining();
 		return output;
 	}
 
@@ -192,15 +193,15 @@ public class MultiDimensionalAddressGenerator extends Kernel {
 	/**
 	 * Gets a stream from LMem that is controlled by the supplied address generator.
 	 */
-	public static DFELink addStreamFromOnCardMemory(String name, MultiDimensionalAddressGenerator addressGenerator, CustomManager manager) {
-		return manager.addStreamFromOnCardMemory(name, getCommandStream(addressGenerator, manager));
+	public static DFELink addStreamFromOnCardMemory(String name, MultiDimensionalAddressGenerator addressGenerator, LMemInterface lmem) {
+		return lmem.addStreamFromLMem(name, getCommandStream(addressGenerator, lmem.getManager()));
 	}
 
 	/**
 	 * Creates a stream to LMem that is controlled by the supplied address generator.
 	 */
-	public static DFELink addStreamToOnCardMemory(String name, MultiDimensionalAddressGenerator addressGenerator, CustomManager manager) {
-		return manager.addStreamToOnCardMemory(name, getCommandStream(addressGenerator, manager));
+	public static DFELink addStreamToOnCardMemory(String name, MultiDimensionalAddressGenerator addressGenerator, LMemInterface lmem) {
+		return lmem.addStreamToLMem(name, getCommandStream(addressGenerator, lmem.getManager()));
 	}
 
 	/**
@@ -236,9 +237,9 @@ public class MultiDimensionalAddressGenerator extends Kernel {
 	 * @param maxBlocks The maximum number of blocks to be read in a single action. If this is 1 then all mapped
 	 * ROMs become scalar inputs, otherwise this specifies the depth of the ROMs.
 	 */
-	public static DFELink addStreamFromOnCardMemory(String name, CustomManager manager, int numDimensions, int maxBlocks) {
-		MultiDimensionalAddressGenerator ag = new MultiDimensionalAddressGenerator(manager.makeKernelParameters(name+"CmdGen"), numDimensions, maxBlocks);
-		return addStreamFromOnCardMemory(name, ag, manager);
+	public static DFELink addStreamFromOnCardMemory(String name, LMemInterface lmem, int numDimensions, int maxBlocks) {
+		MultiDimensionalAddressGenerator ag = new MultiDimensionalAddressGenerator(lmem.getManager().makeKernelParameters(name+"CmdGen"), numDimensions, maxBlocks);
+		return addStreamFromOnCardMemory(name, ag, lmem);
 	}
 
 	/**
@@ -274,8 +275,8 @@ public class MultiDimensionalAddressGenerator extends Kernel {
 	 * @param maxBlocks The maximum number of blocks to be written in a single action. If this is 1 then all mapped
 	 * ROMs become scalar inputs, otherwise this specifies the depth of the ROMs.
 	 */
-	public static DFELink addStreamToOnCardMemory(String name, CustomManager manager, int numDimensions, int maxBlocks) {
-		MultiDimensionalAddressGenerator ag = new MultiDimensionalAddressGenerator(manager.makeKernelParameters(name+"CmdGen"), numDimensions, maxBlocks);
-		return addStreamToOnCardMemory(name, ag, manager);
+	public static DFELink addStreamToOnCardMemory(String name, LMemInterface lmem, int numDimensions, int maxBlocks) {
+		MultiDimensionalAddressGenerator ag = new MultiDimensionalAddressGenerator(lmem.getManager().makeKernelParameters(name+"CmdGen"), numDimensions, maxBlocks);
+		return addStreamToOnCardMemory(name, ag, lmem);
 	}
 }

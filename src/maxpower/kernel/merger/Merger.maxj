@@ -1,0 +1,741 @@
+package maxpower.kernel.merger;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+
+import maxpower.kernel.arithmetic.FloatingPointMultiAdder;
+import maxpower.kernel.merger.graphpasses.BenchmarkGraphPass;
+import maxpower.kernel.merger.graphpasses.CommonSubExpressionGraphPass;
+import maxpower.kernel.merger.graphpasses.ConstantFoldingGraphPass;
+import maxpower.kernel.merger.graphpasses.DetermineTypeGraphPass;
+import maxpower.kernel.merger.graphpasses.DistributivityExtractionGraphPass;
+import maxpower.kernel.merger.graphpasses.DivisionExtractionGraphPass;
+import maxpower.kernel.merger.graphpasses.DumpAsDotGraphPass;
+import maxpower.kernel.merger.graphpasses.ExecuteGraphPass;
+import maxpower.kernel.merger.graphpasses.ExtractConstantMultiplicationsGraphPass;
+import maxpower.kernel.merger.graphpasses.FloatingPointMultiAdderGraphPass;
+import maxpower.kernel.merger.graphpasses.GetResultsGraphPass;
+import maxpower.kernel.merger.graphpasses.GuessResourceUsageGraphPass;
+import maxpower.kernel.merger.graphpasses.MergeIncomingPathsGraphPass;
+import maxpower.kernel.merger.graphpasses.MergeMostExpensiveNodeGraphPass;
+import maxpower.kernel.merger.graphpasses.MergeMuxesGraphPass;
+import maxpower.kernel.merger.graphpasses.MergeTreesOfDifferentSizesGraphPass;
+import maxpower.kernel.merger.graphpasses.MuxOutputsGraphPass;
+import maxpower.kernel.merger.graphpasses.PruneUnusedNodesGraphPass;
+import maxpower.kernel.merger.graphpasses.SetInputsGraphPass;
+import maxpower.kernel.merger.graphpasses.TreeCommonSubExpressionGraphPass;
+import maxpower.kernel.merger.graphpasses.TreeExtractionGraphPass;
+import maxpower.kernel.merger.graphpasses.TreeOptimisationGraphPass;
+import maxpower.kernel.merger.nodes.KMNodeInput;
+import maxpower.kernel.pipeline.FanoutLimiter;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerInternalError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.utils.Pair;
+
+/**
+ * Merges different dataflow graphs in order to save hardware resources.
+ * <p>
+ * The dataflow graphs are implemented as {@link KMKernel}s which are very similar to normal {@link Kernel}s
+ * <p>
+ * Usage:
+ * <pre>
+ * {@code
+ * Merger m = new Merger(this);
+ * // add inputs
+ * m.addInput("input1", input1Type);
+ * m.addInput("input2", input2Type);
+ * ...
+ * // add kernels
+ * m.addKernel(new MyComputeKernel1()); // MyComputeKernel1 extends KMKernel
+ * m.addKernel(new MyComputeKernel2()); // MyComputeKernel2 extends KMKernel
+ * ...
+ * // specify active kernel
+ * m.setKernel(select); // select is a DFEVar
+ * // build and merge kernels
+ * m.build();
+ * // retrieve outputs
+ * DFEVar output1 = m.getOutput("output1");
+ * }
+ * </pre>
+ *
+ * @author nvoss
+ */
+public class Merger {
+	/** ID pool */
+	private static int id = 0;
+
+	/** ID of the merger. Used to identify written files. */
+	private final int m_id;
+
+	/** Flag indicating if the build function was executed. */
+	private boolean m_done = false;
+
+	// Enables output of information about the performance of the merger
+	private boolean m_showNodeCount = false;
+	private boolean m_doBenchmark = false;
+	private boolean m_showResourceUsage = false;
+
+	/** Maximal Fanout for all the {@link FanoutLimiter} */
+	private int m_maxFanout = 8;
+
+	/*
+	 *  Weights for the cost function for different hardware resources.
+	 *  This is normed in a way as if all hardware resources were equally important.
+	 */
+	private double m_lutWeight = 2;
+	private double m_ffWeight = 1;
+	private double m_fmemWeight = 228;
+	private double m_dspWeight = 250;
+
+	/** Minimal costs needed that nodes might be merged */
+	private double m_minCostsMergeExpensiveNodes = 100;
+
+	// Switches for all graph passes
+	private boolean m_doConstantFolding = true;
+	private boolean m_doCSE = true;
+	private boolean m_extractDistributivity = true;
+	private boolean m_extractDivisions = true;
+	private boolean m_useFloatingPointMultiAdder = true;
+	private boolean m_mergeNodesWhichShareOneInput = true;
+	private boolean m_tryToMergeRemainingNodes = true;
+	private boolean m_useTreeExtraction = true;
+	private boolean m_doCommonSubExpressionOnTrees = true;
+	private boolean m_mergeTreesOfDifferentSizes = true;
+	private boolean m_doTreeOptimisations = true;
+	private boolean m_extractConstantMultiplications = true;
+
+	// DisableWarnings
+	private boolean m_disableUnusedOutputWarnings = false;
+
+	// Paths for the .dot files
+	private String m_inputGraphPath = null;
+	private String m_resultGraphPath = null;
+
+	/** KernelLib in which this merger is implemented */
+	private final KernelLib m_owner;
+	/** Flag indicating if build is for Altera FPGAs */
+	private boolean m_isAltera;
+
+	/** Dataflow graph */
+	private final KMGraph m_graph = new KMGraph();
+	/** Input node for the kernel select */
+	private KMNodeInput m_kernelSelectNode = null;
+
+	/** Map containing all {@link KernelObjectVectorizable}s which were added to the merger from outside */
+	@SuppressWarnings("rawtypes")
+	private final Map<String, KernelObjectVectorizable> m_inputsAdded =
+		new HashMap<String, KernelObjectVectorizable>();
+	/** Map to store the output results until before they are called by the {@link KernelLib} */
+	@SuppressWarnings("rawtypes")
+	private Map<String, KernelObjectVectorizable> m_outputResults;
+
+	/** Map to store the names of the input nodes created inside the kernels */
+	private final Map<String, Pair<Boolean, List<String>>> m_inputsCreated =
+		new HashMap<String, Pair<Boolean, List<String>>>();
+
+	/** Map to store the names of the input nodes created inside the kernels */
+	private final Map<String, Pair<Boolean, List<String>>> m_outputsCreated =
+		new HashMap<String, Pair<Boolean, List<String>>>();
+
+	/** Map to store the output nodes created inside the kernels */
+
+	/** List containing all pairs of inputs and outputs that are connected to each other */
+	private final List<Pair<String, String>> m_outsideConnectIO = new ArrayList<Pair<String, String>>();
+
+	/** Map containing all kernels and the according index of the kernel */
+	private final Map<KMKernel, Integer> m_kernelMap = new HashMap<KMKernel, Integer>();
+
+	/** Name for the node that provides the input for the kernel select */
+	public final static String KERNEL_MUX_SELECT_NAME = "__KernelMuxSelect";
+
+	/**
+	 * Creates a {@link Merger} object.
+	 * @param owner KernelLib in which this {@link Merger} is used.
+	 */
+	public Merger(KernelLib owner) {
+		m_owner = owner;
+		m_id = id++;
+	}
+
+	/**
+	 * Adds a kernel to be merged.
+	 * <p>
+	 * The kernel will be allocated an incrementing index to be used as the select.
+	 *
+	 * @param kernel a kernel
+	 */
+	public void addKernel(KMKernel kernel) {
+		kernel.build();
+		int index = m_kernelMap.size();
+		m_kernelMap.put(kernel, index);
+		m_graph.addKernelGraph(kernel.getGraph(), index);
+		addInputs(kernel.getInputNames());
+		addOutputs(kernel.getOutputNames());
+	}
+
+	/**
+	 * Adds a kernel to be merged, to be referred to by the specified index.
+	 * <p>
+	 * Can be used to make sure that two kernels can run at the same time.
+	 *
+	 * @param kernel a kernel
+	 * @param index the index for this kernel. Indices must be positive (inc. zero) and contiguous.
+	 */
+	public void addKernel(KMKernel kernel, int index) {
+		kernel.build();
+		m_kernelMap.put(kernel, index);
+		m_graph.addKernelGraph(kernel.getGraph(), index);
+		addInputs(kernel.getInputNames());
+		addOutputs(kernel.getOutputNames());
+	}
+
+	/**
+	 * Select the active kernel.
+	 * @param select the index of the active kernel
+	 */
+	public void setKernel(DFEVar select) {
+		addInput(KERNEL_MUX_SELECT_NAME, select);
+	}
+
+	/**
+	 * Adds an input, allowing values from the containing {@link Kernel} to be used within {@link KMKernel}s.
+	 * <p>
+	 * If an input creating a {@link KMVector} is used, a {@link DFEVector} must to be passed in.
+	 *
+	 * @param name the name used to identify the input
+	 * @param in the input value
+	 */
+	@SuppressWarnings("rawtypes")
+	public void addInput(String name, KernelObjectVectorizable in) {
+		m_isAltera = in.getKernel().getManager().getManagerConfiguration().getBoardModel().isAltera();
+		for (String alreadyUsedNames : m_inputsAdded.keySet()) {
+			if (alreadyUsedNames.equals(name)) {
+				throw new MaxCompilerAPIError("This merger already has a input named " + name + ".");
+			}
+		}
+		m_inputsAdded.put(name, in);
+	}
+
+	/**
+	 * Returns a value output from the merged {@link KMKernel}s.
+	 * <p>
+	 * If an output using a {@link KMVector} was used, the result can be cast to a {@link DFEVector}.
+	 *
+	 * @param name the name used to identify the output
+	 */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public KernelObjectVectorizable getOutput(String name) {
+		if (m_done == false) {
+			throw new MaxCompilerAPIError("build() has to be called before the outputs are ready!");
+		}
+
+		Pair<Boolean, List<String>> outputs = m_outputsCreated.get(name);
+		if (outputs == null) {
+			if (m_disableUnusedOutputWarnings) {
+				return null;
+			} else {
+				throw new MaxCompilerAPIError("No output with name " + name + " was created!");
+			}
+		}
+		if (!outputs.key) {
+			// Scalar output
+			return m_outputResults.get(outputs.value[0]);
+		} else {
+			List<KernelObjectVectorizable> results = new ArrayList<KernelObjectVectorizable>();
+			for (String output : outputs.value) {
+				results.add(m_outputResults.get(output));
+			}
+			return DFEVectorType.newInstance(results);
+		}
+	}
+
+	/**
+	 * Dumps the dataflow graph before all optimisations run as .dot file to a certain path.
+	 * @param path Path where the .dot graph should be saved.
+	 */
+	public void dumpInputGraph(String path) {
+		m_inputGraphPath = path;
+	}
+
+	/**
+	 * Dumps the dataflow graph after all optimisations run as .dot file to a certain path.
+	 * @param path Path where the .dot graph should be saved.
+	 */
+	public void dumpResultGraph(String path) {
+		m_resultGraphPath = path;
+	}
+
+	/**
+	 * Show the node count before and after optimisation.
+	 */
+	public void showNodeCount() {
+		m_showNodeCount = true;
+	}
+
+	/**
+	 * Show detailed statistics on how many operations are existing and how many operations have to exist.
+	 */
+	public void showDetailedStatistics() {
+		m_doBenchmark = true;
+	}
+
+	/**
+	 * Shows a estimation of resource usage before and after optimisations.
+	 */
+	public void showResourceUsage() {
+		m_showResourceUsage = true;
+	}
+
+	/**
+	 * Sets the maximal fanout for all {@link FanoutLimiter} in the design.
+	 * @param maxFanout Maximal fanout for all {@link FanoutLimiter} in the design.
+	 */
+	public void setMaxFanout(int maxFanout) {
+		m_maxFanout = maxFanout;
+	}
+
+	/**
+	 * For internal use.
+	 */
+	public int getMaxFanout() {
+		return m_maxFanout;
+	}
+
+	/**
+	 * Sets the weight for LUTs, relative to other hardware resources.
+	 * <p>
+	 * This is used by the heuristics deciding which nodes are merged.
+	 * Should be increased if you run out of logic units.
+	 *
+	 * @param lutWeight the relative weight for LUTs
+	 */
+	public void setLutWeight(double lutWeight) {
+		m_lutWeight = lutWeight;
+	}
+
+	/**
+	 * Sets the weight for flip-flops, relative to other hardware resources.
+	 * <p>
+	 * This is used by the heuristics deciding which nodes are merged.
+	 * Should be increased if you run out of logic units.
+	 *
+	 * @param ffWeight the relative weight for flip-flops
+	 */
+	public void setFlipFlopWeight(double ffWeight) {
+		m_ffWeight = ffWeight;
+	}
+
+	/**
+	 * Sets the weight for FMems (BRAMs / M20Ks), relative to other hardware resources.
+	 * <p>
+	 * This is used by the heuristics deciding which nodes are merged.
+	 * Should be increased if you run out of FMems.
+	 *
+	 * @param fmemWeight the relative weight for FMems
+	 */
+	public void setFMemWeight(double fmemWeight) {
+		m_fmemWeight = fmemWeight;
+	}
+
+	/**
+	 * Sets the weight for DSPs (multipliers), relative to other hardware resources.
+	 * <p>
+	 * This is used by the heuristics deciding which nodes are merged.
+	 * Should be increased if you run out of DSPs.
+	 *
+	 * @param dspWeight the relative weight for DSPs
+	 */
+	public void setDspWeight(double dspWeight) {
+		m_dspWeight = dspWeight;
+	}
+
+	/**
+	 * Sets the minimum cost of nodes that may be merged.
+	 * <p>
+	 * Can be used to disable merging for certain node types in order to e.g. decrease the multiplexer count.
+	 *
+	 * @param minCosts the minimum of cost of a node permitted to be merged
+	 */
+	public void setMinCostsForMergeMostExpensiveNodeGraphPass(double minCosts) {
+		m_minCostsMergeExpensiveNodes = minCosts;
+	}
+
+	/**
+	 * Disables the constant folding graph pass.
+	 */
+	public void disableConstantFolding() {
+		m_doConstantFolding = false;
+	}
+
+	/**
+	 * Disables the common subexpression elimination graph pass.
+	 */
+	public void disableCommonSubExpressionExtraction() {
+		m_doCSE = false;
+	}
+
+	/**
+	 * Disables the graph pass that automatically inserts {@link FanoutLimiter}s into the dataflow graph.
+	 */
+	public void disableFanoutLimiters() {
+		m_maxFanout = Integer.MAX_VALUE;
+	}
+
+	/**
+	 * Disables the use of the distributive law in order to reduce the operation count.
+	 */
+	public void disableDistributivityExtraction() {
+		m_extractDistributivity = false;
+	}
+
+	/**
+	 * Disables a graph pass that tries to reduce the count of divisions in the graph.
+	 */
+	public void disableDivisionExtraction() {
+		m_extractDivisions = false;
+	}
+
+	/**
+	 * Disables the graph pass that transforms additions and subtractions into {@link FloatingPointMultiAdder}s.
+	 */
+	public void disableFloatingPointMultiAdders() {
+		m_useFloatingPointMultiAdder = false;
+	}
+
+	/**
+	 * Disables the graph pass that merges nodes which share one input.
+	 */
+	public void disableMergingOfNodesSharingOneInput() {
+		m_mergeNodesWhichShareOneInput = false;
+	}
+
+	/**
+	 * Disables the graph pass which merges all nodes in the graph.
+	 */
+	public void disableMergingOfRemainingNodes() {
+		m_tryToMergeRemainingNodes = false;
+	}
+
+	/**
+	 * Disables the transform of associative operations into trees.
+	 */
+	public void disableTreeExtraction() {
+		m_useTreeExtraction = false;
+	}
+
+	/**
+	 * Disables the common subexpression elimination in trees.
+	 */
+	public void disableTreeCommonSubExpression() {
+		m_doCommonSubExpressionOnTrees = false;
+	}
+
+	/**
+	 * Disables the graph pass that merges trees with a different count of inputs.
+	 */
+	public void disableTreeOfDifferentSizesMerging() {
+		m_mergeTreesOfDifferentSizes = false;
+	}
+
+	/**
+	 * Disables certain optimisations on trees. Like removing duplicate inputs and reducing the operation count of powers.
+	 */
+	public void disableTreeOptimisations() {
+		m_doTreeOptimisations = false;
+	}
+
+	/**
+	 * Disables different treatment of multiplication by certain constants since they can be implemented significantly cheaper.
+	 * Prevents them from being merged with "proper" multiplications.
+	 */
+	public void disableExtractionOfMultiplicationsWithConstants() {
+		m_extractConstantMultiplications = false;
+	}
+
+	/**
+	 * Disables all optimisation graph passes.
+	 */
+	public void disableAllOptimizations() {
+		disableConstantFolding();
+		disableCommonSubExpressionExtraction();
+		disableFanoutLimiters();
+		disableDistributivityExtraction();
+		disableDivisionExtraction();
+		disableFloatingPointMultiAdders();
+		disableMergingOfNodesSharingOneInput();
+		disableMergingOfRemainingNodes();
+		disableTreeExtraction();
+		disableTreeCommonSubExpression();
+		disableTreeOfDifferentSizesMerging();
+		disableTreeOptimisations();
+		disableExtractionOfMultiplicationsWithConstants();
+	}
+
+	/**
+	 * Disables warning if an output is not created.
+	 */
+	public void disableUnusedOutputWarnings() {
+		m_disableUnusedOutputWarnings = true;
+	}
+
+	/**
+	 * For internal use.
+	 */
+	public KernelLib getOwner() {
+		return m_owner;
+	}
+
+	/**
+	 * For internal use.
+	 */
+	public KMNodeInput getKernelSelectNode() {
+		return m_kernelSelectNode;
+	}
+
+	/**
+	 * For internal use.
+	 */
+	public boolean isAltera() {
+		return m_isAltera;
+	}
+
+	KMGraph getKMGraph() {
+		return m_graph;
+	}
+
+	/**
+	 * Specifies that an input and an output are connected outside of the {@link Merger}.
+	 * <p>
+	 * This function has to be used if e.g. StreamOffsets are used.
+	 *
+	 * @param input the name of input from the {@link Kernel}.
+	 * @param output the name of output to the {@link Kernel}.
+	 */
+	public void setIOConnectedOutside(String input, String output) {
+		m_outsideConnectIO.add(new Pair<String, String>(input, output));
+	}
+
+	/**
+	 * Returns the ID of the Merger.
+	 */
+	public int getID() {
+		return m_id;
+	}
+
+	/**
+	 * Returns a List of outputs created by {@ KMKernel}s
+	 */
+	public List<String> getOutputKeys() {
+		return new ArrayList<String>(m_outputsCreated.keySet());
+	}
+
+	/**
+	 * Returns a List of inputs created by {@ KMKernel}s
+	 */
+	public List<String> getInputKeys() {
+		return new ArrayList<String>(m_inputsCreated.keySet());
+	}
+
+	/**
+	 * Build the dataflow graph and optimise it.
+	 */
+	public void build() {
+
+		if (m_kernelMap.size() < 1) {
+			throw new MaxCompilerInternalError("You have to add at least one kernel");
+		}
+
+		if (m_kernelMap.size() > 1) {
+			m_kernelSelectNode = createKernelSelectInputNode(m_graph);
+		}
+		SetInputsGraphPass.run(m_graph, m_inputsAdded, m_inputsCreated, m_outputsCreated, m_outsideConnectIO, this);
+		PruneUnusedNodesGraphPass.run(m_graph, this);
+
+		if (m_inputGraphPath != null) {
+			DumpAsDotGraphPass.run(m_graph, this, m_inputGraphPath + "input");
+		}
+		if (m_showNodeCount) {
+			System.out.println("Input node count: " + m_graph.getNodes().size());
+		}
+
+		// Determine Type
+		DetermineTypeGraphPass.run(m_graph, this);
+		if (m_showResourceUsage) {
+			System.out.println("Estimated resource usage for input:");
+			GuessResourceUsageGraphPass.run(m_graph, this);
+		}
+
+		// Optimisation loop
+		boolean condition;
+		do {
+			condition = false;
+			if (m_extractConstantMultiplications) {
+				ExtractConstantMultiplicationsGraphPass.revert(m_graph);
+				DetermineTypeGraphPass.run(m_graph, this);
+			}
+			if (m_doConstantFolding)
+				condition |= ConstantFoldingGraphPass.run(m_graph, this);
+			if (condition)
+				DetermineTypeGraphPass.run(m_graph, this);
+			if (m_doCSE)
+				condition |= CommonSubExpressionGraphPass.run(m_graph);
+			if (m_extractDistributivity)
+				condition |= DistributivityExtractionGraphPass.run(m_graph);
+			if (m_extractDivisions)
+				condition |= DivisionExtractionGraphPass.run(m_graph);
+			if (condition)
+				DetermineTypeGraphPass.run(m_graph, this);
+			if (m_useTreeExtraction)
+				condition |= TreeExtractionGraphPass.run(m_graph);
+			if (m_doTreeOptimisations)
+				condition |= TreeOptimisationGraphPass.run(m_graph);
+			if (condition)
+				DetermineTypeGraphPass.run(m_graph, this);
+			if (m_doCommonSubExpressionOnTrees)
+				condition |= TreeCommonSubExpressionGraphPass.run(m_graph);
+			if (condition)
+				DetermineTypeGraphPass.run(m_graph, this);
+			if (m_useFloatingPointMultiAdder)
+				condition |= FloatingPointMultiAdderGraphPass.run(m_graph);
+			if (condition)
+				DetermineTypeGraphPass.run(m_graph, this);
+			if (m_kernelMap.size() > 1 && !condition) {
+				if (m_extractConstantMultiplications) {
+					ExtractConstantMultiplicationsGraphPass.run(m_graph);
+					DetermineTypeGraphPass.run(m_graph, this);
+				}
+
+				double improvementMergeIncoming = 0.0;
+				if (m_mergeNodesWhichShareOneInput)
+					improvementMergeIncoming = MergeIncomingPathsGraphPass.estimateImprovement(
+						m_graph, this, m_lutWeight, m_ffWeight, m_fmemWeight, m_dspWeight,
+						m_minCostsMergeExpensiveNodes);
+				double improvementMergeMostExpensive = 0.0;
+				if (m_tryToMergeRemainingNodes)
+					improvementMergeMostExpensive =
+						MergeMostExpensiveNodeGraphPass.estimateImprovement(m_graph, this, m_lutWeight,
+								m_ffWeight, m_fmemWeight, m_dspWeight, m_minCostsMergeExpensiveNodes);
+				double improvementMergeTrees = 0.0;
+				if (m_mergeTreesOfDifferentSizes)
+					improvementMergeTrees =
+						MergeTreesOfDifferentSizesGraphPass.estimateImprovement(m_graph, this, m_lutWeight,
+								m_ffWeight, m_fmemWeight, m_dspWeight, m_minCostsMergeExpensiveNodes);
+
+				boolean runMergeIncoming = improvementMergeIncoming >= improvementMergeMostExpensive
+						&& improvementMergeIncoming >= improvementMergeTrees;
+				boolean runMergeMostExpensiv = !runMergeIncoming && improvementMergeMostExpensive >=
+					improvementMergeTrees;
+				boolean runMergeTrees = !runMergeIncoming && !runMergeMostExpensiv;
+
+				if (m_mergeNodesWhichShareOneInput && runMergeIncoming)
+					condition |= MergeIncomingPathsGraphPass.run(m_graph, this,
+							m_lutWeight, m_ffWeight, m_fmemWeight, m_dspWeight,
+							m_minCostsMergeExpensiveNodes);
+				if (m_tryToMergeRemainingNodes && runMergeMostExpensiv)
+					condition |= MergeMostExpensiveNodeGraphPass.run(m_graph, this,
+							m_lutWeight, m_ffWeight, m_fmemWeight, m_dspWeight,
+							m_minCostsMergeExpensiveNodes);
+				if (m_mergeTreesOfDifferentSizes && runMergeTrees)
+					condition |= MergeTreesOfDifferentSizesGraphPass.run(m_graph, this,
+							m_lutWeight, m_ffWeight, m_fmemWeight, m_dspWeight,
+							m_minCostsMergeExpensiveNodes);
+
+				if (condition)
+					DetermineTypeGraphPass.run(m_graph, this);
+				condition |= MergeMuxesGraphPass.run(m_graph);
+				if (condition)
+					DetermineTypeGraphPass.run(m_graph, this);
+			}
+		} while (condition);
+
+		if (m_kernelMap.size() > 1) {
+			MuxOutputsGraphPass.run(m_graph, m_kernelSelectNode);
+		}
+
+		if (m_showNodeCount) {
+			System.out.println("Result node count: " + m_graph.getNodes().size());
+		}
+
+		// Finalise
+		if (m_resultGraphPath != null) {
+			DumpAsDotGraphPass.run(m_graph, this, m_resultGraphPath + "result");
+		}
+
+		if (m_doBenchmark) {
+			BenchmarkGraphPass.run(m_graph);
+		}
+		if (m_showResourceUsage) {
+			System.out.println("Estimated resource usage for result:");
+			DetermineTypeGraphPass.run(m_graph, this);
+			GuessResourceUsageGraphPass.run(m_graph, this);
+		}
+
+		ExecuteGraphPass.run(m_graph, this);
+		m_outputResults = GetResultsGraphPass.run(m_graph);
+
+		m_done = true;
+	}
+
+	private KMNodeInput createKernelSelectInputNode(KMGraph graph) {
+		KMNodeInput kernelSelectNode = new KMNodeInput((KMKernel) m_kernelMap.keySet().toArray()[0],
+				KERNEL_MUX_SELECT_NAME);
+		Set<Integer> usedInKernel = new HashSet<Integer>();
+		for (int kernelID = 0; kernelID < graph.getKernelCount(); kernelID++) {
+			usedInKernel.add(kernelID);
+		}
+		kernelSelectNode.addUsedInKernels(usedInKernel);
+		graph.addNode(kernelSelectNode);
+
+		m_inputsCreated.put(KERNEL_MUX_SELECT_NAME, new Pair<Boolean, List<String>>(false,
+				Arrays.asList(KERNEL_MUX_SELECT_NAME)));
+
+		return kernelSelectNode;
+	}
+
+	/**
+	 * Used to merge the input information from the created {@link KMKernel}s together into one central data structure.
+	 * @param inputs The input information of one kernel.
+	 */
+	private void addInputs(Map<String, Pair<Boolean, List<String>>> inputs) {
+		for (Entry<String, Pair<Boolean, List<String>>> input : inputs.entrySet()) {
+			Pair<Boolean, List<String>> names = m_inputsCreated.get(input.getKey());
+			if (names == null) {
+				m_inputsCreated.put(input.getKey(), input.getValue());
+			} else {
+				if (!names.equals(input.getValue())) {
+					throw new MaxCompilerAPIError("The input " + input.getKey() + " has different sizes in different kernels.");
+				}
+			}
+		}
+	}
+
+	/**
+	 * Used to merge the output information from the created {@link KMKernel}s together into one central data structure.
+	 * @param outputs The output information of one kernel.
+	 */
+	private void addOutputs(Map<String, Pair<Boolean, List<String>>> outputs) {
+		for (Entry<String, Pair<Boolean, List<String>>> output : outputs.entrySet()) {
+			Pair<Boolean, List<String>> names = m_outputsCreated.get(output.getKey());
+			if (names == null) {
+				m_outputsCreated.put(output.getKey(), output.getValue());
+			} else {
+				if (!names.equals(output.getValue())) {
+					throw new MaxCompilerAPIError("The output " + output.getKey() + " has different sizes in different kernels.");
+				}
+			}
+		}
+	}
+}

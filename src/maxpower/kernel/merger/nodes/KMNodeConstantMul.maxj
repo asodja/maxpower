@@ -1,0 +1,51 @@
+package maxpower.kernel.merger.nodes;
+
+import maxpower.kernel.KernelBinaryOp.Mul;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.ops.CommutativeOp;
+import maxpower.kernel.merger.utils.ResourceUsage;
+import maxpower.kernel.pipeline.FanoutLimiter;
+
+public class KMNodeConstantMul extends KMNode implements java.io.Serializable, CommutativeOp {
+
+	private static final long serialVersionUID = 2213370197420161201L;
+
+	public KMNodeConstantMul(KMNode lhs, KMNode rhs) {
+		super();
+		m_inputs.add(lhs);
+		m_inputs.add(rhs);
+	}
+
+	public KMNodeConstantMul() {
+		super();
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	@Override
+	public void execute(Merger merger) {
+		m_result = new FanoutLimiter(reduceInputs(new Mul()), merger.getMaxFanout());
+	}
+
+	@Override
+	public double evaluate(double val1, double val2) {
+		return val1 * val2;
+	}
+
+	@Override
+	public String toString() {
+		return "NodeConstantMul: " + m_id;
+	}
+
+	@Override
+	public ResourceUsage getResourceUsageEstimate(Merger merger) {
+		// Not really true. But we want to prevent this nodes from being merged.
+		return new ResourceUsage(0, 0, 0, 0);
+	}
+
+	@Override
+	int getLatencyEstimate(Merger merger) {
+		// Kind of an average
+		return 1;
+	}
+
+}

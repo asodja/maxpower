@@ -2,14 +2,15 @@ NAME=ddrFifoTest
 DESIGNNAME=DDRFifoTest
 CC=gcc
 
+USE_SLIC=1
 include $(MAXCOMPILERDIR)/lib/Makefile.include
 
-CFLAGS += -O1 -std=gnu99 -Wall -Wextra 
+CFLAGS += -O1 -std=gnu99 -Wall -Wextra -DDESIGN_NAME=$(DESIGNNAME)
 CFLAGS += $(MAXCOMPILER_INC) 
 LDFLAGS += -ggdb $(MAXCOMPILER_LIBS)
 
 %.o: %.max
-	$(MAXFILECOMPILE) $^ $@ $*
+	$(SLICCOMPILE) $^ $@
 
 TARGETS := $(NAME) 
 
@@ -20,7 +21,7 @@ $(NAME): $(NAME).o \
 	$(CC) $^ $(LDFLAGS) -o $@
 
 restart_sim:
-	$(MAXCOMPILERDIR)/bin/maxcompilersim -c MAX3424A restart
+	$(MAXCOMPILERDIR)/bin/maxcompilersim -c ISCA restart
 
 
 clean:

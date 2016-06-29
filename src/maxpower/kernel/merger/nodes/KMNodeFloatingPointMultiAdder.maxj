@@ -1,0 +1,84 @@
+package maxpower.kernel.merger.nodes;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import maxpower.kernel.arithmetic.FloatingPointMultiAdder;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.ops.AssociativeOp;
+import maxpower.kernel.merger.ops.CommutativeOp;
+import maxpower.kernel.merger.utils.LatencyEstimation;
+import maxpower.kernel.merger.utils.ResourceUsage;
+import maxpower.kernel.pipeline.FanoutLimiter;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
+
+public class KMNodeFloatingPointMultiAdder extends KMNode implements java.io.Serializable,
+		AssociativeOp, CommutativeOp {
+
+	private static final long serialVersionUID = 8639457902089880290L;
+
+
+	public KMNodeFloatingPointMultiAdder() {
+		super();
+	}
+
+	@Override
+	public void addInput(KMNode input) {
+		m_inputs.add(input);
+	}
+
+	public void addInputs(List<KMNode> inputs) {
+		m_inputs.addAll(inputs);
+	}
+
+	public void setInputs(List<KMNode> inputs) {
+		m_inputs.clear();
+		m_inputs.addAll(inputs);
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	@Override
+	public void execute(Merger merger) {
+		List<KernelObjectVectorizable> inputs = new ArrayList<KernelObjectVectorizable>();
+		for (KMNode input : m_inputs) {
+			KernelObjectVectorizable inputObject = input.getResult();
+			if (!input.getResult().getType().isConcreteType()) {
+				inputs.add((KernelObjectVectorizable) inputObject.cast(m_resultType.getPrimitiveType()));
+			} else {
+				inputs.add(inputObject);
+			}
+		}
+
+		m_result = new FanoutLimiter(FloatingPointMultiAdder.add(inputs), merger.getMaxFanout());
+	}
+
+	@Override
+	public double evaluate(double val1, double val2) {
+		return val1 + val2;
+	}
+
+	@Override
+	public double getIdentity() {
+		return 0;
+	}
+
+	@Override
+	public String toString() {
+		return "NodeFloatingPointMultiAdder: " + m_id;
+	}
+
+	@Override
+	public ResourceUsage getResourceUsageEstimate(Merger merger) {
+		return ResourceUsage.getFloatingPointMutliAdder(merger,
+				(DFEFloat)m_resultType.getPrimitiveType(),
+				m_inputs.size()) * m_resultType.getPrimitiveCount();
+	}
+
+	@Override
+	int getLatencyEstimate(Merger merger) {
+		return LatencyEstimation.getFloatingPointMultiAdder(merger, m_resultType, m_inputs.size());
+	}
+
+}

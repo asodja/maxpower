@@ -1,13 +1,14 @@
 package maxpower.kernel.mem;
 
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory.dfeUInt;
+
 import java.util.ArrayList;
 import java.util.List;
 
 import maxpower.kernel.arithmetic.ConstDenominator;
 import maxpower.kernel.arithmetic.ConstDenominator.ConstDivModResult;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
 import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
@@ -57,7 +58,7 @@ public class Transpose {
 	 **/
 	public static <T extends KernelObjectVectorizable<T,?>>
 	DFEVector<T> transposeElementWise(DFEVector<T> in, int width, int height) {
-		return in.getKernel().stream.offset(transposeElementWise(in, width, height, in.getKernel().constant.var(true)),
+		return in.getOwner().stream.offset(transposeElementWise(in, width, height, in.getOwner().constant.var(true)),
 				width * height / in.getSize());
 	}
 
@@ -88,7 +89,7 @@ public class Transpose {
 	 **/
 	public static <T extends KernelObjectVectorizable<T,?>>
 	DFEVector<T> transposeElementWise(DFEVector<T> in, int width, int height, DFEVar enable) {
-		KernelLib owner = in.getKernel();
+		KernelBase<?> owner = in.getOwner();
 
 		final int pipes = in.getSize();
 		if (!MathUtils.integerMultiple(width, pipes) || !MathUtils.integerMultiple(height, pipes)) {
@@ -106,9 +107,8 @@ public class Transpose {
 	}
 
 	private static <T extends KernelObjectVectorizable<T,?>>
-	DFEVector<T> transposePowerOf2Quadratic(DFEVector<T> in, int width,  int height,
-			DFEVar enable) {
-		KernelLib owner = in.getKernel();
+	DFEVector<T> transposePowerOf2Quadratic(DFEVector<T> in, int width,  int height, DFEVar enable) {
+		KernelBase<?> owner = in.getOwner();
 
 		final int N = width * height;
 		final int pipes = in.getSize();
@@ -120,7 +120,7 @@ public class Transpose {
 		DFEVectorType<T> vectorType = new DFEVectorType<T>(in[0].getType(), pipes);
 		DFEVectorType<T> bufferOutVectorType = new DFEVectorType<T>(in[0].getType(), pipes);
 		DFEVectorType<DFEVar> addressType =
-			new DFEVectorType<DFEVar>(Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize)), pipes);
+			new DFEVectorType<DFEVar>(dfeUInt(MathUtils.bitsToAddress(ramSize)), pipes);
 		DFEVector<DFEVar> ramReadAddress = addressType.newInstance(owner);
 
 		CounterChain counterChainRow = owner.control.count.makeCounterChain(enable);
@@ -133,8 +133,8 @@ public class Transpose {
 		DFEVar colI = counterChainCol.addCounter(height, pipes);
 
 		int bitsToAddressPipes = MathUtils.bitsToAddress(pipes);
-		DFEVar shift_write = rowJ.cast(Kernel.dfeUInt(bitsToAddressPipes));
-		DFEVar shift_read  = colJ.cast(Kernel.dfeUInt(bitsToAddressPipes));
+		DFEVar shift_write = rowJ.cast(dfeUInt(bitsToAddressPipes));
+		DFEVar shift_read  = colJ.cast(dfeUInt(bitsToAddressPipes));
 
 		owner.optimization.pushFixOpMode(Optimization.bitSizeExact(MathUtils.bitsToAddress(ramSize)),
 				Optimization.offsetExact(0), MathOps.ALL);
@@ -145,7 +145,7 @@ public class Transpose {
 		owner.optimization.popFixOpMode(MathOps.ALL);
 
 		DFEVector<T> inputRotated =
-			in.rotateElementsLeft(shift_write.cast(Kernel.dfeUInt(bitsToAddressPipes)));
+			in.rotateElementsLeft(shift_write.cast(dfeUInt(bitsToAddressPipes)));
 		DFEVector<DFEVar> readAddrRotated = ramReadAddress.rotateElementsLeft(shift_read);
 
 		DFEVector<T> bufferOutput = bufferOutVectorType.newInstance(owner);
@@ -160,7 +160,7 @@ public class Transpose {
 
 	private static <T extends KernelObjectVectorizable<T,?>>
 	DFEVector<T> transposeFallBack(DFEVector<T> in, int width, int height, DFEVar enable) {
-		KernelLib owner = in.getKernel();
+		KernelBase<?> owner = in.getOwner();
 
 		final int N = width * height;
 		final int pipes = in.getSize();
@@ -168,7 +168,7 @@ public class Transpose {
 		// double buffered implementation
 		final int ramSize = 2 * N / pipes;
 
-		DFEType addressType = Kernel.dfeUInt(MathUtils.bitsToAddress(ramSize));
+		DFEType addressType = dfeUInt(MathUtils.bitsToAddress(ramSize));
 		CounterChain readCounter = owner.control.count.makeCounterChain(enable);
 		CounterChain writeCounter = owner.control.count.makeCounterChain(enable);
 
@@ -245,8 +245,8 @@ public class Transpose {
 	 **/
 	public static <T extends KernelObjectVectorizable<T,?>>
 	T transpose(T in, int width, int height) {
-		return in.getKernel().stream.offset(
-				transpose(in, width, height, in.getKernel().constant.var(true)), width * height);
+		return in.getOwner().stream.offset(
+				transpose(in, width, height, in.getOwner().constant.var(true)), width * height);
 	}
 
 	/**
@@ -278,7 +278,7 @@ public class Transpose {
 	 **/
 	public static <T extends KernelObjectVectorizable<T,?>>
 	T transpose(T in, int width, int height, DFEVar enable) {
-		KernelLib owner = in.getKernel();
+		KernelBase<?> owner = in.getOwner();
 
 		int N = width * height;
 
@@ -289,13 +289,13 @@ public class Transpose {
 
 		DFEVar i = owner.control.count.makeCounter(
 				owner.control.count.makeParams(nBits).withEnable(enable).withMax(N)).getCount();
-		DFEVar mul = Kernel.dfeUInt(nBits).newInstance(owner);
+		DFEVar mul = dfeUInt(nBits).newInstance(owner);
 		owner.optimization.pushEnableBitGrowth(true);
 		ConstDivModResult addressDivMod = ConstDenominator.divMod(i * mul, Nm, nBits);
 		addressDivMod.getQuotient().setReportOnUnused(false);
 		DFEVar address = i === Nm ? Nm : addressDivMod.getRemainder();
 
-		DFEVar nextMul = mul * Kernel.dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(owner, width);
+		DFEVar nextMul = mul * dfeUInt(MathUtils.bitsToRepresent(width)).newInstance(owner, width);
 		owner.optimization.popEnableBitGrowth();
 
 		ConstDivModResult nextMulDivMod = ConstDenominator.divMod(nextMul, Nm, nBits);

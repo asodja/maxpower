@@ -5,7 +5,7 @@ import java.util.List;
 
 import maxpower.hash.functions.HashFunction;
 import maxpower.hash.functions.JenkinsHash;
-import maxpower.hash.mem.MemInterface;
+import maxpower.hash.mem.MemBacking;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
@@ -50,9 +50,9 @@ class CollisionHandlingHashMap<T extends KernelObject<T>>
 
 			DFEVar keyMatch = (key === (DFEVar) bucket["key"]);
 
-			optimization.pushPipeliningFactor(0);
+			optimization.pushNoPipelining();
 			DFEVar match = ((DFEVar) bucket["valid"]) & keyMatch;
-			optimization.popPipeliningFactor();
+			optimization.popNoPipelining();
 
 			matchOneHot = (matchOneHot == null) ? match : match # matchOneHot;
 		}
@@ -91,7 +91,7 @@ class CollisionHandlingHashMap<T extends KernelObject<T>>
 	}
 
 	@Override
-	public List<MemInterface> getMemInterfaces() {
-		return new ArrayList<MemInterface>();
+	public List<MemBacking> getMemInterfaces() {
+		return new ArrayList<MemBacking>();
 	}
 }

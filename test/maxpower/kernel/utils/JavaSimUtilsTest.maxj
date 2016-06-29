@@ -1,0 +1,222 @@
+package maxpower.kernel.utils;
+import static com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType.sft;
+import static org.junit.Assert.assertEquals;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import maxpower.kernel.io.AspectChangeIO;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType.StructFieldType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class JavaSimUtilsTest {
+
+	private static int cycles = 10;
+
+	private class TestKernel extends Kernel {
+		public TestKernel(KernelParameters parameters, boolean testInput, boolean testAc) {
+			super(parameters);
+			DFEStructType type = getType();
+			if (testInput) {
+				DFEStruct x;
+				if (testAc){
+					AspectChangeIO acio = new AspectChangeIO(this, type.getTotalBits() + 32);
+					x = acio.input("x", type);
+				} else {
+					x = io.input("x", type);
+				}
+				makeOutput("", x);
+			} else {
+				DFEStruct x = getInput("", type);
+				if (testAc){
+					AspectChangeIO acio = new AspectChangeIO(this, type.getTotalBits() + 32);
+					acio.output("x", x, constant.var(true), control.count.simpleCounter(32) === (cycles - 1));
+				} else {
+					io.output("x", x, type);
+				}
+			}
+
+		}
+
+		private void makeOutput(String name, KernelObject<?> val) {
+			KernelType<?> type = val.getType();
+			if (type instanceof DFEType) {
+				io.output(name, (DFEVar)val, (DFEType)type);
+			} else if (type instanceof DFEComplexType) {
+				DFEComplex cplx = (DFEComplex)val;
+				makeOutput(name + "_real", cplx.getReal());
+				makeOutput(name + "_imag", cplx.getImaginary());
+			} else if (type instanceof DFEVectorType<?>) {
+				DFEVector<?> vec = (DFEVector<?>)val;
+				for (int i = 0; i < vec.getSize(); i++) {
+					makeOutput(name + "_" + i, vec[i]);
+				}
+			} else if (type instanceof DFEStructType) {
+				DFEStruct struct = (DFEStruct)val;
+				for (String subName : struct.getType().getFieldNames()) {
+					makeOutput(subName, struct[subName]);
+				}
+			} else {
+				throw new RuntimeException("We don't currently support the type " + type);
+			}
+		}
+
+		@SuppressWarnings("unchecked")
+		private <T extends KernelObject<?>> T getInput(String name, KernelType<?> type) {
+			if (type instanceof DFEType) {
+				return (T)io.input(name, (DFEType)type);
+			} else if (type instanceof DFEComplexType) {
+				DFEComplexType cplxType = (DFEComplexType)type;
+				DFEVar real = getInput(name + "_real", (DFEType)cplxType.getRealType());
+				DFEVar imag = getInput(name + "_imag", (DFEType)cplxType.getImaginaryType());
+				return (T) DFEComplexType.newInstance(this, real, imag);
+			} else if (type instanceof DFEVectorType<?>) {
+				return (T) getVecInput(name, (DFEVectorType<?>)type);
+			} else if (type instanceof DFEStructType) {
+				DFEStructType structType = (DFEStructType)type;
+				DFEStruct struct = structType.newInstance(this);
+				for (String subName : structType.getFieldNames()) {
+					KernelType<?> ct = structType.getTypeForField(subName);
+					Object blah = getInput(subName, ct);
+					struct[subName] <== blah;
+				}
+				return (T) struct;
+			} else {
+				throw new RuntimeException("We don't currently support the type " + type);
+			}
+		}
+
+		@SuppressWarnings("unchecked")
+		private <ContainedT extends KernelObjectVectorizable<ContainedT, ?>>
+		DFEVector<ContainedT> getVecInput(String name, DFEVectorType<ContainedT> type) {
+			List<ContainedT> vec = new ArrayList<ContainedT>();
+			for (int i = 0; i < type.getSize(); i++) {
+				vec.add((ContainedT)getInput(name + "_" + i, type.getContainedType()));
+			}
+			return type.newInstance(this, vec);
+		}
+
+		public DFEStructType getType() {
+			List<StructFieldType> fields = new ArrayList<StructFieldType>();
+			fields.add(sft("integer",     dfeUInt(32)));
+			fields.add(sft("complex",     new DFEComplexType(dfeFloat(11,53))));
+			fields.add(sft("vector",      new DFEVectorType<DFEVar>(dfeUInt(64), 4)));
+			fields.add(sft("cmplxvector", new DFEVectorType<DFEComplex>(new DFEComplexType(dfeFloat(8,24)), 3)));
+			fields.add(sft("vecovec",     new DFEVectorType<DFEVector<DFEVar>>(new DFEVectorType<DFEVar>(dfeInt(48), 2), 3)));
+			fields.add(sft("substruct",   new DFEStructType(sft("foo", dfeUInt(32)), sft("bar", dfeFloat(8,24)))));
+			fields.add(sft("float",       dfeFloat(8, 24)));
+			return new DFEStructType(fields.toArray(new StructFieldType[fields.size()]));
+		}
+	}
+
+	@Test public void testEncode()   { test(true,  false); }
+	@Test public void testDecode()   { test(false, false); }
+	@Test public void testEncodeAc() { test(true,  true); }
+	@Test public void testDecodeAc() { test(false, true); }
+
+	public void test(boolean testEncode, boolean testAc) {
+		SimulationManager m = new SimulationManager("JavaSimUtilsTest" + (testEncode ? "Encode" : "Decode"));
+		TestKernel k = new TestKernel(m.makeKernelParameters(), testEncode, testAc);
+		m.setKernel(k);
+		DFEStructType type = k.getType();
+		List<Double> input = new ArrayList<Double>();
+		int prims = type.getTotalPrimitives();
+		for (int i = 0; i < prims * cycles; i++) {
+			input.add((double)i);
+		}
+
+		m.setKernelCycles(cycles);
+		if (testEncode) {
+			if (testAc) {
+				m.setInputDataRaw("x", JavaSimUtils.encodeInput(input, type, type.getTotalBits() + 32));
+			} else {
+				m.setInputDataRaw("x", JavaSimUtils.encodeInput(input, type));
+			}
+		} else {
+			setSplitInputData(m, "", type, input, 0, prims);
+		}
+		m.runTest();
+
+		if (testEncode) {
+			checkSplitOutput(m, "", type, input, 0, prims);
+		} else {
+			assertEquals(input, JavaSimUtils.decodeOutput(m.getOutputDataRaw("x"), type));
+		}
+	}
+
+	private void checkSplitOutput(SimulationManager m, String name, KernelType<?> type, List<Double> input, int index, int stride) {
+		if (type instanceof DFEType) {
+			List<Double> out = m.getOutputData(name);
+			List<Double> expected = stridedSubList(input, index, stride);
+			assertEquals(expected, out);
+		} else if (type instanceof DFEComplexType) {
+			checkSplitOutput(m, name + "_real", ((DFEComplexType)type).getRealType(),      input, index,     stride);
+			checkSplitOutput(m, name + "_imag", ((DFEComplexType)type).getImaginaryType(), input, index + 1, stride);
+		} else if (type instanceof DFEVectorType) {
+			DFEVectorType<?> vecType = (DFEVectorType<?>)type;
+			KernelType<?> ct = vecType.getContainedType();
+			for (int i = 0; i < vecType.getSize(); i++) {
+				checkSplitOutput(m, name + "_" + i, ct, input, index + i * ct.getTotalPrimitives(), stride);
+			}
+		} else if (type instanceof DFEStructType) {
+			DFEStructType structType = (DFEStructType)type;
+			int subIndex = 0;
+			for (String subName : structType.getFieldNames()) {
+				KernelType<?> ct = structType.getTypeForField(subName);
+				checkSplitOutput(m, subName, ct, input, index + subIndex, stride);
+				subIndex += ct.getTotalPrimitives();
+			}
+		} else {
+			throw new RuntimeException("We don't currently support the type " + type);
+		}
+	}
+
+	private void setSplitInputData(SimulationManager m, String name, KernelType<?> type, List<Double> input, int index, int stride) {
+		if (type instanceof DFEType) {
+			m.setInputData(name, stridedSubList(input, index, stride));
+		} else if (type instanceof DFEComplexType) {
+			setSplitInputData(m, name + "_real", ((DFEComplexType)type).getRealType(),      input, index,     stride);
+			setSplitInputData(m, name + "_imag", ((DFEComplexType)type).getImaginaryType(), input, index + 1, stride);
+		} else if (type instanceof DFEVectorType) {
+			DFEVectorType<?> vecType = (DFEVectorType<?>)type;
+			KernelType<?> ct = vecType.getContainedType();
+			for (int i = 0; i < vecType.getSize(); i++) {
+				setSplitInputData(m, name + "_" + i, ct, input, index + i * ct.getTotalPrimitives(), stride);
+			}
+		} else if (type instanceof DFEStructType) {
+			DFEStructType structType = (DFEStructType)type;
+			int subIndex = 0;
+			for (String subName : structType.getFieldNames()) {
+				KernelType<?> ct = structType.getTypeForField(subName);
+				setSplitInputData(m, subName, ct, input, index + subIndex, stride);
+				subIndex += ct.getTotalPrimitives();
+			}
+		} else {
+			throw new RuntimeException("We don't currently support the type " + type);
+		}
+	}
+
+	private static List<Double> stridedSubList(List<Double> list, int start, int stride) {
+		List<Double> sublist = new ArrayList<Double>();
+		for (int i = start; i < list.size(); i+= stride) {
+			sublist.add(list[i]);
+		}
+		return sublist;
+	}
+}

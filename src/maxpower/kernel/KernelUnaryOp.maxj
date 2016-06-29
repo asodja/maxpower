@@ -1,0 +1,63 @@
+package maxpower.kernel;
+
+import maxpower.ops.UnaryOp;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+
+/**
+ * {@code Kernel} unary operators.
+ *
+ * @author Chris Jones
+ */
+public abstract class KernelUnaryOp {
+	public static class Neg<T extends KernelObjectVectorizable<T, ?>> implements UnaryOp<T, T> {
+		@Override
+		public T op(T a) {
+			return -a;
+		}
+	}
+
+	public static class Not<T extends KernelObjectVectorizable<T, ?>> implements UnaryOp<T, T> {
+		@Override
+		public T op(T a) {
+			return ~a;
+		}
+	}
+
+	public static class Abs implements UnaryOp<DFEVar, DFEVar> {
+		@Override
+		public DFEVar op(DFEVar a) {
+			return KernelMath.abs(a);
+		}
+	}
+
+	public static class Sin implements UnaryOp<DFEVar, DFEVar> {
+		@Override
+		public DFEVar op(DFEVar a) {
+			return KernelMath.sin(a);
+		}
+	}
+
+	public static class Cos implements UnaryOp<DFEVar, DFEVar> {
+		@Override
+		public DFEVar op(DFEVar a) {
+			return KernelMath.cos(a);
+		}
+	}
+
+	public static class Sqrt implements UnaryOp<DFEVar, DFEVar> {
+		@Override
+		public DFEVar op(DFEVar a) {
+			return KernelMath.sqrt(a);
+		}
+	}
+
+	public static class Exp implements UnaryOp<DFEVar, DFEVar> {
+		@Override
+		public DFEVar op(DFEVar a) {
+			return KernelMath.exp(a);
+		}
+	}
+};

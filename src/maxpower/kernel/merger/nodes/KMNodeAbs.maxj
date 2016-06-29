@@ -1,0 +1,54 @@
+package maxpower.kernel.merger.nodes;
+
+import maxpower.kernel.KernelUnaryOp;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.ops.UnaryOp;
+import maxpower.kernel.merger.utils.LatencyEstimation;
+import maxpower.kernel.merger.utils.ResourceUsage;
+import maxpower.kernel.pipeline.FanoutLimiter;
+
+public class KMNodeAbs extends KMNode implements java.io.Serializable, UnaryOp {
+
+	private static final long serialVersionUID = -8201020207506586965L;
+
+	public KMNodeAbs(KMVar input) {
+		super();
+		m_inputs.add(input.getSource());
+	}
+
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	@Override
+	public void execute(Merger merger) {
+		m_result = new FanoutLimiter(
+				apply(m_inputs[0].getResult(), new KernelUnaryOp.Abs()), merger.getMaxFanout());
+	}
+
+	@Override
+	public double evaluate(double val) {
+		return Math.abs(val);
+	}
+
+	@Override
+	public String toString() {
+		return "NodeAbs: " + m_id;
+	}
+
+	@Override
+	public ResourceUsage getResourceUsageEstimate(Merger merger) {
+		ResourceUsage result;
+		if (m_resultType.isFixed()) {
+			result = ResourceUsage.getFixedPointAddSub(
+					m_resultType.getPrimitiveType().getTotalBits());
+		} else {
+			result = ResourceUsage.getFloatingPointAbs();
+		}
+		return result * m_resultType.getPrimitiveCount();
+	}
+
+	@Override
+	int getLatencyEstimate(Merger merger) {
+		return LatencyEstimation.getAbs(merger, m_resultType);
+	}
+
+}

@@ -1,0 +1,33 @@
+package maxpower.kernel.merger.graphpasses;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.utils.ResourceUsage;
+
+/**
+ * Small graph pass that makes a estimation of the resources used by the current data flow graph.
+ * Average Complexity: O(n)
+ * @author nvoss
+ *
+ */
+public class GuessResourceUsageGraphPass {
+
+	public static void run(KMGraph graph, Merger merger) {
+		long LUTs = 0;
+		long FFs = 0;
+		long DSPs = 0;
+		long BRAMs = 0;
+
+		for (KMNode node : graph.getNodes()) {
+			ResourceUsage resources = node.getResourceUsageEstimate(merger);
+			LUTs  += resources.luts;
+			FFs   += resources.flipflops;
+			DSPs  += resources.dsps;
+			BRAMs += resources.mems;
+		}
+
+		System.out.println("LUTs: " + LUTs + " FFs: " + FFs + " DSPs: " + DSPs + " BRAMs: " + BRAMs);
+	}
+
+}

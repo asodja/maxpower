@@ -1,0 +1,95 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeAdd;
+import maxpower.kernel.merger.nodes.KMNodeFloatingPointMultiAdder;
+import maxpower.kernel.merger.nodes.KMNodeNeg;
+import maxpower.kernel.merger.nodes.KMNodeSub;
+
+/**
+ * This graph pass replaces each floating point sub and add with a FloatingPointMultiAdder.
+ * A FloatingPointMultiAdder optimises the costs of floating point additions by saving renormalizations.
+ * Average Complexity: O(n)
+ * Worst Case Complexity: O(n^2)
+ * @author nvoss
+ *
+ */
+public class FloatingPointMultiAdderGraphPass {
+
+	public static boolean run(final KMGraph graph) {
+
+		return GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+
+			@Override
+			public boolean processNode(KMNode node) {
+				boolean changed = false;
+
+				if (node instanceof KMNodeAdd && !node.getResultType().isFixed()) {
+					KMNodeFloatingPointMultiAdder fpAdder = new KMNodeFloatingPointMultiAdder();
+					fpAdder.setOrigin(node.getOrigin());
+					graph.replaceNode(node, fpAdder);
+					changed = true;
+				} else if (node instanceof KMNodeSub && !node.getResultType().isFixed()) {
+					KMNodeFloatingPointMultiAdder fpAdder = new KMNodeFloatingPointMultiAdder();
+					fpAdder.setOrigin(node.getOrigin());
+					KMNodeNeg neg = new KMNodeNeg(node.getInputs()[1]);
+					neg.setOrigin(node.getOrigin());
+					neg.addOutput(fpAdder);
+					neg.addUsedInKernels(node.getUsedInKernels());
+
+					fpAdder.addInput(node.getInputs()[0]);
+					fpAdder.addInput(neg);
+
+					fpAdder.addOutputs(node.getOutputs());
+					fpAdder.addUsedInKernels(node.getUsedInKernels());
+
+					node.getInputs()[0].replaceOutputs(node, fpAdder);
+					node.getInputs()[1].replaceOutputs(node, neg);
+					for (KMNode output : node.getOutputs()) {
+						output.replaceInputs(node, fpAdder);
+					}
+
+					graph.addNode(fpAdder);
+					graph.addNode(neg);
+					graph.removeNode(node);
+					changed = true;
+				} else if (mergeFPMAs(node)) {
+					KMNodeFloatingPointMultiAdder mergeIntoNode = (KMNodeFloatingPointMultiAdder) node.getOutputs()[0];
+
+					List<KMNode> inputToNodeToMergeInto = mergeIntoNode.getInputs();
+
+					List<KMNode> newInputs = new ArrayList<KMNode>();
+
+					for (int i = 0; i < inputToNodeToMergeInto.size(); i++) {
+						if (inputToNodeToMergeInto[i] == node) {
+							newInputs.addAll(node.getInputs());
+						} else {
+							newInputs.add(inputToNodeToMergeInto[i]);
+						}
+					}
+
+					mergeIntoNode.setInputs(newInputs);
+
+					for (KMNode input : node.getInputs()) {
+						input.replaceOutputs(node, mergeIntoNode);
+					}
+
+					graph.removeNode(node);
+					changed = true;
+				}
+
+				return changed;
+			}
+
+			public boolean mergeFPMAs(KMNode node) {
+				return node instanceof KMNodeFloatingPointMultiAdder && node.getOutputs().size() == 1 &&
+					node.getOutputs()[0] instanceof KMNodeFloatingPointMultiAdder;
+			}
+		});
+	}
+
+}

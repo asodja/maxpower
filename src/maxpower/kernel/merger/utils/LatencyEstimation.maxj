@@ -1,0 +1,149 @@
+package maxpower.kernel.merger.utils;
+
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.types.KMType;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+public class LatencyEstimation {
+	public static int getAddSub(Merger merger, KMType type) {
+		if (type.isFixed()) {
+			double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FIX_ADDSUB);
+			return pipeliningFactor == 0.0 ? 0 : 1;
+		} else {
+			double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FLOAT_ADDSUB);
+			if (merger.isAltera()) {
+				return 7 + (int)(7 * pipeliningFactor);
+			} else {
+				return (int)(12 * pipeliningFactor);// assumes DSP factor is NONE and mantissa bits between 17 and 62.
+			}
+		}
+	}
+
+	public static int getAbs(Merger merger, KMType type) {
+		if (type.isFixed()) {
+			return getAddSub(merger, type);
+		} else {
+			return 0;
+		}
+	}
+
+	public static int getLogicOperation(Merger merger) {
+		return merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.LOGICAL) < 1.0 ? 0 : 1;
+	}
+
+	public static int getCompareOperation(Merger merger, KMType type) {
+		if (type.isFixed()) {
+			double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FIX_COMPARE);
+			return pipeliningFactor == 0.0 ? 0 : 1;
+		} else {
+			double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FLOAT_COMPARE);
+			return (int)(2 * pipeliningFactor);
+		}
+	}
+
+	public static int getMux(Merger merger) {
+		return merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.MISC) == 0.0 ? 0 : 1;
+	}
+
+	public static int getMax(Merger merger, KMType type) {
+		return getMux(merger) + getCompareOperation(merger, type);
+	}
+
+	public static int getSin(Merger merger, KMType type) {
+		return 6 * getAddSub(merger, type) + 2 * getMul(merger, type);//default is an order 3 polynomial with casts to fixed point before and after
+	}
+
+	public static int getFloatingPointMultiAdder(Merger merger, KMType type, int numInputs) {
+		if (numInputs == 2) {
+			return getAddSub(merger, type);
+		}
+		double muxPipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.MISC);
+		int adderTreeLat = MathUtils.ceilLog2(numInputs);//cond add sub not squashable
+		int maxTreeLat   = adderTreeLat * (getMux(merger) + (muxPipeliningFactor == 0.0 ? 0 : 1));//a max is a fixed point compare and a mux
+
+		int inputBits  = ((DFEFloat)type.getPrimitiveType()).getMantissaBits();
+		int outputBits = inputBits + adderTreeLat;
+
+		int inShiftLat  = (int)Math.ceil(Math.log(inputBits)  / Math.log(merger.isAltera() ? 3 : 4));//shifts are not squashable
+		int outShiftLat = (int)Math.ceil(Math.log(outputBits) / Math.log(merger.isAltera() ? 3 : 4));//shifts are not squashable
+
+		return maxTreeLat + adderTreeLat + inShiftLat + outShiftLat + 2;//1 for leading 1 detect, 1 for round-to-nearest-even
+	}
+
+	public static int getDiv(Merger merger, KMType type) {
+		if (type.isFixed()) {
+			double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FIX_DIV);
+			int latency = pipeliningFactor < 0.1 ? 0 : (pipeliningFactor < 0.25 ? 1 : 3);//rounding, sign bits, etc.
+
+			double score = 1.0;
+			for (int i = 0; i < type.getPrimitiveType().getTotalBits() - 1; i++) {
+				score -= pipeliningFactor;
+				if (score <= 1.0E-6) {
+					latency++;
+					score += 1.0;
+				}
+			}
+
+			return latency;
+		} else {
+			double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FLOAT_DIV);
+			int mantBits = ((DFEFloat)type.getPrimitiveType()).getMantissaBits();
+			if (merger.isAltera()) {
+				if (pipeliningFactor < 0.4) {
+					return mantBits == 24 ?  6 : (mantBits < 42 ?  8 : 10);
+				} else if(pipeliningFactor < 0.75) {
+					return mantBits == 24 ? 14 : (mantBits < 42 ? 18 : 24);
+				} else {
+					return (mantBits / 2) * 2 + 9;
+				}
+			} else {
+				return (int)(pipeliningFactor * (mantBits + 4));
+			}
+		}
+	}
+
+	public static int getMul(Merger merger, KMType type) {
+		if (type.isFixed()) {
+			double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FIX_MUL);
+			return (int)(3 * pipeliningFactor); // this is a massive simplification, but it will be close
+		} else {
+			double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FLOAT_MUL);
+			if (merger.isAltera()) {
+				if(pipeliningFactor >= 0.85) {
+					return 11;
+				} else if(pipeliningFactor >= 0.5) {
+					return 10;
+				} else if(pipeliningFactor >= 0.15) {
+					return 6;
+				} else {
+					return 5;
+				}
+			} else {
+				int maxLatency = ((DFEFloat)type.getPrimitiveType()).getMantissaBits() < 48 ? 8 : 9;
+				return (int)(maxLatency * pipeliningFactor);
+			}
+		}
+	}
+
+	public static int getExp(Merger merger, KMType type) {
+		int numChunks = MathUtils.ceilDivide(type.getPrimitiveType().getTotalBits(), 10);// this is a massive simplification, but it will be close
+		return getAddSub(merger, type) + numChunks * (getMul(merger, type) + 3);//default is an order 1 polynomial on each chunk with a cast at the end or beginning
+	}
+
+	public static int getSqrt(Merger merger, KMType type) {
+		if (type.isFixed()) {
+			return 6 * getAddSub(merger, type) + 3 * getMul(merger, type);//default is an order 4 polynomial
+		} else {
+			double pipeliningFactor = merger.getOwner().optimization.peekPipeliningFactor(PipelinedOps.FLOAT_SQRT);
+			int mantBits = ((DFEFloat)type.getPrimitiveType()).getMantissaBits();
+			if (merger.isAltera()) {
+				return 4 + (pipeliningFactor > 0.4 ? mantBits : mantBits / 2);
+			} else {
+				return (int)(pipeliningFactor * (4 + mantBits));
+			}
+		}
+	}
+}

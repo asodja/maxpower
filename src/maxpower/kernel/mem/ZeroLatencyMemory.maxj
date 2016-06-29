@@ -6,9 +6,8 @@ import java.util.List;
 import java.util.Map;
 
 import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
-import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelFinalizer;
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelComponent;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.WrapMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Mem.RamWriteMode;
@@ -27,7 +26,7 @@ import com.maxeler.utils.MaxCompilerHide;
  *
  * @author Chris Jones
  */
-public class ZeroLatencyMemory<T extends KernelObject<T>> extends KernelLib implements KernelFinalizer {
+public class ZeroLatencyMemory<T extends KernelObject<T>> extends KernelComponent implements KernelComponent.Finalizer {
 	private static final int LOOP_LATENCY = 3;
 
 	private final Memory<T> ram;
@@ -40,12 +39,12 @@ public class ZeroLatencyMemory<T extends KernelObject<T>> extends KernelLib impl
 
 	private boolean hasWritten;
 
-	private ZeroLatencyMemory(KernelLib owner, KernelType<T> type, int depth) {
+	private ZeroLatencyMemory(KernelBase<?> owner, KernelType<T> type, int depth) {
 		super(owner);
 
-		writeAddress = dfeUInt(MathUtils.bitsToAddress(depth)).newInstance(this);
-		writeEnable  = dfeBool().newInstance(this);
-		dataIn       = type.newInstance(this);
+		writeAddress = dfeUInt(MathUtils.bitsToAddress(depth)).newInstance(getOwner());
+		writeEnable  = dfeBool().newInstance(getOwner());
+		dataIn       = type.newInstance(getOwner());
 		hasWritten   = false;
 
 		ram = mem.alloc(type, depth);
@@ -59,7 +58,7 @@ public class ZeroLatencyMemory<T extends KernelObject<T>> extends KernelLib impl
 
 		reads = new LinkedHashMap<DFEVar, T>();
 
-		getKernel().addKernelFinalizer(this);
+		addKernelFinalizer(this);
 	}
 
 	/**
@@ -70,7 +69,7 @@ public class ZeroLatencyMemory<T extends KernelObject<T>> extends KernelLib impl
 	 * @param depth  maximum number of values which can be stored
 	 * @return zero latency memory object which can read from or written to
 	 */
-	public static <T extends KernelObject<T>> ZeroLatencyMemory<T> alloc(KernelLib owner, KernelType<T> type, int depth) {
+	public static <T extends KernelObject<T>> ZeroLatencyMemory<T> alloc(KernelBase<?> owner, KernelType<T> type, int depth) {
 		return new ZeroLatencyMemory<T>(owner, type, depth);
 	}
 
@@ -94,17 +93,17 @@ public class ZeroLatencyMemory<T extends KernelObject<T>> extends KernelLib impl
 
 		// compare addresses oldest to newest, as we want to find the most recent match
 		for (int n = LOOP_LATENCY; n >= 1; --n) {
-			optimization.pushPipeliningFactor(0);
+			optimization.pushNoPipelining();
 			DFEVar addressMatch = optimization.pipeline(cycle >= n)
 			                    & optimization.pipeline(address === stream.offset(writeAddress, -n))
 			                    & stream.offset(writeEnable, -n);
 			select = addressMatch ? n : select;
-			optimization.popPipeliningFactor();
+			optimization.popNoPipelining();
 		}
 
-		optimization.pushPipeliningFactor(0);
+		optimization.pushNoPipelining();
 		T dataOut = control.mux(optimization.pipeline(select), values);
-		optimization.popPipeliningFactor();
+		optimization.popNoPipelining();
 
 		reads.put(address, dataOut);
 		return dataOut;
@@ -146,7 +145,7 @@ public class ZeroLatencyMemory<T extends KernelObject<T>> extends KernelLib impl
 
 	@MaxCompilerHide
 	@Override
-	public void finalizeKernel(Kernel kernel_design) {
+	public void finalizeKernel(KernelBase<?> kernel) {
 		if (!hasWritten) throw new MaxCompilerAPIError("write() not called");
 	}
 }

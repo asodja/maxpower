@@ -1,0 +1,305 @@
+package maxpower.kernel.utils;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType.ConstantValue;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+/**
+ * Several utility functions for encoding inputs and outputs for use with the simulation manager.
+ *
+ * @author Stephen Girdlestone
+ */
+public class JavaSimUtils {
+
+	/**
+	 * Encodes a list of Doubles into a list of Bits using the type supplied. The Doubles in the list will
+	 * be used sequentially by the encoder.
+	 * <p>
+	 * For example, if you encode to a DFEStructType that contains a
+	 * float followed by an integer followed by a boolean, then the first output will be a Bits object
+	 * containing input[0] as a float followed by input[1] and an integer followed by input[2] as a boolean.
+	 * Similarly the second output will contain inputs 3, 4 and 5, etc.
+	 *
+	 * @param input A list of Doubles containing the data to be encoded in the order that it is to be used.
+	 * @param type The type of the input (DFEType, DFEVectorType, DFEStructType or DFEComplexType).
+	 * @return A list of Bits containing the encoded values ready for setInputDataRaw.
+	 */
+	public static <T extends KernelType<?>>
+	List<Bits> encodeInput(List<Double> input, T type) {
+		int prims = type.getTotalPrimitives();
+		if (input.size() % prims != 0) {
+			throw new IllegalArgumentException("The length of the input must be a multiple of the number of primitives in the type.");
+		}
+
+		List<Bits> encoded = new ArrayList<Bits>();
+		for (int i = 0; i < input.size() / prims; i++) {
+			List<Double> partInput = input.subList(i * prims, (i + 1) * prims);
+			encoded.add(encodeValue(partInput, type));
+		}
+		return encoded;
+	}
+
+	/**
+	 * Encodes a list of Doubles into a list of Bits using the list of types supplied. The Doubles and the
+	 * types in the lists will be used sequentially. The output will be the same length as the list of types
+	 * with each Bits object containing the next set of inputs encoded to the specified type.
+	 *
+	 * @param input A list of Doubles containing the data to be encoded in the order that it is to be used.
+	 * @param types The type of the input on each cycle.
+	 * @return A list of Bits containing the encoded values ready for setInputDataRaw.
+	 */
+	public static <T extends KernelType<?>>
+	List<Bits> encodeInput(List<Double> input, List<T> types) {
+		List<Bits> encoded = new ArrayList<Bits>();
+		int index = 0;
+		for (T t : types) {
+			int prims = t.getTotalPrimitives();
+			encoded.add(encodeValue(input.subList(index, index + prims), t));
+			index += prims;
+		}
+		return encoded;
+	}
+
+	/**
+	 * Encodes a list of Doubles into a list of Bits using the type supplied, then does an aspect change on
+	 * the result to fit through AspectChangeIO. The Doubles in the list will be used sequentially by the encoder.
+	 *
+	 * @param input A list of Doubles containing the data to be encoded in the order that it is to be used.
+	 * @param type The type of the input (DFEType, DFEVectorType, DFEStructType or DFEComplexType).
+	 * @param portWidth The width of the input port used by AspectChangeIO.
+	 * @return A list of Bits containing the encoded values ready for setInputDataRaw.
+	 */
+	public static <T extends KernelType<?>>
+	List<Bits> encodeInput(List<Double> input, T type, int portWidth) {
+		List<Bits> encoded = encodeInput(input, type);
+		return aspectChange(encoded, portWidth);
+	}
+
+	/**
+	 * Encodes a list of Doubles into a list of Bits using the list of types supplied, then does an aspect
+	 * change on the result to fit through AspectChangeIO. The Doubles and the types in the lists will be
+	 * used sequentially. The output will be the same length as the list of types with each Bits object
+	 * containing the next set of inputs encoded to the specified type.
+	 *
+	 * @param input A list of Doubles containing the data to be encoded in the order that it is to be used.
+	 * @param types The type of the input on each cycle.
+	 * @param portWidth The width of the input port used by AspectChangeIO.
+	 * @return A list of Bits containing the encoded values ready for setInputDataRaw.
+	 */
+	public static <T extends KernelType<?>>
+	List<Bits> encodeInput(List<Double> input, List<T> types, int portWidth) {
+		List<Bits> encoded = encodeInput(input, types);
+		return aspectChange(encoded, portWidth);
+	}
+
+	/**
+	 * Decodes a list of Bits into a list of Doubles. The number of bits in each Bits object does
+	 * not need to match the size of the types as it is aspect changed automatically. The output
+	 * contains the number of inputs multiplied by the number of primitives contained in the type.
+	 *
+	 * @param raw The list of raw bits from getOutputDataRaw.
+	 * @param type The type of the output (DFEType, DFEVectorType, DFEStructType or DFEComplexType).
+	 * @return A list of Doubles containing the decoded output.
+	 */
+	public static <T extends KernelType<?>>
+	List<Double> decodeOutput(List<Bits> raw, T type) {
+		long totalBits = raw.size() * raw[0].getWidth();
+		int numOutputs = (int) (totalBits / type.getTotalBits());
+		List<T> types = new ArrayList<T>(numOutputs);
+		for (int i = 0; i < numOutputs; i++) {
+			types.add(type);
+		}
+
+		return decodeOutput(raw, types);
+	}
+
+	/**
+	 * Decodes a list of Bits into a list of Doubles using the types provided. The number of bits in
+	 * each Bits object does not need to match the size of the types as it is aspect changed
+	 * automatically. The output contains the total number of primitives contained in the list of types.
+	 *
+	 * @param raw The list of raw bits from getOutputDataRaw.
+	 * @param types The type of the output on each cycle.
+	 * @return A list of Doubles containing the decoded output.
+	 */
+	public static <T extends KernelType<?>>
+	List<Double> decodeOutput(List<Bits> raw, List<T> types) {
+		List<Bits> sliced = resliceOutput(raw, types);
+		List<Double> output = new ArrayList<Double>();
+		for (int i = 0; i < sliced.size(); i++) {
+			output.addAll(decodeValue(sliced[i], types[i]));
+		}
+		return output;
+	}
+
+	private static int totalBits(List<Bits> in) {
+		int numBits = 0;
+		for (Bits b : in) {
+			numBits += b.getWidth();
+		}
+		return numBits;
+	}
+
+	private static Bits pack(List<Bits> bits) {
+		Bits output = bits[0];
+		for (int i = 1; i < bits.size(); i++) {
+			output = bits[i] # output;
+		}
+		return output;
+	}
+
+	private static <T extends KernelType<?>>
+	Bits encodeValue(List<Double> input, T type) {
+		int prims = type.getTotalPrimitives();
+		if (input.size() != prims) {//TODO: possibly add special case for fields called "padding"
+			throw new IllegalArgumentException("The length of the input must be equal to the number of primitives in the type.");
+		}
+		Bits encoded;
+		if (type instanceof DFEType) {
+			encoded = type.encodeConstant(input[0]);
+		} else if (type instanceof DFEVectorType){
+			DFEVectorType<?> t = (DFEVectorType<?>)type;
+			KernelType<?> ct = t.getContainedType();
+			List<Bits> partEnc = new ArrayList<Bits>();
+			for (int i = 0; i < t.getSize(); i++) {
+				List<Double> partInput = input.subList(i * ct.getTotalPrimitives(), (i + 1) * ct.getTotalPrimitives());
+				partEnc.add(encodeValue(partInput, ct));
+			}
+			encoded = pack(partEnc);
+		} else if (type instanceof DFEStructType){
+			DFEStructType t = (DFEStructType)type;
+			List<Bits> partEnc = new ArrayList<Bits>();
+			int index = 0;
+			for (String name : t.getFieldNames()) {
+				KernelType<?> ct = t.getTypeForField(name);
+				int cp = ct.getTotalPrimitives();
+				List<Double> partInput = input.subList(index, index + cp);
+				index += cp;
+				partEnc.add(pack(encodeInput(partInput, ct)));
+			}
+			encoded = pack(partEnc);
+		} else if (type instanceof DFEComplexType){
+			DFEComplexType t = (DFEComplexType)type;
+			encoded = t.encodeConstant(input[0], input[1]);
+		} else {
+			throw new IllegalArgumentException("Encode input currently only supports DFEType, DFEComplexType, DFEStructType and DFEVector type, not " + type);
+		}
+		return encoded;
+	}
+
+	private static <T extends KernelType<?>>
+	List<Double> decodeValue(Bits raw, T type) {
+		if (type.getTotalBits() != raw.getWidth()) {
+			throw new IllegalArgumentException("Number of bits in the type " + type.getTotalBits() + " must match number of bits in Bits object " + raw.getWidth());
+		}
+		List<Double> output = new ArrayList<Double>();
+		if (type instanceof DFEType) {
+			DFEType t = (DFEType)type;
+			output.add(t.decodeConstant(raw));
+		} else if (type instanceof DFEComplexType){
+			DFEComplexType t = (DFEComplexType)type;
+			ConstantValue value = t.decodeConstant(raw);
+			output.add(value.getReal());
+			output.add(value.getImaginary());
+		} else if (type instanceof DFEVectorType){
+			DFEVectorType<?> t = (DFEVectorType<?>)type;
+			KernelType<?> ct = t.getContainedType();
+			for (int j = 0; j < t.getSize(); j++) {
+				output.addAll(decodeValue(raw.getBitsRaw(j * ct.getTotalBits(), ct.getTotalBits()), ct));
+			}
+		} else if (type instanceof DFEStructType){
+			DFEStructType t = (DFEStructType)type;
+			int index = 0;
+			for (String name : t.getFieldNames()) {
+				KernelType<?> ct = t.getTypeForField(name);
+				output.addAll(decodeValue(raw.getBitsRaw(index, ct.getTotalBits()), ct));
+				index += ct.getTotalBits();
+			}
+		} else {
+			throw new IllegalArgumentException("Encode output currently only supports DFEType, DFEComplexType, DFEStructType and DFEVector type, not " + type);
+		}
+		return output;
+	}
+
+	private static List<Bits> aspectChange(List<Bits> in, int width) {
+		if (width == 0 || in.size() == 0) {
+			return in;
+		}
+		int length = MathUtils.ceilDivide(totalBits(in), width);
+		List<Bits> out = new ArrayList<Bits>();
+		int numBitsAlreadyUsed = 0;
+		int index = 0;
+		for (int i = 0; i < length; i++) {
+			int bitsToGet = Math.min(in[index].getWidth() - numBitsAlreadyUsed, width);
+			Bits bits = in[index].getBitsRaw(numBitsAlreadyUsed, bitsToGet);
+			numBitsAlreadyUsed += bits.getWidth();
+			if (numBitsAlreadyUsed >= in[index].getWidth()) {
+				index++;
+				numBitsAlreadyUsed = 0;
+			}
+			while (bits.getWidth() < width) {
+				int currentBits = bits.getWidth();
+				if (index < in.size()) {
+					int bitsLeft = width - bits.getWidth();
+					int bitsAvailable = in[index].getWidth() - numBitsAlreadyUsed;
+					if (bitsAvailable <= bitsLeft) {
+						bits = in[index].getBitsRaw(numBitsAlreadyUsed, bitsAvailable) # bits;
+					} else {
+						bits = in[index].getBitsRaw(numBitsAlreadyUsed, bitsLeft) # bits;
+					}
+					numBitsAlreadyUsed += bits.getWidth() - currentBits;
+					if (numBitsAlreadyUsed >= in[index].getWidth()) {
+						index++;
+						numBitsAlreadyUsed = 0;
+					}
+				} else {//add padding
+					bits = Bits.allZeros(width - currentBits) # bits;
+				}
+			}
+			out.add(bits);
+		}
+		return out;
+	}
+
+	private static <T extends KernelType<?>>
+	List<Bits> resliceOutput(List<Bits> in, List<T> types) {
+		List<Bits> out = new ArrayList<Bits>();
+		int numBitsAlreadyUsed = 0;
+		int index = 0;
+		for (int i = 0; i < types.size(); i++) {
+			int width = types[i].getTotalBits();
+			int bitsToGet = Math.min(in[index].getWidth() - numBitsAlreadyUsed, width);
+			Bits bits = in[index].getBitsRaw(numBitsAlreadyUsed, bitsToGet);
+			numBitsAlreadyUsed += bits.getWidth();
+			if (numBitsAlreadyUsed >= in[index].getWidth()) {
+				index++;
+				numBitsAlreadyUsed = 0;
+			}
+			while (bits.getWidth() < width) {
+				int currentBits = bits.getWidth();
+				int bitsLeft = width - bits.getWidth();
+				int bitsAvailable = in[index].getWidth() - numBitsAlreadyUsed;
+				if (bitsAvailable <= bitsLeft) {
+					bits = in[index].getBitsRaw(numBitsAlreadyUsed, bitsAvailable) # bits;
+				} else {
+					bits = in[index].getBitsRaw(numBitsAlreadyUsed, bitsLeft) # bits;
+				}
+				numBitsAlreadyUsed += bits.getWidth() - currentBits;
+				if (numBitsAlreadyUsed >= in[index].getWidth()) {
+					index++;
+					numBitsAlreadyUsed = 0;
+				}
+			}
+			out.add(bits);
+		}
+		return out;
+	}
+}

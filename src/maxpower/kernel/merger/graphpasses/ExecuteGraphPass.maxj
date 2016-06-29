@@ -1,0 +1,42 @@
+package maxpower.kernel.merger.graphpasses;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.nodes.KMNode;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+
+/**
+ * This graph pass calls the appropriate MaxCompiler API for each node in the graph.
+ * Complexity: O(n^2)
+ * @author nvoss
+ *
+ */
+public class ExecuteGraphPass extends ProcessTopologicallySortedGraphPass{
+
+	public static void run(KMGraph graph, final Merger merger) {
+		ProcessTopologicallySortedGraphPass.processAllNodesTopological(graph,
+				new ProcessTopologicallySortedGraphPass.NodewiseProcessor() {
+			@Override
+			public void processNode(KMNode node) {
+				/*
+				 * We set the default origin of all nodes that are about to be created in MaxCompiler.
+				 * This makes sure that the MaxCompiler knows in which KMKernel the hardware was
+				 * actually created.
+				 * We can not set the Origin only on the base of the last result since this would ignore
+				 * most nodes created if for example a exp function would be instantiated.
+				 * Afterwards we remove this origin again by passing in a null pointer.
+				 */
+				merger.getOwner().getPhotonDesignData().setDefaultNodeOrigin(node.getOrigin());
+				try {
+					node.execute(merger);
+				} catch (Exception e) {
+					throw new MaxCompilerAPIError("Node Stack Trace:\n" + node.getOriginStackTrace()
+							+ "Exception Stack Trace:\n" + e);
+				}
+				merger.getOwner().getPhotonDesignData().setDefaultNodeOrigin(null);
+			}
+		});
+	}
+
+}

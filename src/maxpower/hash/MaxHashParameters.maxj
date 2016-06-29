@@ -1,6 +1,6 @@
 package maxpower.hash;
 
-import maxpower.hash.mem.MemInterface.MemType;
+import maxpower.hash.mem.MemBacking.MemType;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
@@ -20,7 +20,6 @@ public class MaxHashParameters<T extends KernelObject<T>> {
 	private int numIntermediateBuckets = 0;
 	private MemType intermediateMemType = MemType.UNDEFINED;
 
-	private int baseAddressBursts;
 	private boolean validateResults = true;
 
 	private boolean doubleBufferingEnabled = true;
@@ -125,14 +124,6 @@ public class MaxHashParameters<T extends KernelObject<T>> {
 	}
 
 	/**
-	 * Set the base address of LMem-backed hash tables.  For hash tables that
-	 * are not backed by LMem, this parameter is ignored.
-	 */
-	public void setBaseAddressBursts(int baseAddressBursts) {
-		this.baseAddressBursts = baseAddressBursts;
-	}
-
-	/**
 	 * Enable or disable storage of the key alongside the value in the
 	 * hash table, so that results may be verified.  This is enabled by
 	 * default, and for some types of hash table it cannot be disabled.
@@ -174,10 +165,6 @@ public class MaxHashParameters<T extends KernelObject<T>> {
 
 	int getNumIntermediateBuckets() {
 		return numIntermediateBuckets;
-	}
-
-	int getBaseAddressBursts() {
-		return baseAddressBursts;
 	}
 
 	CustomManager getManager() {

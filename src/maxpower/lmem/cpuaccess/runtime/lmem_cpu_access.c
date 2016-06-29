@@ -13,6 +13,7 @@
 #include <stdarg.h>
 #include <unistd.h>
 #include <sys/time.h>
+#include <stdlib.h>
 
 #include "../../runtime/lmem.h"
 
@@ -24,7 +25,6 @@
 #define MAX_BURSTS_PER_CMD 127
 
 #define LMEM_CMD_STREAM_NAME "CpuAccessLMemCommands"
-#define LMEM_CONTROL_GROUP_NAME "CpuAccessControlGroup"
 
 #define LMEM_WRITE_CPU_STREAM_NAME "CpuToLMem"
 #define LMEM_READ_CPU_STREAM_NAME "LMemToCpu"
@@ -45,6 +45,8 @@ struct lmem_cpu_access_s {
 	max_llstream_t *cmd_stream;
 	uint16_t to_lmem_stream_id;
 	uint16_t from_lmem_stream_id;
+	char *write_cpu_stream_name;
+	char *read_cpu_stream_name;
 };
 
 typedef struct ATTRIB_PACKED {
@@ -58,10 +60,18 @@ size_t lmem_get_burst_size_bytes(lmem_cpu_access_t *handle)
 	return handle->burst_size_bytes;
 }
 
-lmem_cpu_access_t *lmem_init_cpu_access(max_file_t *maxfile, max_engine_t *engine)
+lmem_cpu_access_t *lmem_init_cpu_access_named(max_file_t *maxfile, max_engine_t *engine,
+		const char *cmd_stream_name, const char *write_cpu_stream_name, const char *read_cpu_stream_name,
+		const char *write_stream_name, const char *read_stream_name, const char *interface_name)
 {
 	assert(maxfile != NULL);
 	assert(engine != NULL);
+	assert(cmd_stream_name != NULL);
+	// Must enable at least one of reads or writes
+	assert(write_cpu_stream_name != NULL || read_cpu_stream_name != NULL);
+	// The two streams must be either both enabled or both disabled
+	assert((write_cpu_stream_name != NULL) == (write_stream_name != NULL));
+	assert((read_cpu_stream_name != NULL) == (read_stream_name != NULL));
 
 	lmem_cpu_access_t *handle = malloc(sizeof(lmem_cpu_access_t));
 	if (handle == NULL) {
@@ -71,17 +81,33 @@ lmem_cpu_access_t *lmem_init_cpu_access(max_file_t *maxfile, max_engine_t *engin
 
 	handle->engine = engine;
 	handle->maxfile = maxfile;
-	handle->burst_size_bytes = max_get_constant_uint64t(maxfile, "MemCtrlPro_DataBurstSizeInBytes");
+	handle->burst_size_bytes = max_get_burst_size(maxfile, interface_name);
 
 	handle->cmd_buffer_size = MAX_NUM_SLOTS * sizeof(mem_cmd_stream_slot_t);
 	posix_memalign(&handle->cmd_buffer, PAGE_SIZE, handle->cmd_buffer_size);
-	handle->cmd_stream = max_llstream_setup(handle->engine, LMEM_CMD_STREAM_NAME,
+	handle->cmd_stream = max_llstream_setup(handle->engine, cmd_stream_name,
 			MAX_NUM_SLOTS, sizeof(mem_cmd_stream_slot_t), handle->cmd_buffer);
 
-	handle->to_lmem_stream_id = 1 << max_lmem_get_id_within_group(maxfile, LMEM_WRITE_STREAM_NAME);
-	handle->from_lmem_stream_id = 1 << max_lmem_get_id_within_group(maxfile, LMEM_READ_STREAM_NAME);
+	if(write_stream_name) {
+		handle->to_lmem_stream_id = 1 << max_memctl_get_id_within_group(maxfile, interface_name, write_stream_name);
+		handle->write_cpu_stream_name = strdup(write_cpu_stream_name);
+	} else {
+		handle->write_cpu_stream_name = NULL;
+	}
+	if(read_stream_name) {
+		handle->from_lmem_stream_id = 1 << max_memctl_get_id_within_group(maxfile, interface_name, read_stream_name);
+		handle->read_cpu_stream_name = strdup(read_cpu_stream_name);
+	} else {
+		handle->read_cpu_stream_name = NULL;
+	}
 
 	return handle;
+}
+
+lmem_cpu_access_t *lmem_init_cpu_access(max_file_t *maxfile, max_engine_t *engine)
+{
+	return lmem_init_cpu_access_named(maxfile, engine, LMEM_CMD_STREAM_NAME, LMEM_WRITE_CPU_STREAM_NAME,
+			LMEM_READ_CPU_STREAM_NAME, LMEM_WRITE_STREAM_NAME, LMEM_READ_STREAM_NAME, NULL);
 }
 
 static void *acquire_memory_command_slot(lmem_cpu_access_t *handle, int timeout_seconds)
@@ -146,8 +172,14 @@ static void send_mem_commands(
 
 void lmem_write(lmem_cpu_access_t *handle, uint32_t address_bursts, const void *data, size_t data_size_bursts)
 {
+	if(handle->write_cpu_stream_name == NULL) {
+		printf("%s: Writing disabled on this handle.\n", __func__);
+		abort();
+	}
 	max_actions_t *actions = max_actions_init(handle->maxfile, NULL);
-	max_queue_input(actions, LMEM_WRITE_CPU_STREAM_NAME, data, data_size_bursts * handle->burst_size_bytes);
+	max_disable_validation(actions);
+	max_disable_reset(actions);
+	max_queue_input(actions, handle->write_cpu_stream_name, data, data_size_bursts * handle->burst_size_bytes);
 	max_run_t *runContext = max_run_nonblock(handle->engine, actions);
 
 	send_mem_commands(handle, handle->to_lmem_stream_id, address_bursts, data_size_bursts);
@@ -158,8 +190,14 @@ void lmem_write(lmem_cpu_access_t *handle, uint32_t address_bursts, const void *
 
 void lmem_read(lmem_cpu_access_t *handle, uint32_t address_bursts, void *data, size_t data_size_bursts)
 {
+	if(handle->read_cpu_stream_name == NULL) {
+		printf("%s: Reading disabled on this handle.\n", __func__);
+		abort();
+	}
 	max_actions_t *actions = max_actions_init(handle->maxfile, NULL);
-	max_queue_output(actions, LMEM_READ_CPU_STREAM_NAME, data, data_size_bursts * handle->burst_size_bytes);
+	max_disable_validation(actions);
+	max_disable_reset(actions);
+	max_queue_output(actions, handle->read_cpu_stream_name, data, data_size_bursts * handle->burst_size_bytes);
 	max_run_t *runContext = max_run_nonblock(handle->engine, actions);
 
 	send_mem_commands(handle, handle->from_lmem_stream_id, address_bursts, data_size_bursts);

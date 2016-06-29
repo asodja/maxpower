@@ -1,0 +1,371 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.Random;
+
+import junit.framework.Assert;
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.KMKernel;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.TestHelper;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeConstant;
+import maxpower.kernel.merger.nodes.KMNodeDiv;
+import maxpower.kernel.merger.nodes.KMNodeFloatingPointMultiAdder;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+import maxpower.kernel.merger.nodes.KMNodeMux;
+import maxpower.kernel.merger.nodes.KMNodeNeg;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class ConstantFoldingTest {
+	// TODO: MUX
+	private enum TestCase { UNARYOP , BINARYOP, SUB1, SUB2, DIV1, DIV2,
+		ANHILATEASSOCIATIVEOP, ASSOCIATIVEOP, MUX1, MUX2, MUX3, MUX4 };
+	private final int RUNS = 1000;
+
+	private class ConstantFoldingUnaryOpTestKernel extends KMKernel {
+		public ConstantFoldingUnaryOpTestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+
+			io.output("result", a + sin(5));
+		}
+	}
+
+	private class ConstantFoldingBinaryOpTestKernel extends KMKernel {
+		public ConstantFoldingBinaryOpTestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+
+			io.output("result", a + (constant.var(5) - constant.var(3)));
+		}
+	}
+
+	private class ConstantFoldingSub1TestKernel extends KMKernel {
+		public ConstantFoldingSub1TestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+
+			io.output("result", a - 0);
+		}
+	}
+
+	private class ConstantFoldingSub2TestKernel extends KMKernel {
+		public ConstantFoldingSub2TestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+
+			io.output("result", 0 - a);
+		}
+	}
+
+	private class ConstantFoldingDiv1TestKernel extends KMKernel {
+		public ConstantFoldingDiv1TestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+
+			io.output("result", a / 1);
+		}
+	}
+
+	private class ConstantFoldingDiv2TestKernel extends KMKernel {
+		public ConstantFoldingDiv2TestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+
+			io.output("result", a / 5);
+		}
+	}
+
+	private class ConstantFoldingAnhilateAssociativeOpTestKernel extends KMKernel {
+		public ConstantFoldingAnhilateAssociativeOpTestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+			KMVar d = io.input("d");
+
+			io.output("result", a * b * c * 0 + d);
+		}
+	}
+
+	private class ConstantFoldingAssociativeOpTestKernel extends KMKernel {
+		public ConstantFoldingAssociativeOpTestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+
+			io.output("result", a + 3 + 4 + b + 5 + c + 6);
+		}
+	}
+
+	private class ConstantFoldingMux1TestKernel extends KMKernel {
+		public ConstantFoldingMux1TestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+
+			io.output("result", control.mux(constant.var(1), a, b, c));
+		}
+	}
+
+	private class ConstantFoldingMux2TestKernel extends KMKernel {
+		public ConstantFoldingMux2TestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar e = io.input("e");
+
+			io.output("result", control.mux(e, a, a));
+		}
+	}
+
+	private class ConstantFoldingMux3TestKernel extends KMKernel {
+		public ConstantFoldingMux3TestKernel(KernelLib owner) {
+			KMVar e = io.input("e");
+
+			io.output("result", e ? constant.var(1) : constant.var(0));
+		}
+	}
+
+	private class ConstantFoldingMux4TestKernel extends KMKernel {
+		public ConstantFoldingMux4TestKernel(KernelLib owner) {
+			KMVar e = io.input("e");
+
+			io.output("result", e ? constant.var(0) : constant.var(1));
+		}
+	}
+
+	private class ConstantFoldingTestKernel extends Kernel {
+		private final KMGraph m_graph;
+
+		@SuppressWarnings("unchecked")
+		public ConstantFoldingTestKernel(KernelParameters parameters, TestCase testCase) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+			merger.addInput("a", io.input("a", dfeFloat(8, 24)));
+			merger.addInput("b", io.input("b", dfeFloat(8, 24)));
+			merger.addInput("c", io.input("c", dfeFloat(8, 24)));
+			merger.addInput("d", io.input("d", dfeFloat(8, 24)));
+			merger.addInput("e", io.input("e", dfeBool()));
+
+			switch(testCase) {
+				case UNARYOP:
+					merger.addKernel(new ConstantFoldingUnaryOpTestKernel(this));
+					break;
+				case BINARYOP:
+					merger.addKernel(new ConstantFoldingBinaryOpTestKernel(this));
+					break;
+				case SUB1:
+					merger.addKernel(new ConstantFoldingSub1TestKernel(this));
+					break;
+				case SUB2:
+					merger.addKernel(new ConstantFoldingSub2TestKernel(this));
+					break;
+				case DIV1:
+					merger.addKernel(new ConstantFoldingDiv1TestKernel(this));
+					break;
+				case DIV2:
+					merger.addKernel(new ConstantFoldingDiv2TestKernel(this));
+					break;
+				case ANHILATEASSOCIATIVEOP:
+					merger.addKernel(new ConstantFoldingAnhilateAssociativeOpTestKernel(this));
+					break;
+				case ASSOCIATIVEOP:
+					merger.addKernel(new ConstantFoldingAssociativeOpTestKernel(this));
+					break;
+				case MUX1:
+					merger.addKernel(new ConstantFoldingMux1TestKernel(this));
+					break;
+				case MUX2:
+					merger.addKernel(new ConstantFoldingMux2TestKernel(this));
+					break;
+				case MUX3:
+					merger.addKernel(new ConstantFoldingMux3TestKernel(this));
+					break;
+				case MUX4:
+					merger.addKernel(new ConstantFoldingMux4TestKernel(this));
+					break;
+			}
+			merger.build();
+			m_graph = TestHelper.getKMGraphOfMerger(merger);
+			io.output("result", merger.getOutput("result").getType()) <== merger.getOutput("result");
+		}
+	}
+
+	private void constantFoldingPathsTest(TestCase testCase) {
+		SimulationManager manager = new SimulationManager("ConstantFoldingTest");
+		ConstantFoldingTestKernel kernel = new ConstantFoldingTestKernel(manager.makeKernelParameters(), testCase);
+		manager.setKernel(kernel);
+		manager.build();
+
+		final long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		manager.logInfo("Seed: %d", seed);
+
+		double[] a = new double[RUNS];
+		double[] b = new double[RUNS];
+		double[] c = new double[RUNS];
+		double[] d = new double[RUNS];
+		long[] e = new long[RUNS];
+		for (int i = 0; i < RUNS; i++) {
+			a[i] = rng.nextFloat();
+			b[i] = rng.nextFloat();
+			c[i] = rng.nextFloat();
+			d[i] = rng.nextFloat();
+			if (rng.nextBoolean()) {
+				e[i] = 1;
+			} else {
+				e[i] = 0;
+			}
+		}
+
+		manager.setInputData("a", a);
+		manager.setInputData("b", b);
+		manager.setInputData("c", c);
+		manager.setInputData("d", d);
+		manager.setInputDataLong("e", e);
+		manager.setKernelCycles(RUNS);
+		manager.run();
+
+		double[] result = manager.getOutputDataArray("result");
+
+		for (int i = 0; i < RUNS; i++) {
+			float expected = getExpected(testCase, (float) a[i], (float) b[i],
+					(float) c[i], (float) d[i], e[i]);
+			Assert.assertEquals(expected, result[i], expected * 0.00001);
+		}
+
+		KMGraph graph = kernel.m_graph;
+		int countAdd = 0;
+		int countDiv = 0;
+		int countMul = 0;
+		int countConst = 0;
+		int countNeg = 0;
+		int countMux = 0;
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeFloatingPointMultiAdder) {
+				countAdd++;
+				if (testCase == TestCase.ASSOCIATIVEOP) {
+					Assert.assertEquals(4, node.getInputs().size());
+				}
+			} else if (node instanceof KMNodeDiv) {
+				countDiv++;
+			} else if (node instanceof KMNodeMul) {
+				countMul++;
+			} else if (node instanceof KMNodeConstant) {
+				countConst++;
+			} else if (node instanceof KMNodeNeg) {
+				countNeg++;
+			} else if (node instanceof KMNodeMux) {
+				countMux++;
+			}
+		}
+
+		switch(testCase) {
+			case UNARYOP:
+				Assert.assertEquals(1, countAdd);
+				Assert.assertEquals(1, countConst);
+				break;
+			case BINARYOP:
+				Assert.assertEquals(1, countAdd);
+				Assert.assertEquals(1, countConst);
+				break;
+			case SUB1:
+				Assert.assertEquals(0, countAdd);
+				Assert.assertEquals(0, countConst);
+				break;
+			case SUB2:
+				Assert.assertEquals(0, countAdd);
+				Assert.assertEquals(0, countConst);
+				Assert.assertEquals(1, countNeg);
+				break;
+			case DIV1:
+				Assert.assertEquals(0, countDiv);
+				Assert.assertEquals(0, countConst);
+				break;
+			case DIV2:
+				Assert.assertEquals(0, countDiv);
+				Assert.assertEquals(1, countConst);
+				Assert.assertEquals(1, countMul);
+				break;
+			case ANHILATEASSOCIATIVEOP:
+				Assert.assertEquals(0, countConst);
+				Assert.assertEquals(0, countMul);
+				Assert.assertEquals(0, countAdd);
+				break;
+			case ASSOCIATIVEOP:
+				Assert.assertEquals(1, countAdd);
+				Assert.assertEquals(1, countConst);
+				break;
+			case MUX1:
+				Assert.assertEquals(0, countMux);
+				break;
+			case MUX2:
+				Assert.assertEquals(0, countMux);
+				break;
+			case MUX3:
+				Assert.assertEquals(0, countMux);
+				break;
+			case MUX4:
+				Assert.assertEquals(0, countMux);
+				break;
+		}
+	}
+
+	private float getExpected(TestCase testCase, float a, float b, float c, float d, float e) {
+		float expected = 0;
+
+		switch(testCase) {
+			case UNARYOP:
+				expected = a + (float) Math.sin(5.0);
+				break;
+			case BINARYOP:
+				expected = a + (5 - 3);
+				break;
+			case SUB1:
+				expected = a - 0;
+				break;
+			case SUB2:
+				expected = 0 - a;
+				break;
+			case DIV1:
+				expected = a / 1;
+				break;
+			case DIV2:
+				expected = a / 5;
+				break;
+			case ANHILATEASSOCIATIVEOP:
+				expected = a * b * c * 0 + d;
+				break;
+			case ASSOCIATIVEOP:
+				expected = a + 3 + 4 + b + 5 + c + 6;
+				break;
+			case MUX1:
+				expected = b;
+				break;
+			case MUX2:
+				expected = a;
+				break;
+			case MUX3:
+				expected = e;
+				break;
+			case MUX4:
+				expected = Math.abs(e - 1);
+				break;
+		}
+
+		return expected;
+	}
+
+	@Test public void testFoldUnaryOp() { constantFoldingPathsTest(TestCase.UNARYOP); }
+	@Test public void testFoldBinaryOp() { constantFoldingPathsTest(TestCase.BINARYOP); }
+	@Test public void testFoldSub1() { constantFoldingPathsTest(TestCase.SUB1); }
+	@Test public void testFoldSub2() { constantFoldingPathsTest(TestCase.SUB2); }
+	@Test public void testFoldDiv1() { constantFoldingPathsTest(TestCase.DIV1); }
+	@Test public void testFoldDiv2() { constantFoldingPathsTest(TestCase.DIV2); }
+	@Test public void testFoldAnhilateAssociativeOp() { constantFoldingPathsTest(TestCase.ANHILATEASSOCIATIVEOP); }
+	@Test public void testFoldAssociativeOp() { constantFoldingPathsTest(TestCase.ASSOCIATIVEOP); }
+	@Test public void testFoldMux1() { constantFoldingPathsTest(TestCase.MUX1); }
+	@Test public void testFoldMux2() { constantFoldingPathsTest(TestCase.MUX2); }
+	@Test public void testFoldMux3() { constantFoldingPathsTest(TestCase.MUX3); }
+	@Test public void testFoldMux4() { constantFoldingPathsTest(TestCase.MUX4); }
+}

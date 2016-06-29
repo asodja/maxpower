@@ -1,0 +1,57 @@
+package maxpower.kernel.merger.nodes;
+
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.ops.BinaryOp;
+import maxpower.kernel.merger.utils.LatencyEstimation;
+import maxpower.kernel.merger.utils.ResourceUsage;
+import maxpower.kernel.pipeline.FanoutLimiter;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
+
+public class KMNodeSub extends KMNode implements java.io.Serializable, BinaryOp {
+
+	private static final long serialVersionUID = 2112617305640685189L;
+
+	public KMNodeSub(KMVar lhs, KMVar rhs) {
+		super();
+		m_inputs.add(lhs.getSource());
+		m_inputs.add(rhs.getSource());
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	@Override
+	public void execute(Merger merger) {
+		m_result = new FanoutLimiter(
+				(KernelObjectVectorizable) (m_inputs[0].getResult() - m_inputs[1].getResult()),
+				merger.getMaxFanout());
+	}
+
+	@Override
+	public double evaluate(double val1, double val2) {
+		return val1 - val2;
+	}
+
+	@Override
+	public String toString() {
+		return "NodeSub: " + m_id;
+	}
+
+	@Override
+	public ResourceUsage getResourceUsageEstimate(Merger merger) {
+		ResourceUsage result;
+		if (m_resultType.isFixed()) {
+			result = ResourceUsage.getFixedPointAddSub(m_resultType.getPrimitiveType().getTotalBits());
+		} else {
+			result = ResourceUsage.getFloatingPointAddSub(merger, (DFEFloat) m_resultType.getPrimitiveType());
+		}
+		return result * m_resultType.getPrimitiveCount();
+	}
+
+	@Override
+	int getLatencyEstimate(Merger merger) {
+		return LatencyEstimation.getAddSub(merger, m_resultType);
+	}
+
+}

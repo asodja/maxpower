@@ -1,0 +1,209 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.Random;
+
+import junit.framework.Assert;
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.KMKernel;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.TestHelper;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+import maxpower.kernel.merger.nodes.KMNodeOr;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+public class TreeOptimisationTest {
+	private final int RUNS = 1000;
+
+	private class PowTestKernel extends KMKernel {
+		public PowTestKernel(KernelLib owner, final int exponent) {
+			KMVar base = io.input("base");
+
+			io.output("result", pow(base, exponent));
+		}
+	}
+
+	private class PowMergerTestKernel extends Kernel {
+		private final KMGraph m_graph;
+
+		@SuppressWarnings("unchecked")
+		public PowMergerTestKernel(KernelParameters parameters, final int exponent) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+			merger.addInput("base", io.input("base", dfeFloat(8, 24)));
+			merger.addKernel(new PowTestKernel(this, exponent));
+			merger.build();
+			m_graph = TestHelper.getKMGraphOfMerger(merger);
+			io.output("result", merger.getOutput("result").getType()) <== merger.getOutput("result");
+		}
+	}
+
+	@Test
+	public void powTest() {
+		final long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		final int exponent = rng.nextInt() % 30 + 2;
+
+		SimulationManager manager = new SimulationManager("PowTest");
+		manager.logInfo("Seed: %d", seed);
+		manager.logInfo("Exponent: %d", exponent);
+		PowMergerTestKernel kernel = new PowMergerTestKernel(manager.makeKernelParameters(), exponent);
+		manager.setKernel(kernel);
+		manager.build();
+
+		double[] base = new double[RUNS];
+		for (int i = 0; i < RUNS; i++) {
+			base[i] = rng.nextFloat() + 1;
+		}
+
+		manager.setInputData("base", base);
+		manager.setKernelCycles(RUNS);
+		manager.run();
+
+		double[] result = manager.getOutputDataArray("result");
+
+		for (int i = 0; i < RUNS; i++) {
+			float expected = (float) Math.pow(base[i], exponent);
+			Assert.assertEquals(expected, result[i], expected * 0.00001);
+		}
+
+		KMGraph graph = kernel.m_graph;
+		int countMul = 0;
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeMul) {
+				countMul++;
+			}
+		}
+
+		final int expectedMuls = MathUtils.isPowerOf2(exponent) ?
+				MathUtils.bitsToAddress(exponent) : MathUtils.bitsToAddress(exponent) - 1;
+		Assert.assertEquals(expectedMuls, countMul);
+	}
+
+	private class RedundantTestKernel extends KMKernel {
+		public RedundantTestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+
+			io.output("result", a | b | a);
+		}
+	}
+
+	private class RedundantMergerTestKernel extends Kernel {
+		private final KMGraph m_graph;
+
+		@SuppressWarnings("unchecked")
+		public RedundantMergerTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+			merger.addInput("a", io.input("a", dfeBool()));
+			merger.addInput("b", io.input("b", dfeBool()));
+			merger.addKernel(new RedundantTestKernel(this));
+			merger.build();
+			m_graph = TestHelper.getKMGraphOfMerger(merger);
+			io.output("result", merger.getOutput("result").getType()) <== merger.getOutput("result");
+		}
+	}
+
+	@Test
+	public void redundantTest() {
+		SimulationManager manager = new SimulationManager("RedundantTest");
+		RedundantMergerTestKernel kernel = new RedundantMergerTestKernel(manager.makeKernelParameters());
+		manager.setKernel(kernel);
+		manager.build();
+
+		final long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		manager.logInfo("Seed: %d", seed);
+
+		long[] a = new long[RUNS];
+		long[] b = new long[RUNS];
+		for (int i = 0; i < RUNS; i++) {
+			a[i] = Math.abs(rng.nextInt() % 2);
+			b[i] = Math.abs(rng.nextInt() % 2);
+		}
+
+		manager.setInputDataLong("a", a);
+		manager.setInputDataLong("b", b);
+		manager.setKernelCycles(RUNS);
+		manager.run();
+
+		long[] result = manager.getOutputDataLongArray("result");
+
+		for (int i = 0; i < RUNS; i++) {
+			Assert.assertEquals(a[i] == 1 | b[i] == 1, result[i] == 1);
+		}
+
+		KMGraph graph = kernel.m_graph;
+		Assert.assertEquals(4, graph.getNodes().size());
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeOr) {
+				Assert.assertEquals(2, node.getInputs().size());
+			}
+		}
+	}
+
+	private class DuplicateTestKernel extends KMKernel {
+		public DuplicateTestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+
+			io.output("result", a | a);
+		}
+	}
+
+	private class DuplicateMergerTestKernel extends Kernel {
+		private final KMGraph m_graph;
+
+		@SuppressWarnings("unchecked")
+		public DuplicateMergerTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+			merger.addInput("a", io.input("a", dfeBool()));
+			merger.addKernel(new DuplicateTestKernel(this));
+			merger.build();
+			m_graph = TestHelper.getKMGraphOfMerger(merger);
+			io.output("result", merger.getOutput("result").getType()) <== merger.getOutput("result");
+		}
+	}
+
+	@Test
+	public void duplicateTest() {
+		SimulationManager manager = new SimulationManager("DuplicateTest");
+		DuplicateMergerTestKernel kernel = new DuplicateMergerTestKernel(manager.makeKernelParameters());
+		manager.setKernel(kernel);
+		manager.build();
+
+		final long seed = System.currentTimeMillis();
+		Random rng = new Random(seed);
+		manager.logInfo("Seed: %d", seed);
+
+		long[] a = new long[RUNS];
+		for (int i = 0; i < RUNS; i++) {
+			a[i] = Math.abs(rng.nextInt() % 2);
+		}
+
+		manager.setInputDataLong("a", a);
+		manager.setKernelCycles(RUNS);
+		manager.run();
+
+		long[] result = manager.getOutputDataLongArray("result");
+
+		for (int i = 0; i < RUNS; i++) {
+			Assert.assertEquals(a[i], result[i]);
+		}
+
+		KMGraph graph = kernel.m_graph;
+		Assert.assertEquals(2, graph.getNodes().size());
+	}
+}

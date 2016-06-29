@@ -9,9 +9,9 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
-import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
-import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MemoryControlGroup;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemCommandGroup;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemInterface;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 /**
@@ -39,15 +39,17 @@ public class LargeStreamOffset<T extends KernelObjectVectorizable<T, ?>> extends
 	private static final int BURSTS_PER_COMMAND = 64; // must be power of two
 
 	private final String name;
+	private final LMemInterface lmem;
 	private final T val;
 	private final int offset;
 
 	private T offsetVal;
 
-	private LargeStreamOffset(String name, T val, int offset) {
+	private LargeStreamOffset(String name, LMemInterface lmem, T val, int offset) {
 		super(val.getKernel());
 
 		this.name   = name;
+		this.lmem   = lmem;
 		this.val    = val;
 		this.offset = offset;
 
@@ -57,7 +59,7 @@ public class LargeStreamOffset<T extends KernelObjectVectorizable<T, ?>> extends
 		if (-offset < 1024 * getValuesPerBurst())
 			throw new MaxCompilerAPIError("Offset is too small for LargeStreamOffset. Use normal offset instead");
 
-		if (val.getType().getTotalBits() > getBurstSizeInBits())
+		if (val.getType().getTotalBits() > getBurstSizeBits())
 			throw new MaxCompilerAPIError("Value type must be smaller than burst size");
 
 		build();
@@ -78,7 +80,7 @@ public class LargeStreamOffset<T extends KernelObjectVectorizable<T, ?>> extends
 
 	private T readInput() {
 		DFEVar posInBurst = getPositionInBurst();
-		DFEVar fromLMemPadded = io.input(name+"_"+FROM_LMEM_NAME, dfeRawBits(getBurstSizeInBits()), posInBurst === 0);
+		DFEVar fromLMemPadded = io.input(name+"_"+FROM_LMEM_NAME, dfeRawBits(getBurstSizeBits()), posInBurst === 0);
 		DFEVector<T> fromLMem = getLMemType().unpack(fromLMemPadded.slice(0, getLMemType().getTotalBits()));
 		return control.mux(posInBurst, fromLMem.getElementsAsList());
 	}
@@ -90,10 +92,10 @@ public class LargeStreamOffset<T extends KernelObjectVectorizable<T, ?>> extends
 		}
 
 		DFEVar toLMemPadded = toLMem.pack();
-		int paddingBits = getBurstSizeInBits() - getLMemType().getTotalBits();
+		int paddingBits = getBurstSizeBits() - getLMemType().getTotalBits();
 		if (paddingBits > 0) toLMemPadded = constant.zero(dfeRawBits(paddingBits)) # toLMemPadded;
 
-		io.output(name+"_"+TO_LMEM_NAME, dfeRawBits(getBurstSizeInBits()), getPositionInBurst() === 0) <== toLMemPadded;
+		io.output(name+"_"+TO_LMEM_NAME, dfeRawBits(getBurstSizeBits()), getPositionInBurst() === 0) <== toLMemPadded;
 	}
 
 	private void sendLMemCommands() {
@@ -146,24 +148,24 @@ public class LargeStreamOffset<T extends KernelObjectVectorizable<T, ?>> extends
 	}
 
 	private int getValuesPerBurst() {
-		return getBurstSizeInBits() / val.getType().getTotalBits();
+		return getBurstSizeBits() / val.getType().getTotalBits();
 	}
 
-	private int getBurstSizeInBits() {
-		return 8 * getManager().getManagerConfiguration().dram.getAdjustedBurstSizeInBytes();
+	private int getBurstSizeBits() {
+		return (int) lmem.getBurstSizeBits();
 	}
 
 	private DFEVectorType<T> getLMemType() {
 		return new DFEVectorType<T>(val.getType(), getValuesPerBurst());
 	}
 
-	public static <T extends KernelObjectVectorizable<T, ?>> T offset(String name, T val, int offset) {
-		return new LargeStreamOffset<T>(name, val, offset).offsetVal;
+	public static <T extends KernelObjectVectorizable<T, ?>> T offset(String name, LMemInterface lmem, T val, int offset) {
+		return new LargeStreamOffset<T>(name, lmem, val, offset).offsetVal;
 	}
 
-	public static void connect(CustomManager manager, KernelBlock blk, String name) {
-		MemoryControlGroup memCtrl = manager.addMemoryControlGroup(name+"_MemCtrl", blk.getOutput(name+"_"+LMEM_CMD_NAME));
-		blk.getInput(name+"_"+FROM_LMEM_NAME) <== manager.addStreamFromOnCardMemory(name+"_FromLMem", memCtrl);
-		manager.addStreamToOnCardMemory(name+"_ToLMem", memCtrl) <== blk.getOutput(name+"_"+TO_LMEM_NAME);
+	public static void connect(LMemInterface lmem, KernelBlock blk, String name) {
+		LMemCommandGroup cmdGrp = lmem.addCommandGroup(name+"_MemCtrl", blk.getOutput(name+"_"+LMEM_CMD_NAME));
+		blk.getInput(name+"_"+FROM_LMEM_NAME) <== cmdGrp.addStreamFromLMem(name+"_FromLMem");
+		cmdGrp.addStreamToLMem(name+"_ToLMem") <== blk.getOutput(name+"_"+TO_LMEM_NAME);
 	}
 }

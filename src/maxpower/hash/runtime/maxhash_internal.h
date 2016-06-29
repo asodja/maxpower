@@ -9,6 +9,7 @@
 #define MAXHASH_INTERNAL_H_
 
 #include "maxhash.h"
+#include "../../lmem/cpuaccess/runtime/lmem_cpu_access.h"
 
 #define NUM_ENTRY_FLAGS     2
 #define FLAG_VALID          0
@@ -40,6 +41,7 @@ struct maxhash_internal_table_params {
 	enum maxhash_mem_type mem_type;
 	uint8_t deep_fmem_id;
 	size_t base_address_bursts;
+	lmem_cpu_access_t *lmem_handle;
 	bool validate_results;
 };
 
@@ -60,9 +62,6 @@ struct maxhash_table_params {
 	struct maxhash_engine_state *engine_state;
 	size_t key_width_bits;
 	size_t key_width_bytes;
-	void (*mem_access_fn)(void *arg, bool is_read, size_t base_address_bursts,
-			void *data, size_t data_size_bursts);
-	void *mem_access_fn_arg;
 	struct maxhash_internal_table_params values;
 	struct maxhash_internal_table_params intermediate;
 	bool debug;
@@ -112,36 +111,27 @@ maxhash_err_t maxhash_create_mph(maxhash_table_t *source);
 /**
  * Apply Jenkins' 32-bit "one-at-a-time" hash function.
  */
-uint32_t maxhash_function_jenkins(const void *data, size_t data_len, uint32_t
-		hash, size_t chunk_width);
+uint32_t maxhash_function_jenkins(const void *data, size_t data_len, uint32_t hash, size_t chunk_width);
 
-bool has_constant_uint64t(maxhash_engine_state_t *es,
-		const char *hash_table_name, const char *constant_name);
-bool has_constant_string(maxhash_engine_state_t *es,
-		const char *hash_table_name, const char *constant_name);
+bool has_constant_uint64t(maxhash_engine_state_t *es, const char *hash_table_name, const char *constant_name);
+bool has_constant_string(maxhash_engine_state_t *es, const char *hash_table_name, const char *constant_name);
 
-int get_maxfile_constant(maxhash_engine_state_t *es,
-		const char *hash_table_name, const char *constant_name);
+int get_maxfile_constant(maxhash_engine_state_t *es, const char *hash_table_name, const char *constant_name);
 
 const char *get_maxfile_string_constant(maxhash_engine_state_t *es,
 		const char *hash_table_name, const char *constant_name);
 
-int get_maxfile_global_constant(maxhash_engine_state_t *es,
-		const char *constant_name);
+int get_maxfile_global_constant(maxhash_engine_state_t *es, const char *constant_name);
 
-const char *get_maxfile_global_string_constant(maxhash_engine_state_t *es,
-		const char *constant_name);
+const char *get_maxfile_global_string_constant(maxhash_engine_state_t *es, const char *constant_name);
 
-void maxhash_write_fmem(maxhash_engine_state_t *es, const char *kernel_name,
-		const char *mem_name, size_t base_entry, void *data_buf, size_t
-		data_size_bytes);
+void maxhash_write_fmem(maxhash_engine_state_t *es, const char *kernel_name, const char *mem_name,
+		size_t base_entry, void *data_buf, size_t data_size_bytes);
 
-void maxhash_write_deep_fmem(maxhash_engine_state_t *es, const char
-		*kernel_name, const char *mem_name, void *data, size_t
-		data_size_bytes);
+void maxhash_write_deep_fmem(maxhash_engine_state_t *es, const char *kernel_name, const char *mem_name,
+		void *data, size_t data_size_bytes);
 
-void maxhash_init_deep_fmem_fanout(maxhash_engine_state_t *es, uint8_t
-		deep_fmem_id);
+void maxhash_init_deep_fmem_fanout(maxhash_engine_state_t *es, uint8_t deep_fmem_id);
 
 #ifdef __cplusplus
 }

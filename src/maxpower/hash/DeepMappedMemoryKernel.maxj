@@ -10,8 +10,8 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.IO.NonBlockingMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.Flushing;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
-import com.maxeler.networking.statemachines.Flushing;
 
 public class DeepMappedMemoryKernel extends Kernel {
 	private final int tableDepth = 32*1024;

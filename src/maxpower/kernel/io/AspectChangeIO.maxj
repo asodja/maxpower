@@ -209,10 +209,10 @@ public class AspectChangeIO extends KernelLib {
 		// perform the simple multiple aspect change, e.g. 2 to 1, 3 to 1, etc
 		// if either multiple is 1 (so there is nothing to do) or we are pushing this change into the manager then this just creates an ordinary input
 		if (multiple > 1 & !m_pushToManager) {
-			DFEVectorType<DFEVar> intermediateType = new DFEVectorType<DFEVar>(dfeUInt(hcf), inputRatio);
+			DFEVectorType<DFEVar> intermediateType = new DFEVectorType<DFEVar>(dfeRawBits(hcf), inputRatio);
 			partShiftedValues  = intermediateType.unpack(removeInputMultiples(name, m_portWidth, typeWidth, multiple, nonMultCounter.enable, flush));
 		} else {
-			DFEVectorType<DFEVar> portType = new DFEVectorType<DFEVar>(dfeUInt(hcf), inputRatio);
+			DFEVectorType<DFEVar> portType = new DFEVectorType<DFEVar>(dfeRawBits(hcf), inputRatio);
 			io.pushInputRegistering(true);
 			partShiftedValues = io.input(name, portType, nonMultCounter.enable);
 			io.popInputRegistering();
@@ -309,9 +309,9 @@ public class AspectChangeIO extends KernelLib {
 			final DFEVar isZero     = counter === 0;
 			final DFEVar hasWrapped = nextValue < counter;
 			final DFEVar notAtEnd   = (nextValue > 0);
-			optimization.pushPipeliningFactor(0.0);
+			optimization.pushNoPipelining();
 			final DFEVar outputEnable = ((hasWrapped & notAtEnd) | isZero) & enable;
-			optimization.popPipeliningFactor();
+			optimization.popNoPipelining();
 			output = new DataWithEnable(outputCounter, outputEnable);
 		} else {
 			final DFEVar nextValue = counter.cast(dfeUInt(counterBits+1)) + increment;
@@ -387,9 +387,9 @@ public class AspectChangeIO extends KernelLib {
 		final DFEVector<DFEVar> output = firstArray.getType().newInstance(this);
 
 		for (int i = 0; i < output.getSize(); i++) {
-			optimization.pushPipeliningFactor(0.0);
+			optimization.pushNoPipelining();
 			final DFEVar select = (i < sizeOfFirstSection & useSecondArray) | useFirstArray;
-			optimization.popPipeliningFactor();
+			optimization.popNoPipelining();
 			output[i] <== select ? firstArray[i] : secondArray[i];
 		}
 

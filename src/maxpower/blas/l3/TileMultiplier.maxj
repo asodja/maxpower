@@ -7,6 +7,7 @@ import maxpower.kernel.pipeline.FanoutLimiter;
 import maxpower.utils.TreeReduce;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
@@ -49,13 +50,16 @@ public class TileMultiplier extends KernelLib {
 
 		FanoutLimiter<DFEVar> wrAddr = limitFanout(j #  oddTile);
 		FanoutLimiter<DFEVar> rdAddr = limitFanout(j # ~oddTile);
+		FanoutLimiter<DFEVar> jZero  = limitFanout(j === 0);
 		FanoutLimiter<DFEVar> bInFl  = limitFanout(bIn);
 
-		DFEVector<DFEVar> a = Reductions.streamHold(ShiftRegister.serialToParallel(N, aIn), j === 0);
+		DFEVector<DFEVar> aVec = ShiftRegister.serialToParallel(N, aIn);
 
 		DFEVar[] summands = new DFEVar[N];
 
 		for (int n = 0; n < N; ++n) {
+			DFEVar a = Reductions.streamHold(aVec[n], jZero.get());
+
 			// double buffer within a single memory
 			Memory<DFEVar> bBuf = mem.alloc(bIn.getType(), 2*N);
 			// write vertically; read horizontally
@@ -66,14 +70,14 @@ public class TileMultiplier extends KernelLib {
 
 			if ((getManager().getBuildManager().getPlatform() instanceof AlteraPlatform)
 					&& (aIn.getType() instanceof DFEFloat)) {
-				optimization.pushPipeliningFactor(0.1);
+				optimization.pushPipeliningFactor(0.1, PipelinedOps.ALL);
 			} else {
-				optimization.pushPipeliningFactor(0.7);
+				optimization.pushPipeliningFactor(0.7, PipelinedOps.ALL);
 			}
 
-			summands[n] = a[n] * b;
+			summands[n] = a * b;
 
-			optimization.popPipeliningFactor();
+			optimization.popPipeliningFactor(PipelinedOps.ALL);
 		}
 
 		if (aIn.getType() instanceof DFEFloat) {

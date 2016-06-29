@@ -1,0 +1,163 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Set;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeAbs;
+import maxpower.kernel.merger.nodes.KMNodeAdd;
+import maxpower.kernel.merger.nodes.KMNodeAnd;
+import maxpower.kernel.merger.nodes.KMNodeComplement;
+import maxpower.kernel.merger.nodes.KMNodeConstant;
+import maxpower.kernel.merger.nodes.KMNodeConstantMul;
+import maxpower.kernel.merger.nodes.KMNodeCos;
+import maxpower.kernel.merger.nodes.KMNodeDiv;
+import maxpower.kernel.merger.nodes.KMNodeEq;
+import maxpower.kernel.merger.nodes.KMNodeExp;
+import maxpower.kernel.merger.nodes.KMNodeFloatingPointMultiAdder;
+import maxpower.kernel.merger.nodes.KMNodeGt;
+import maxpower.kernel.merger.nodes.KMNodeGte;
+import maxpower.kernel.merger.nodes.KMNodeInput;
+import maxpower.kernel.merger.nodes.KMNodeLt;
+import maxpower.kernel.merger.nodes.KMNodeLte;
+import maxpower.kernel.merger.nodes.KMNodeMax;
+import maxpower.kernel.merger.nodes.KMNodeMin;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+import maxpower.kernel.merger.nodes.KMNodeMux;
+import maxpower.kernel.merger.nodes.KMNodeNeg;
+import maxpower.kernel.merger.nodes.KMNodeNeq;
+import maxpower.kernel.merger.nodes.KMNodeOr;
+import maxpower.kernel.merger.nodes.KMNodeOutput;
+import maxpower.kernel.merger.nodes.KMNodeSin;
+import maxpower.kernel.merger.nodes.KMNodeSqrt;
+import maxpower.kernel.merger.nodes.KMNodeSub;
+import maxpower.kernel.merger.nodes.KMNodeXor;
+
+/**
+ * This graph pass provides some statistics on how good the kernel merger did
+ * Complexity: O(n)
+ * @author nvoss
+ *
+ */
+public class BenchmarkGraphPass {
+
+	private enum NodeType {
+		ADD, SUB, MUL, DIV, AND, OR, XOR, LT, LTE, GT, GTE, EQ, NEQ, EXP, SIN, COS, SQRT, MAX, MIN, ABS,
+		FPMULTIADDER, CONSTMUL, CONST, MUX, NEG, COMPLEMENT, INPUT, OUTPUT, OTHER;
+
+		private static NodeType fromValue(int value) {
+			return NodeType.values()[value];
+		}
+	}
+
+	public static void run(KMGraph graph) {
+		int[] totalNodes = new int[NodeType.values().length];
+		Integer[][] nodesPerKernel = new Integer[NodeType.values().length][graph.getKernelCount()];
+		for (int i = 0; i < nodesPerKernel.length; i++) {
+			for (int j = 0; j < nodesPerKernel[i].length; j++) {
+				nodesPerKernel[i][j] = new Integer(0);
+			}
+		}
+
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeAdd) {
+				addNodeType(node, graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.ADD);
+			} else if (node instanceof KMNodeSub) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.SUB);
+			} else if (node instanceof KMNodeMul) {
+				addNodeType(node, graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.MUL);
+			} else if (node instanceof KMNodeDiv) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.DIV);
+			} else if (node instanceof KMNodeAnd) {
+				addNodeType(node, graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.AND);
+			} else if (node instanceof KMNodeOr) {
+				addNodeType(node, graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.OR);
+			} else if (node instanceof KMNodeXor) {
+				addNodeType(node, graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.XOR);
+			} else if (node instanceof KMNodeLt) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.LT);
+			} else if (node instanceof KMNodeLte) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.LTE);
+			} else if (node instanceof KMNodeGt) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.GT);
+			} else if (node instanceof KMNodeGte) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.GTE);
+			} else if (node instanceof KMNodeEq) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.EQ);
+			} else if (node instanceof KMNodeNeq) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.NEQ);
+			} else if (node instanceof KMNodeExp) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.EXP);
+			} else if (node instanceof KMNodeSin) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.SIN);
+			} else if (node instanceof KMNodeCos) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.COS);
+			} else if (node instanceof KMNodeSqrt) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.SQRT);
+			} else if (node instanceof KMNodeMax) {
+				addNodeType(node, graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.MAX);
+			} else if (node instanceof KMNodeMin) {
+				addNodeType(node, graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.MIN);
+			} else if (node instanceof KMNodeAbs) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.ABS);
+			} else if (node instanceof KMNodeFloatingPointMultiAdder) {
+				addNodeType(node, graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.FPMULTIADDER);
+			} else if (node instanceof KMNodeConstantMul) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.CONSTMUL);
+			} else if (node instanceof KMNodeConstant) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.CONST);
+			} else if (node instanceof KMNodeMux) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.MUX);
+			} else if (node instanceof KMNodeNeg) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.NEG);
+			} else if (node instanceof KMNodeComplement) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.COMPLEMENT);
+			} else if (node instanceof KMNodeInput) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.INPUT);
+			} else if (node instanceof KMNodeOutput) {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.OUTPUT);
+			} else {
+				addNodeType(graph.getKernelCount(), totalNodes, nodesPerKernel, node.getUsedInKernels(), NodeType.OTHER);
+			}
+		}
+
+		print(totalNodes, nodesPerKernel);
+	}
+
+	private static void addNodeType(int kernelCount, int[] totalNodes, Integer[][] nodesPerKernel,
+			Set<Integer> usedInKernels, NodeType type) {
+		totalNodes[type.ordinal()]++;
+		for (int i = 0; i < kernelCount; i++) {
+			if (usedInKernels.contains(i)) {
+				nodesPerKernel[type.ordinal()][i]++;
+			}
+		}
+	}
+
+	private static void addNodeType(KMNode node, int kernelCount, int[] totalNodes,
+			Integer[][] nodesPerKernel, Set<Integer> usedInKernels, NodeType type) {
+		totalNodes[type.ordinal()] += node.getInputs().size() - 1;
+		for (int i = 0; i < kernelCount; i++) {
+			if (usedInKernels.contains(i)) {
+				nodesPerKernel[type.ordinal()][i] += node.getInputs().size() - 1;
+			}
+		}
+	}
+
+	private static void print(int[] totalNodes, Integer[][] nodesPerKernel) {
+		System.out.format("%15s%20s%30s%20s\n", "Type:", "Operation Count:", "Operation Count Needed:", "Percentage:");
+		for (int i = 0; i < NodeType.CONST.ordinal(); i++) {
+			int maxValue = Collections.max(Arrays.asList(nodesPerKernel[i]));
+			if (totalNodes[i] != 0) {
+				System.out.format("%15s%20s%30s%20s\n", NodeType.fromValue(i).name(), totalNodes[i], maxValue,
+						((float)maxValue / totalNodes[i]) * 100 + "%");
+			}
+		}
+		for (int i = NodeType.CONST.ordinal(); i <= NodeType.OTHER.ordinal(); i++) {
+			System.out.format("%15s%20s%30s%20s\n", NodeType.fromValue(i).name(), totalNodes[i], "-", "-");
+		}
+	}
+
+}

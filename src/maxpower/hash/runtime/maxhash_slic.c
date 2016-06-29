@@ -27,11 +27,9 @@ bool has_constant_uint64t(maxhash_engine_state_t *es,
 	bool has_constant = true;
 
 	max_errors_mode(es->maxfile->errors, 0);
-	max_get_constant_uint64t(es->maxfile, strcat(name_buf,
-			constant_name));
+	uint64_t unused __attribute__((unused)) = max_get_constant_uint64t(es->maxfile, strcat(name_buf, constant_name));
 
-	if (!max_ok(es->maxfile->errors))
-	{
+	if (!max_ok(es->maxfile->errors)) {
 		has_constant = false;
 		max_errors_clear(es->maxfile->errors);
 	}
@@ -54,11 +52,9 @@ bool has_constant_string(maxhash_engine_state_t *es,
 	bool has_constant = true;
 
 	max_errors_mode(es->maxfile->errors, 0);
-	max_get_constant_string(es->maxfile, strcat(name_buf,
-			constant_name));
+	const char *unused __attribute__((unused)) = max_get_constant_string(es->maxfile, strcat(name_buf, constant_name));
 
-	if (!max_ok(es->maxfile->errors))
-	{
+	if (!max_ok(es->maxfile->errors)) {
 		has_constant = false;
 		max_errors_clear(es->maxfile->errors);
 	}
@@ -84,8 +80,7 @@ int get_maxfile_constant(maxhash_engine_state_t *es,
 	char name_buf[NAME_BUF_LEN] = {0};
 	strncpy(name_buf, hash_table_name, NAME_BUF_LEN);
 
-	return (int)max_get_constant_uint64t(es->maxfile, strcat(name_buf,
-				constant_name));
+	return (int)max_get_constant_uint64t(es->maxfile, strcat(name_buf, constant_name));
 }
 
 
@@ -96,8 +91,7 @@ const char *get_maxfile_string_constant(maxhash_engine_state_t *es,
 	char name_buf[NAME_BUF_LEN] = {0};
 	strncpy(name_buf, hash_table_name, NAME_BUF_LEN);
 
-	return max_get_constant_string(es->maxfile, strcat(name_buf,
-				constant_name));
+	return max_get_constant_string(es->maxfile, strcat(name_buf, constant_name));
 }
 
 
@@ -121,16 +115,13 @@ void maxhash_write_fmem(maxhash_engine_state_t *es, const char *kernel_name,
 {
 	max_actions_t *actions = max_actions_init(es->maxfile, NULL);
 
-	for (size_t offset = 0; offset < data_size_bytes; offset +=
-			sizeof(uint64_t))
-	{
+	for (size_t offset = 0; offset < data_size_bytes; offset += sizeof(uint64_t)) {
 		size_t entry = offset / sizeof(uint64_t);
-		max_set_mem_uint64t(actions, kernel_name, mem_name, base_entry + entry,
-				((uint64_t *)data)[entry]);
+		max_set_mem_uint64t(actions, kernel_name, mem_name, base_entry + entry, ((uint64_t *)data)[entry]);
 	}
 
-	max_disable_validation(actions); /* Because we only set one mapped memory at
-	                                    a time. */
+	max_disable_validation(actions); /* Because we only set one mapped memory at a time. */
+	max_disable_reset(actions);
 	max_run(es->engine, actions);
 	max_actions_free(actions);
 }
@@ -152,8 +143,7 @@ void maxhash_write_deep_fmem(maxhash_engine_state_t *es, const char
 	max_actions_free(actions);
 
 	uint64_t complete = 0;
-	while (!complete)
-	{
+	while (!complete) {
 		max_actions_t *actions = max_actions_init(es->maxfile, NULL);
 		max_disable_validation(actions);
 		max_get_mem_uint64t(actions, kernel_name, mem_name_buf, 0, &complete);

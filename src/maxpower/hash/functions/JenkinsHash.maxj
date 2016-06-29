@@ -53,21 +53,21 @@ public class JenkinsHash implements HashFunction {
 
 		for (int chunk = 0; chunk < numChunks; chunk++) {
 			if (debug) m_owner.debug.simPrintf("chunk: %x\n", chunks[chunk]);
-			m_owner.optimization.pushPipeliningFactor(0.0);
+			m_owner.optimization.pushNoPipelining();
 			hash += chunks[chunk].cast(getType());
 			hash += hash << 10;
 			hash ^= hash >> 6;
 			hash = m_owner.optimization.pipeline(hash);
-			m_owner.optimization.popPipeliningFactor();
+			m_owner.optimization.popNoPipelining();
 			if (debug) m_owner.debug.simPrintf("hash: %x\n", hash);
 		}
 
-		m_owner.optimization.pushPipeliningFactor(0.0);
+		m_owner.optimization.pushNoPipelining();
 		hash += hash << 3;
 		hash ^= hash >> 11;
 		hash += hash << 15;
 		hash = m_owner.optimization.pipeline(hash);
-		m_owner.optimization.popPipeliningFactor();
+		m_owner.optimization.popNoPipelining();
 
 		if (debug) m_owner.debug.simPrintf("final hash: %x\n", hash);
 

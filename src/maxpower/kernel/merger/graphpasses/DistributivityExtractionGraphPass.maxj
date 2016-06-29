@@ -1,0 +1,87 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.List;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeAdd;
+import maxpower.kernel.merger.nodes.KMNodeDiv;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+import maxpower.kernel.merger.nodes.KMNodeSub;
+
+/**
+ * This graph pass tries to use the distributive law to reduce the node count.
+ * E.g. a*b+c*b gets transformed to b*(a+c)
+ * Average Complexity: O(n)
+ * Worst Case Complexity: O(n^2)
+ * @author nvoss
+ *
+ */
+public class DistributivityExtractionGraphPass {
+
+	public static boolean run(final KMGraph graph) {
+
+		return GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+			@Override
+			public boolean processNode(KMNode node) {
+				boolean changed = false;
+				if ((node instanceof KMNodeSub || node instanceof KMNodeAdd) && node.getInputs().size() == 2) {
+					KMNode mul0 = node.getInputs()[0];
+					KMNode mul1 = node.getInputs()[1];
+					if (checkApplyGraphPass(mul0, mul1)) {
+						List<KMNode> inputIntersection = KMNode.getIntersectionOfInputs(mul0, mul1);
+						if (inputIntersection.size() == 1) {
+							KMNode input0;
+							if (mul0.getInputs()[0] == inputIntersection[0]) {
+								input0 = mul0.getInputs()[1];
+							} else {
+								input0 = mul0.getInputs()[0];
+							}
+							KMNode input1;
+							if (mul1.getInputs()[0] == inputIntersection[0]) {
+								input1 = mul1.getInputs()[1];
+								mul1.removeOneInput(input1);
+							} else {
+								input1 = mul1.getInputs()[0];
+								mul1.removeOneInput(input1);
+							}
+
+							node.removeAllInputs();
+							mul0.removeAllOutputs();
+							mul0.addOutputs(node.getOutputs());
+							for (KMNode output : node.getOutputs()) {
+								output.replaceInputs(node, mul0);
+							}
+							node.removeAllOutputs();
+							node.addOutput(mul0);
+							mul0.replaceInputs(input0, node);
+
+							node.addInput(input0);
+							input0.replaceOneOutput(mul0, node);
+							node.addInput(input1);
+							input1.replaceOneOutput(mul1, node);
+
+							inputIntersection[0].removeOutput(mul1);
+
+							graph.removeNode(mul1);
+							changed = true;
+						}
+					}
+				}
+				return changed;
+			}
+
+			private boolean checkApplyGraphPass(KMNode mul0, KMNode mul1) {
+				return mul0 instanceof KMNodeMul && mul1 instanceof KMNodeMul
+					&& mul0.getInputs().size() == 2 && mul1.getInputs().size() == 2
+					&& mul0.getOutputs().size() == 1 && mul1.getOutputs().size() == 1 ||
+
+					mul0 instanceof KMNodeDiv && mul1 instanceof KMNodeDiv
+					&& mul0.getInputs().size() == 2 && mul1.getInputs().size() == 2
+					&& mul0.getOutputs().size() == 1 && mul1.getOutputs().size() == 1
+					&& mul0.getInputs()[1] == mul1.getInputs()[1];
+			}
+		});
+	}
+
+}

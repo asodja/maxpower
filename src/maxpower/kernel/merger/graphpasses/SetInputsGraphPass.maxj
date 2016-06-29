@@ -1,0 +1,128 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeInput;
+import maxpower.kernel.merger.nodes.KMNodeOutput;
+
+import com.maxeler.maxcompiler.v2.errors.MaxCompilerAPIError;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.utils.Pair;
+
+/**
+ * This graph pass connects the inputs of the KMGraph with the inputs provided from the regular kernel.
+ * Average Complexity: O(n)
+ * @author nvoss
+ *
+ */
+public class SetInputsGraphPass {
+
+	@SuppressWarnings("rawtypes")
+	public static void run(KMGraph graph, Map<String, KernelObjectVectorizable> inputsAdded,
+			Map<String, Pair<Boolean, List<String>>> inputsCreated,
+			Map<String, Pair<Boolean, List<String>>> outputsCreated,
+			List<Pair<String, String>> outsideConnectIO, Merger merger) {
+
+		for (Entry<String, Pair<Boolean, List<String>>> input : inputsCreated.entrySet()) {
+			KernelObjectVectorizable inputValue = inputsAdded.get(input.getKey());
+			if (inputValue == null) {
+				if (input.getKey().equals(Merger.KERNEL_MUX_SELECT_NAME)) {
+					throw new MaxCompilerAPIError("You have to set a kernel select!");
+				} else {
+					throw new MaxCompilerAPIError("KMKernel input " + input.getKey() + " has not input set!");
+				}
+			}
+
+			inputsAdded.remove(input.getKey());
+
+			if (!input.getValue().key) {
+				// Normal input
+				for (KMNodeInput inputNode : getInputByName(graph, input.getValue().value[0])) {
+					inputNode.setInputValue(inputValue, merger);
+				}
+			} else {
+				// Vector input
+				if (inputValue instanceof DFEVector) {
+					DFEVector inputVector = (DFEVector) inputValue;
+					if (inputVector.getSize() != input.getValue().value.size()) {
+						throw new MaxCompilerAPIError("The size of the DFEVector provided for input " + input.getKey() + " doesn't match up with the size defined inside the KMKernel!");
+					}
+					for (int i = 0; i < inputVector.getSize(); i++) {
+						for (KMNodeInput inputNode : getInputByName(graph, input.getValue().value[i])) {
+							inputNode.setInputValue(inputVector[i], merger);
+						}
+					}
+				} else {
+					throw new MaxCompilerAPIError("Input " + input.getKey() + " was defined as a Vector input. So a DFEVector has to be passed in!");
+				}
+			}
+		}
+
+		if (!inputsAdded.isEmpty()) {
+			for (Entry<String, KernelObjectVectorizable> input : inputsAdded.entrySet()) {
+				System.err.println("Input " + input.getKey() + " was never used in a KMKernel!");
+			}
+		}
+
+		// Deal with loops outside the kernel
+		for (Pair<String, String> connectedPair : outsideConnectIO) {
+			Pair<Boolean, List<String>> inputs = inputsCreated.get(connectedPair.key);
+			Pair<Boolean, List<String>> outputs = outputsCreated.get(connectedPair.value);
+
+			if (inputs == null) {
+				throw new MaxCompilerAPIError("The input " + connectedPair.key + " does not exist!");
+			}
+			if (outputs == null) {
+				throw new MaxCompilerAPIError("The output " + connectedPair.value + " does not exist!");
+			}
+
+			for (String input : inputs.value) {
+				for (KMNodeInput inputNode : getInputByName(graph, input)) {
+					for (String output : outputs.value) {
+						for (KMNodeOutput outputNode : getOutputByName(graph, output)) {
+							inputNode.addDependentOutput(outputNode);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	private static List<KMNodeInput> getInputByName(KMGraph graph, String name) {
+		List<KMNodeInput> result = new ArrayList<KMNodeInput>();
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeInput) {
+				if (((KMNodeInput) node).getName().equals(name)) {
+					result.add((KMNodeInput) node);
+				}
+			}
+		}
+		if (result.size() == 0) {
+			throw new MaxCompilerAPIError("Input " + name + " not created in any added KMKernel!");
+		}
+		return result;
+	}
+
+	private static List<KMNodeOutput> getOutputByName(KMGraph graph, String name) {
+		List<KMNodeOutput> result = new ArrayList<KMNodeOutput>();
+		for (KMNode node : graph.getNodes()) {
+			if (node instanceof KMNodeOutput) {
+				if (((KMNodeOutput) node).getName().equals(name)) {
+					result.add((KMNodeOutput) node);
+				}
+			}
+		}
+		if (result.size() == 0) {
+			throw new MaxCompilerAPIError("Output " + name + " not created in any added KMKernel!");
+		}
+		return result;
+	}
+
+}

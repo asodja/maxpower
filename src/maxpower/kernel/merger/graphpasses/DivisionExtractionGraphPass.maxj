@@ -1,0 +1,92 @@
+package maxpower.kernel.merger.graphpasses;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.nodes.KMNode;
+import maxpower.kernel.merger.nodes.KMNodeConstant;
+import maxpower.kernel.merger.nodes.KMNodeDiv;
+import maxpower.kernel.merger.nodes.KMNodeMul;
+
+/**
+ * This graph pass tries to reduce the number of divisions.
+ * E.g. if we have to calculations a=b/c and d=e/c we transform this to f=1/c and a=f*b and d=e*f
+ * Average Complexity: O(n)
+ * Worst Case Complexity: O(n^2)
+ * @author nvoss
+ *
+ */
+public class DivisionExtractionGraphPass {
+	public static boolean run(final KMGraph graph) {
+
+		return GraphPass.runUntilNoChange(graph, new GraphPass.NodewiseProcessor() {
+
+			@Override
+			public boolean processNode(KMNode node) {
+				boolean changed = false;
+				if (node instanceof KMNodeDiv) {
+					List<KMNode> matchList = new ArrayList<KMNode>();
+
+					for (KMNode possibleMatch : graph.getNodes()) {
+						if (nodeValid(node, possibleMatch)) {
+							if (matchList.size() == 0) {
+								matchList.add(node);
+							}
+							matchList.add(possibleMatch);
+						}
+					}
+
+					if (matchList.size() > 0) {
+						extractDivisions(graph, matchList);
+						changed = true;
+					}
+
+					if (changed) {
+						graph.removeNodes(matchList);
+					}
+				}
+				return changed;
+			}
+
+			private boolean nodeValid(KMNode node, KMNode possibleMatch) {
+				return possibleMatch instanceof KMNodeDiv && possibleMatch != node &&
+					node.getInputs()[1] == possibleMatch.getInputs()[1];
+			}
+
+			private void extractDivisions(KMGraph graph, List<KMNode> matchList) {
+				KMNode oneConst = new KMNodeConstant(1);
+				oneConst.setOrigin(matchList[0].getOrigin());
+				KMNode div = new KMNodeDiv(oneConst, matchList[0].getInputs()[1]);
+				div.setOrigin(matchList[0].getOrigin());
+				oneConst.addOutput(div);
+				matchList[0].getInputs()[1].addOutput(div);
+
+				graph.addNode(oneConst);
+				graph.addNode(div);
+
+				for (KMNode match : matchList) {
+					match.getInputs()[0].removeOutput(match);
+					match.getInputs()[1].removeOutput(match);
+
+					KMNode replacement = new KMNodeMul(div, match.getInputs()[0]);
+					replacement.setOrigin(match.getOrigin());
+
+					match.getInputs()[0].addOutput(replacement);
+					div.addOutput(replacement);
+
+					for (KMNode output : match.getOutputs()) {
+						output.replaceInputs(match, replacement);
+						replacement.addOutput(output);
+					}
+
+					replacement.addUsedInKernels(match.getUsedInKernels());
+					div.addUsedInKernels(match.getUsedInKernels());
+					oneConst.addUsedInKernels(match.getUsedInKernels());
+
+					graph.addNode(replacement);
+				}
+			}
+		});
+	}
+}

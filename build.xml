@@ -95,8 +95,6 @@ Using maxeda classpath '${maxeda.classpath}'
 				</batchtest>
 			</junit>
 		</jacoco:coverage>
-		<fail message="A JUnit test FAILED" if="junit.failed"/>
-		
 		<jacoco:report>
 			<executiondata>
 				<file file="${jacoco.exec.file}"/>
@@ -111,6 +109,7 @@ Using maxeda classpath '${maxeda.classpath}'
 			</structure>
 			<html destdir="${report.dir}/jacoco"/>
 		</jacoco:report>
+		<fail message="A JUnit test FAILED" if="junit.failed"/>
 	</target>
 
 	<target name="jar" depends="compile">

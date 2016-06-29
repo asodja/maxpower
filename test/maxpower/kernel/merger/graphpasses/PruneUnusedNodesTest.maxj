@@ -1,0 +1,61 @@
+package maxpower.kernel.merger.graphpasses;
+
+import junit.framework.Assert;
+import maxpower.kernel.merger.KMGraph;
+import maxpower.kernel.merger.KMKernel;
+import maxpower.kernel.merger.KMVar;
+import maxpower.kernel.merger.Merger;
+import maxpower.kernel.merger.TestHelper;
+
+import org.junit.Test;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.managers.standard.SimulationManager;
+
+public class PruneUnusedNodesTest {
+	private class PruneUnusedNodesTestKernel extends KMKernel {
+		public PruneUnusedNodesTestKernel(KernelLib owner) {
+			KMVar a = io.input("a");
+			KMVar b = io.input("b");
+			KMVar c = io.input("c");
+			KMVar d = io.input("d");
+
+			@SuppressWarnings("unused")
+			KMVar e = a * b + c * d;
+
+			io.output("result", a);
+		}
+	}
+
+	private class PruneUnusedNodesMergerTestKernel extends Kernel {
+		private final KMGraph m_graph;
+
+		@SuppressWarnings("unchecked")
+		public PruneUnusedNodesMergerTestKernel(KernelParameters parameters) {
+			super(parameters);
+
+			Merger merger = new Merger(this);
+			merger.addInput("a", io.input("a", dfeFloat(8, 24)));
+			merger.addInput("b", io.input("b", dfeFloat(8, 24)));
+			merger.addInput("c", io.input("c", dfeFloat(8, 24)));
+			merger.addInput("d", io.input("d", dfeFloat(8, 24)));
+			merger.addKernel(new PruneUnusedNodesTestKernel(this));
+			merger.build();
+			m_graph = TestHelper.getKMGraphOfMerger(merger);
+			io.output("result", merger.getOutput("result").getType()) <== merger.getOutput("result");
+		}
+	}
+
+	@Test
+	public void pruneUnusedNodesTest() {
+		SimulationManager manager = new SimulationManager("PruneUnusedNodesTest");
+		PruneUnusedNodesMergerTestKernel kernel = new PruneUnusedNodesMergerTestKernel(manager.makeKernelParameters());
+		manager.setKernel(kernel);
+		manager.build();
+
+		KMGraph graph = kernel.m_graph;
+		Assert.assertEquals(2, graph.getNodes().size());
+	}
+}
