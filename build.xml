@@ -44,6 +44,17 @@
 
 	<target name="all" depends="compile, compile-test, test, maxjdoc"/>
 
+	<!-- get the commit number to use in creating the versioned jar name -->
+	<target name="get-git-commit">
+		<exec executable="/bin/bash"
+			outputproperty="git.commit"
+			failonerror="true">
+			<arg value="-c"/>
+			<arg value="git rev-parse HEAD"/>
+		</exec>
+		<echo message="Git commit is ${git.commit}"/>
+	</target>
+
 	<target name="compile" depends="clean">
 		<echo>
 Using maxeda classpath '${maxeda.classpath}'
@@ -121,6 +132,17 @@ Using maxeda classpath '${maxeda.classpath}'
 			</manifest>
 		</jar>
 	</target>
+
+	<!-- produce a jar with the git commit included in the name to use for versioning, also recreates the standard jar to avoid mixups -->
+        <target name="versioned-jar" depends="jar, compile, get-git-commit">
+                <mkdir dir="${jar.dir}"/>
+                <jar destfile="${jar.dir}/MaxPower-${git.commit}.jar" basedir="${bin.dir}">
+                        <manifest>
+                                <attribute name="Implementation-Title"   value="MaxPower" />
+                                <attribute name="Implementation-Vendor"  value="Maxeler Technologies" />
+                        </manifest>
+                </jar>
+        </target>
 
 	<target name="maxjdoc">
 		<mkdir dir="${maxjdoc.dir}"/>
