@@ -50,7 +50,7 @@
 			outputproperty="git.commit"
 			failonerror="true">
 			<arg value="-c"/>
-			<arg value="git log origin | head -n 1 | cut -c 8-15"/>
+			<arg value="git rev-parse HEAD"/>
 		</exec>
 		<echo message="Git commit is ${git.commit}"/>
 	</target>
