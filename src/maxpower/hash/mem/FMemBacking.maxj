@@ -21,15 +21,21 @@ public class FMemBacking extends BurstMemBacking {
 	public FMemBacking(MaxHash<?> owner, String name, DFEStructType structType,
 			int numEntries, boolean isDoubleBuffered) {
 		super(owner, name, structType, numEntries, isDoubleBuffered);
+		
+		if (getStructType().getTotalBits() > getBurstSizeBits()) {
+			throw new MaxHashException("The specified MaxHash parameters "
+					+ "lead to a memory entry width that is greater than or equal to"
+					+ "the currently supported maximum of "+getBurstSizeBits()+ " "
+					+ "bits for FMem-backed MaxHash instances. " 
+					+ "Please reduce the width of key or values as follows:\n"
+					+ "If ValidateResults == true, keyWdith + valueWidth <= 63\n"
+					+ "If ValidateResults == false, keyWidth + valueWidth <= 64");
+		}
+		
 		m_mem = owner.mem.alloc(DFETypeFactory.dfeUInt(64), getNumOccupiedBursts());
 		m_mem.mapToCPU(getTableMemName());
 
-		if (getStructType().getTotalBits() > getBurstSizeBits()) {
-			throw new MaxHashException("The specified MaxHash parameters "
-					+ "lead to a memory entry width that is greater than "
-					+ "the currently supported maximum of "+getBurstSizeBits()+" "
-					+ "bits for FMem-backed MaxHash instances.");
-		}
+
 	}
 
 	@Override
