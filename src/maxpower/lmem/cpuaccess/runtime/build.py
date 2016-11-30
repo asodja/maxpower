@@ -4,7 +4,7 @@ import os
 import sys
 
 try:
-from fabricate import *
+	from fabricate import *
 except ImportError, e:
 	print "Couldn't find the fabricate module. Make sure you have sourced config.sh"
 	sys.exit(1)
