@@ -13,6 +13,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <stdio.h>
 
 
 
@@ -21,13 +22,13 @@ bool has_constant_uint64t(maxhash_engine_state_t *es,
 		const char *constant_name)
 {
 	char name_buf[NAME_BUF_LEN] = {0};
-	strncpy(name_buf, hash_table_name, NAME_BUF_LEN);
+	snprintf(name_buf, sizeof(name_buf), "%s_%s", hash_table_name, constant_name);
 
 	assert(max_ok(es->maxfile->errors));
 	bool has_constant = true;
 
 	max_errors_mode(es->maxfile->errors, 0);
-	uint64_t unused __attribute__((unused)) = max_get_constant_uint64t(es->maxfile, strcat(name_buf, constant_name));
+	uint64_t unused __attribute__((unused)) = max_get_constant_uint64t(es->maxfile, name_buf);
 
 	if (!max_ok(es->maxfile->errors)) {
 		has_constant = false;
@@ -41,18 +42,14 @@ bool has_constant_uint64t(maxhash_engine_state_t *es,
 
 
 
-bool has_constant_string(maxhash_engine_state_t *es,
-		const char *hash_table_name,
+bool has_global_constant_string(maxhash_engine_state_t *es,
 		const char *constant_name)
 {
-	char name_buf[NAME_BUF_LEN] = {0};
-	strncpy(name_buf, hash_table_name, NAME_BUF_LEN);
-
 	assert(max_ok(es->maxfile->errors));
 	bool has_constant = true;
 
 	max_errors_mode(es->maxfile->errors, 0);
-	const char *unused __attribute__((unused)) = max_get_constant_string(es->maxfile, strcat(name_buf, constant_name));
+	const char *unused __attribute__((unused)) = max_get_constant_string(es->maxfile, constant_name);
 
 	if (!max_ok(es->maxfile->errors)) {
 		has_constant = false;
@@ -78,9 +75,16 @@ int get_maxfile_constant(maxhash_engine_state_t *es,
 		const char *hash_table_name, const char *constant_name)
 {
 	char name_buf[NAME_BUF_LEN] = {0};
-	strncpy(name_buf, hash_table_name, NAME_BUF_LEN);
+	snprintf(name_buf, sizeof(name_buf), "%s_%s", hash_table_name, constant_name);
 
-	return (int)max_get_constant_uint64t(es->maxfile, strcat(name_buf, constant_name));
+	return (int)max_get_constant_uint64t(es->maxfile, name_buf);
+}
+
+
+
+const char *get_maxfile_global_string_constant(maxhash_engine_state_t *es,
+		const char *constant_name) {
+	return max_get_constant_string(es->maxfile, constant_name);
 }
 
 
@@ -89,9 +93,9 @@ const char *get_maxfile_string_constant(maxhash_engine_state_t *es,
 		const char *hash_table_name, const char *constant_name)
 {
 	char name_buf[NAME_BUF_LEN] = {0};
-	strncpy(name_buf, hash_table_name, NAME_BUF_LEN);
+	snprintf(name_buf, sizeof(name_buf), "%s_%s", hash_table_name, constant_name);
 
-	return max_get_constant_string(es->maxfile, strcat(name_buf, constant_name));
+	return max_get_constant_string(es->maxfile, name_buf);
 }
 
 
