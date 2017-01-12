@@ -42,7 +42,7 @@ public class FanoutLimiter<T extends KernelObject<T>> extends KernelComponent im
 	 * @param maxFanout The maximum number of places to fan out to without adding a register.
 	 */
 	public FanoutLimiter(T source, int maxFanout) {
-		super(source.getKernel());
+		super(source.getOwner());
 
 		if (maxFanout < 2)
 			throw new MaxCompilerAPIError("maxFanout must be >= 2, not " + maxFanout);
