@@ -5,8 +5,8 @@ import java.util.List;
 
 import maxpower.hash.mem.MemBacking;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelComponent;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
@@ -16,7 +16,7 @@ import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
 
 public abstract class MaxHash<T extends KernelObject<T>> extends
-		KernelLib {
+		KernelComponent {
 
 	private final String m_name;
 	private final DFEVar m_key;
@@ -42,7 +42,7 @@ public abstract class MaxHash<T extends KernelObject<T>> extends
 	}
 
 	/* Wire up a MaxHash instance in a CustomManager. */
-	public static void connectKernelMemoryStreams(CustomManager m, Kernel k, KernelBlock kb) {
+	public static void connectKernelMemoryStreams(CustomManager m, KernelBase<?> k, KernelBlock kb) {
 		for (MaxHash<?> ht : MaxHashFactory.getHashTables(k)) {
 			/* Connect hashing block to memory for table lookups. */
 			for (MemBacking mi : ht.getMemInterfaces()) {
@@ -72,7 +72,7 @@ public abstract class MaxHash<T extends KernelObject<T>> extends
 		return new DFEStructType(fields.toArray(new StructFieldType[0]));
 	}
 
-	MaxHash(MaxHashParameters<T> params, KernelLib owner, DFEVar key, DFEVar keyValid) {
+	MaxHash(MaxHashParameters<T> params, KernelBase<?> owner, DFEVar key, DFEVar keyValid) {
 		super(owner);
 
 		if (!key.getType().equals(params.getKeyType()))
@@ -89,16 +89,14 @@ public abstract class MaxHash<T extends KernelObject<T>> extends
 		addMaxFileConstant("ValidateResults", params.isValidateResults() ? 1 : 0);
 	}
 
-	@Override
 	public String getName() {
 		return m_name;
 	}
 
 	public String getFullName() {
-		return getKernel().getName() + "_" + m_name;
+		return getOwner().getName() + "_" + m_name;
 	}
 
-	@Override
 	public CustomManager getManager() {
 		return m_manager;
 	}

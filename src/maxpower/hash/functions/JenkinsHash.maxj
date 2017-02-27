@@ -1,6 +1,6 @@
 package maxpower.hash.functions;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelComponent;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
@@ -12,18 +12,18 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
  */
 public class JenkinsHash implements HashFunction {
 
-	private final KernelLib m_owner;
+	private final KernelComponent m_owner;
 	private final int m_chunkSize;
 
-	public JenkinsHash(KernelLib owner, String hashTableName) {
+	public JenkinsHash(KernelComponent owner, String hashTableName) {
 		this(owner, hashTableName, OCTET_SIZE);
 	}
 
-	public JenkinsHash(KernelLib owner, String hashTableName, int chunkSizeBits) {
+	public JenkinsHash(KernelComponent owner, String hashTableName, int chunkSizeBits) {
 		m_owner = owner;
 		m_chunkSize = chunkSizeBits;
 
-		owner.getKernel().getManager().addMaxFileConstant(hashTableName
+		owner.getOwner().getManager().addMaxFileConstant(hashTableName
 				+ "_JenkinsChunkWidth", chunkSizeBits);
 	}
 

@@ -6,7 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.managers.DFEManager;
@@ -38,7 +38,7 @@ public class MaxHashFactory {
 	}
 
 	public static <T extends KernelObject<T>> MaxHash<T> create(
-			Kernel k,
+			KernelBase<?> k,
 			MaxHashParameters<T> params,
 			DFEVar key,
 			DFEVar keyValid) {
@@ -69,7 +69,7 @@ public class MaxHashFactory {
 		return all;
 	}
 
-	public static Collection<MaxHash<?>> getHashTables(Kernel k) {
+	public static Collection<MaxHash<?>> getHashTables(KernelBase<?> k) {
 		return getInstance(k.getManager()).hashes.get(k.getName());
 	}
 }

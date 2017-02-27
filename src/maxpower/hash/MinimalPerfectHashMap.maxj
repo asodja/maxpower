@@ -8,7 +8,7 @@ import maxpower.hash.functions.JenkinsHash;
 import maxpower.hash.mem.MemBacking;
 import maxpower.hash.mem.MemBacking.Buffer;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
@@ -38,7 +38,7 @@ class MinimalPerfectHashMap<T extends KernelObject<T>> extends
 		return new DFEStructType(fields.toArray(new StructFieldType[0]));
 	}
 
-	MinimalPerfectHashMap(MaxHashParameters<T> params, KernelLib owner,
+	MinimalPerfectHashMap(MaxHashParameters<T> params, KernelBase<?> owner,
 			DFEVar key, DFEVar keyValid) {
 		super(params, owner, key, keyValid);
 

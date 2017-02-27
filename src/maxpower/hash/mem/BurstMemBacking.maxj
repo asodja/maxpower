@@ -2,6 +2,7 @@ package maxpower.hash.mem;
 
 import maxpower.hash.MaxHash;
 
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.RoundingMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath.DivModResult;
@@ -112,8 +113,14 @@ abstract class BurstMemBacking extends MemBacking {
 		owner.simPrintf(ctrl, "  memReadDataSliced: 0x%x\n", memReadDataSliced);
 
 		/* Force delay between memory command write and corresponding data read. */
-		if (getIOSeparation() != 0)
-			owner.io.forceExactIOSeparation(getDataStreamName(buffer), getCmdStreamName(buffer), getIOSeparation());
+   		if (getIOSeparation() != 0) {
+   			if (owner.getOwner() instanceof KernelLib) {
+   				KernelLib k = (KernelLib) owner.getOwner();
+    			k.io.forceExactIOSeparation(getDataStreamName(buffer), getCmdStreamName(buffer), getIOSeparation());
+   			} else {
+   				throw new RuntimeException("IO Seperation requires a regular kernel, not a KernelLite.");
+   			}
+   		}
 
 		return getStructType().unpack(memReadDataSliced);
 	}

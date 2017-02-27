@@ -9,6 +9,9 @@ import maxpower.hash.MaxHash;
 import maxpower.hash.MaxHashException;
 import maxpower.hash.MaxHashUtils;
 
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLite;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLite.IO.PushInput;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Counter;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.WrapMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.IO.DelimiterMode;
@@ -59,19 +62,34 @@ public class DeepFMemBacking extends MemBacking {
 		m_id = DeepFMemHostStream.getInstance(manager).addInterface();
 		addMaxFileConstant("DeepFMemID", m_id);
 
-		int delimiterLength = 1; // The length in cycles of each data item
+		DFEStruct loadData;
+		DFEVar loadValid;
 
-		NonBlockingInput<DFEStruct> load = owner.io.nonBlockingInput(
-				getFullName() + "_Load",
-				getLoadType(entryType),
-				owner.constant.var(true),
-				delimiterLength,
-				DelimiterMode.FRAME_LENGTH,
-				Flushing.interFrameGapNone,
-				NonBlockingMode.NO_TRICKLING);
+		if (owner.getOwner() instanceof KernelLib) {
+			int delimiterLength = 1; // The length in cycles of each data item
+			KernelLib k = (KernelLib) owner.getOwner();
+    		NonBlockingInput<DFEStruct> load = k.io.nonBlockingInput(
+    				getFullName() + "_Load",
+    				getLoadType(entryType),
+    				owner.constant.var(true),
+    				delimiterLength,
+    				DelimiterMode.FRAME_LENGTH,
+    				Flushing.interFrameGapNone,
+    				NonBlockingMode.NO_TRICKLING);
+    		loadData = load.data;
+    		loadValid = load.valid;
+		} else if (owner.getOwner() instanceof KernelLite) {
+			KernelLite k = (KernelLite) owner.getOwner();
+			PushInput<DFEStruct> input = k.io.pushInput(getFullName() + "_Load",
+    				getLoadType(entryType), 8);
+			loadData = input.data;
+			loadValid = input.valid;
+			input.stall <== owner.constant.var(false);
+		} else {
+			throw new RuntimeException("Unkown Kernel Type: " + owner.getOwner().getClass().getSimpleName());
+		}
 
-		DFEStruct loadData = load.data;
-		DFEVar loadValid = load.valid & ((DFEVar)loadData["deepFMemID"] === m_id);
+		loadValid = loadValid & ((DFEVar)loadData["deepFMemID"] === m_id);
 
 		Counter loadAddressCounter = owner.control.count.makeCounter(
 				owner.control.count.makeParams(MathUtils.bitsToAddress(getNumEntries()))

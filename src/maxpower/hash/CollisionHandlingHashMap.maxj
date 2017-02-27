@@ -7,7 +7,7 @@ import maxpower.hash.functions.HashFunction;
 import maxpower.hash.functions.JenkinsHash;
 import maxpower.hash.mem.MemBacking;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
@@ -27,7 +27,7 @@ class CollisionHandlingHashMap<T extends KernelObject<T>>
 	private final T m_value;
 	private final int m_maxBucketEntries;
 
-	CollisionHandlingHashMap(MaxHashParameters<T> params, KernelLib owner,
+	CollisionHandlingHashMap(MaxHashParameters<T> params, KernelBase<?> owner,
 			DFEVar key, DFEVar keyValid) {
 		super(params, owner, key, keyValid);
 

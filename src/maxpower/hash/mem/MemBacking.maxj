@@ -70,7 +70,7 @@ public abstract class MemBacking {
 
 	public String getMemName() { return m_memName; }
 	public String getTableMemName() { return m_owner.getName() + "_" + getMemName(); }
-	public String getFullName() { return m_owner.getKernel().getName() + "_" + getTableMemName(); }
+	public String getFullName() { return m_owner.getOwner().getName() + "_" + getTableMemName(); }
 	protected MaxHash<?> getOwner() { return m_owner; }
 	protected DFEStructType getStructType() { return m_structType; }
 	protected int getNumEntries() { return m_numEntries; }

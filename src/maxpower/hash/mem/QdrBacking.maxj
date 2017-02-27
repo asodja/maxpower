@@ -2,6 +2,7 @@ package maxpower.hash.mem;
 
 import maxpower.hash.MaxHash;
 
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFETypeFactory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;
@@ -16,6 +17,10 @@ public class QdrBacking extends BurstMemBacking {
 	public QdrBacking(MaxHash<?> owner, String name, DFEStructType structType,
 			int numEntries, boolean isDoubleBuffered) {
 		super(owner, name, structType, numEntries, isDoubleBuffered);
+
+		if (!(owner.getOwner() instanceof KernelLib)) {
+			throw new RuntimeException("QdrBacking expects standard Kernels, not KernelLites.");
+		}
 
 		addMaxFileConstant("BaseAddressBursts", 0);
 	}
@@ -36,8 +41,13 @@ public class QdrBacking extends BurstMemBacking {
 
 	@Override
 	protected void doRead(DFEVar ctrl, DFEVar burstAddress, Buffer buffer) {
-		getOwner().io.output(getCmdStreamName(buffer), DFETypeFactory.dfeUInt(ADDR_SIZE_BITS))
-			<== getBaseAddressBursts(buffer) + burstAddress.cast(DFETypeFactory.dfeUInt(ADDR_SIZE_BITS));
+		if (getOwner().getOwner() instanceof KernelLib) {
+			KernelLib k = (KernelLib) getOwner().getOwner();
+    		k.io.output(getCmdStreamName(buffer), DFETypeFactory.dfeUInt(ADDR_SIZE_BITS))
+    			<== getBaseAddressBursts(buffer) + burstAddress.cast(DFETypeFactory.dfeUInt(ADDR_SIZE_BITS));
+		} else {
+			throw new RuntimeException("QdrBacking expects standard Kernels, not KernelLites.");
+		}
 	}
 
 	@Override
@@ -47,7 +57,17 @@ public class QdrBacking extends BurstMemBacking {
 
 	@Override
 	protected DFEVar getBurstData(DFEVar ctrl, Buffer buffer) {
-		return getOwner().io.input(getDataStreamName(buffer), DFETypeFactory.dfeUInt(getBurstSizeBits()), ctrl);
+		if (getOwner().getOwner() instanceof KernelLib) {
+			KernelLib k = (KernelLib) getOwner().getOwner();
+			return k.io.input(getDataStreamName(buffer), DFETypeFactory.dfeUInt(getBurstSizeBits()), ctrl);
+		}
+
+		/*
+		 * This is because the design relies on the stalling behaviour of standard Kernels.
+		 * If there is no data when ctrl is asserted, a regular Kernel will 'wait' for it by stalling the entire pipeline.
+		 * A KernelLite will not stall/wait.
+		 */
+		throw new RuntimeException("QdrBacking expects standard Kernels, not KernelLites.");
 	}
 
 	@Override
