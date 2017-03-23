@@ -3,7 +3,9 @@ package maxpower.kernel.utils;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFERawBits;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType.ConstantValue;
@@ -203,6 +205,9 @@ public class JavaSimUtils {
 		List<Double> output = new ArrayList<Double>();
 		if (type instanceof DFEType) {
 			DFEType t = (DFEType)type;
+			if (t instanceof DFERawBits) {
+				t = Kernel.dfeUInt(t.getTotalBits());
+			}
 			output.add(t.decodeConstant(raw));
 		} else if (type instanceof DFEComplexType){
 			DFEComplexType t = (DFEComplexType)type;
