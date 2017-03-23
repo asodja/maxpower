@@ -20,7 +20,7 @@ public class TileMultiplierTest {
 		int numTiles = 5;
 		int N = 8 + rng.nextInt(32);
 
-		SimulationManager m = new SimulationManager("TileMultiplierTest");
+		SimulationManager m = new SimulationManager("TileMultiplierTest" + type.getClass().getSimpleName());
 		m.logMsg("Random seed: %d, tile size = %d", seed, N);
 		m.setKernel(new TileMultiplierKernel(m.makeKernelParameters(), type, N));
 

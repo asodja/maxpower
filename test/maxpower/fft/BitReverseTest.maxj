@@ -84,7 +84,7 @@ public class BitReverseTest {
 		double actual[][]   = new double[NUM_DATA_RUNS * size / NUM_PIPES][NUM_PIPES];
 		Bits inputBits[]    = new Bits[NUM_DATA_RUNS * size / NUM_PIPES];
 
-		SimulationManager manager = new SimulationManager("BitReverseTest");
+		SimulationManager manager = new SimulationManager("BitReverseTest" + size);
 		BitReverseTestKernel kernel = new BitReverseTestKernel(manager.makeKernelParameters(), size);
 		manager.setKernel(kernel);
 		manager.build();

@@ -67,7 +67,7 @@ public class IfftTest {
 		Complex[][] pairs       = generateInputData(rn, ifftSize);
 		Complex[][] expected    = calculateExpected(pairs, ifftSize);
 
-		SimulationManager manager = new SimulationManager("IfftTest");
+		SimulationManager manager = new SimulationManager("IfftTest" + ifftSize);
 		manager.setKernel(new IfftTestKernel(manager.makeKernelParameters(), ifftSize));
 		manager.logMsg("Using random seed: %d", seed);
 

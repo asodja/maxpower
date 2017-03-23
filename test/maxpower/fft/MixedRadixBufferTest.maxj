@@ -84,7 +84,7 @@ public class MixedRadixBufferTest {
 		double actual[][]   = new double[NUM_DATA_RUNS * size / NUM_PIPES][NUM_PIPES];
 		Bits inputBits[]    = new Bits[NUM_DATA_RUNS * size / NUM_PIPES];
 
-		SimulationManager manager = new SimulationManager("MixedRadixBufferTest");
+		SimulationManager manager = new SimulationManager("MixedRadixBufferTest" + size);
 		MixedRadixBufferTestKernel kernel = new MixedRadixBufferTestKernel(manager.makeKernelParameters(), size);
 		manager.setKernel(kernel);
 		manager.build();
