@@ -68,7 +68,8 @@ public class VectorUtils {
 		if (!(first.getType().getContainedType().equalsIgnoreMax(second.getType().getContainedType()))) {
 			throw new MaxCompilerAPIError("Types for DFEVectors must match in order to concatenate them.");
 		}
-		List<T> output = first.getElementsAsList();
+		List<T> output = new ArrayList<T>();
+		output.addAll(first.getElementsAsList());
 		output.addAll(second.getElementsAsList());
 		return DFEVectorType.newInstance(output);
 	}
