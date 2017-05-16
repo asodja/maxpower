@@ -388,11 +388,11 @@ maxhash_err_t maxhash_sw_table_init(maxhash_table_t **table, const maxhash_table
 
 maxhash_err_t maxhash_check_version(maxhash_engine_state_t *es)
 {
-	bool has_version = has_constant_string(es, "", "MaxHash_Version");
+	bool has_version = has_global_constant_string(es, "MaxHash_Version");
 	if (!has_version)
 		fprintf(stderr, "*** Warning: MaxHash version is not defined in the MaxFile. ***\n");
 
-	const char *maxhash_version_maxfile = get_maxfile_string_constant(es, "", "MaxHash_Version");
+	const char *maxhash_version_maxfile = get_maxfile_global_string_constant(es, "MaxHash_Version");
 
 	if (!strncmp(maxhash_version_maxfile, UNRELEASED_VERSION_STRING, strlen(UNRELEASED_VERSION_STRING)))
 		fprintf(stderr, "\n*** Warning: MaxFile uses an unreleased version of MaxHash. ***\n\n");
@@ -409,7 +409,7 @@ maxhash_err_t maxhash_check_presence(maxhash_engine_state_t *es, const char *ker
 	char full_name[NAME_BUF_LEN] = {0};
 	snprintf(full_name, sizeof(full_name), "%s_%s", kernel_name, hash_table_name);
 
-	bool hash_present = has_constant_uint64t(es, full_name, "_IsPresent");
+	bool hash_present = has_constant_uint64t(es, full_name, "IsPresent");
 	if (!hash_present) {
 		fprintf(stderr, "Error: there is no MaxHash instance named '%s' in the kernel named '%s'.\n",
 				hash_table_name, kernel_name);
@@ -424,15 +424,15 @@ maxhash_err_t maxhash_check_presence(maxhash_engine_state_t *es, const char *ker
 maxhash_err_t maxhash_get_hw_mem_backing_params(maxhash_internal_table_params_t *mem_backing_params,
 		maxhash_engine_state_t *es, const char *full_hash_name, const char *mem_name)
 {
-	char buf[1024];
-	snprintf(buf, sizeof(buf), "_%s_MemType", mem_name);
+	char buf[NAME_BUF_LEN];
+	snprintf(buf, sizeof(buf), "%s_MemType", mem_name);
 	const char *mem_type = get_maxfile_string_constant(es, full_hash_name, buf);
 
 	if (!strcmp(mem_type, "FMem")) {
 		mem_backing_params->mem_type = MAXHASH_MEM_TYPE_FMEM;
 	} else if (!strcmp(mem_type, "DeepFMem")) {
 		mem_backing_params->mem_type = MAXHASH_MEM_TYPE_DEEP_FMEM;
-		snprintf(buf, sizeof(buf), "_%s_DeepFMemID", mem_name);
+		snprintf(buf, sizeof(buf), "%s_DeepFMemID", mem_name);
 		int deep_fmem_id = get_maxfile_constant(es, full_hash_name, buf);
 		if (deep_fmem_id < 0 || deep_fmem_id > 15) {
 			fprintf(stderr, "Error: deep FMem ID (%d) is invalid.\n", deep_fmem_id);
@@ -441,11 +441,11 @@ maxhash_err_t maxhash_get_hw_mem_backing_params(maxhash_internal_table_params_t 
 		maxhash_init_deep_fmem_fanout(es, deep_fmem_id);
 		mem_backing_params->deep_fmem_id = deep_fmem_id;
 	} else if (!strcmp(mem_type, "LMem")) {
-		char cmd_stream_name[1024];
-		char write_cpu_stream_name[1024];
-		char write_stream_name[1024];
+		char cmd_stream_name[NAME_BUF_LEN];
+		char write_cpu_stream_name[NAME_BUF_LEN];
+		char write_stream_name[NAME_BUF_LEN];
 		mem_backing_params->mem_type = MAXHASH_MEM_TYPE_LMEM;
-		snprintf(buf, sizeof(buf), "_%s_BaseAddressBursts", mem_name);
+		snprintf(buf, sizeof(buf), "%s_BaseAddressBursts", mem_name);
 		mem_backing_params->base_address_bursts = get_maxfile_constant(es, full_hash_name, buf);
 		snprintf(buf, sizeof(buf), "%s_%s_LMemInterface", full_hash_name, mem_name);
 		snprintf(cmd_stream_name, sizeof(cmd_stream_name), "%s_%s_LMemWriteCPUCtrl",
@@ -461,7 +461,7 @@ maxhash_err_t maxhash_get_hw_mem_backing_params(maxhash_internal_table_params_t 
 		return MAXHASH_ERR_ERR;
 	}
 
-	snprintf(buf, sizeof(buf), "_%s_Width", mem_name);
+	snprintf(buf, sizeof(buf), "%s_Width", mem_name);
 	int width_bits = get_maxfile_constant(es, full_hash_name, buf);
 
 	if (width_bits <= 0) {
@@ -472,7 +472,7 @@ maxhash_err_t maxhash_get_hw_mem_backing_params(maxhash_internal_table_params_t 
 	mem_backing_params->width_bits  = width_bits;
 	mem_backing_params->width_bytes = (width_bits + 7) / 8;
 
-	snprintf(buf, sizeof(buf), "_%s_NumBuckets", mem_name);
+	snprintf(buf, sizeof(buf), "%s_NumBuckets", mem_name);
 	int num_buckets = get_maxfile_constant(es, full_hash_name, buf);
 
 	if (num_buckets <= 0) {
@@ -501,11 +501,11 @@ maxhash_err_t maxhash_get_hw_params(maxhash_table_params_t *tparams, maxhash_eng
 	char full_name[NAME_BUF_LEN] = {0};
 	snprintf(full_name, sizeof(full_name), "%s_%s", kernel_name, hash_table_name);
 
-	int max_bucket_entries = get_maxfile_constant(es, full_name, "_MaxBucketEntries");
-	int perfect = get_maxfile_constant(es, full_name, "_Perfect");
-	int is_double_buffered = get_maxfile_constant(es, full_name, "_IsDoubleBuffered");
-	int key_width_bits = get_maxfile_constant(es, full_name, "_KeyWidth");
-	int jenkins_chunk_width_bits = get_maxfile_constant(es, full_name, "_JenkinsChunkWidth");
+	int max_bucket_entries = get_maxfile_constant(es, full_name, "MaxBucketEntries");
+	int perfect = get_maxfile_constant(es, full_name, "Perfect");
+	int is_double_buffered = get_maxfile_constant(es, full_name, "IsDoubleBuffered");
+	int key_width_bits = get_maxfile_constant(es, full_name, "KeyWidth");
+	int jenkins_chunk_width_bits = get_maxfile_constant(es, full_name, "JenkinsChunkWidth");
 
 	if (max_bucket_entries <= 0) {
 		fprintf(stderr, "Error: maximum bucket entries in hardware hash table (%d) is invalid.\n",
@@ -536,7 +536,7 @@ maxhash_err_t maxhash_get_hw_params(maxhash_table_params_t *tparams, maxhash_eng
 		err |= maxhash_get_hw_mem_backing_params(intermediate_params, es, full_name, "HashParams");
 		err |= maxhash_get_hw_mem_backing_params(values_params, es, full_name, "Values");
 
-		int validate_results = get_maxfile_constant(es, full_name, "_ValidateResults");
+		int validate_results = get_maxfile_constant(es, full_name, "ValidateResults");
 
 		if (validate_results < 0 || validate_results > 1) {
 			fprintf(stderr, "Error: validate keys value in hardware hash table (%d) is invalid.\n",

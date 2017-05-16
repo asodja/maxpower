@@ -14,8 +14,6 @@
 
 #include <MaxSLiCInterface.h>
 
-#define NAME_BUF_LEN 64
-
 #ifdef __cplusplus
 extern "C" {
 #endif

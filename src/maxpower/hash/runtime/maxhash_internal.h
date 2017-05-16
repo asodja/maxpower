@@ -11,6 +11,8 @@
 #include "maxhash.h"
 #include "../../lmem/cpuaccess/runtime/lmem_cpu_access.h"
 
+#define NAME_BUF_LEN 256
+
 #define NUM_ENTRY_FLAGS     2
 #define FLAG_VALID          0
 #define FLAG_PERFECT_DIRECT 1
@@ -114,7 +116,7 @@ maxhash_err_t maxhash_create_mph(maxhash_table_t *source);
 uint32_t maxhash_function_jenkins(const void *data, size_t data_len, uint32_t hash, size_t chunk_width);
 
 bool has_constant_uint64t(maxhash_engine_state_t *es, const char *hash_table_name, const char *constant_name);
-bool has_constant_string(maxhash_engine_state_t *es, const char *hash_table_name, const char *constant_name);
+bool has_global_constant_string(maxhash_engine_state_t *es, const char *constant_name);
 
 int get_maxfile_constant(maxhash_engine_state_t *es, const char *hash_table_name, const char *constant_name);
 
