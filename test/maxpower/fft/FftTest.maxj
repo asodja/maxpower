@@ -134,7 +134,7 @@ public class FftTest {
 		Complex[][] pairs       = generateInputData(rn, fftSize);
 		Complex[][] expected    = calculateExpected(pairs, fftSize);
 
-		SimulationManager manager = new SimulationManager("FftTest");
+		SimulationManager manager = new SimulationManager("FftTest" + fftSize + useFloat);
 		manager.setKernel(new FftTestKernel(manager.makeKernelParameters(), fftSize, useFloat));
 		manager.logMsg("Using random seed: %d", seed);
 

@@ -67,7 +67,7 @@ public class FftSimpleInterfaceTest {
 		Complex[][] pairs       = generateInputData(rn, fftSize);
 		Complex[][] expected    = calculateExpected(pairs, fftSize);
 
-		SimulationManager manager = new SimulationManager("FftTest");
+		SimulationManager manager = new SimulationManager("FftTestSimple" + fftSize);
 		manager.setKernel(new FftTestKernel(manager.makeKernelParameters(), fftSize));
 		manager.logMsg("Using random seed: %d", seed);
 
