@@ -496,7 +496,7 @@ public class FloatingPointAccumulator {
 		if (input.size() % 2 == 1) {
 			output.add(input[input.size() - 1]);
 		}
-		return adderTree(input);
+		return adderTree(output);
 	}
 
 
